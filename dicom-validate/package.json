@@ -1,6 +1,7 @@
 {
   "name": "dicom-validate",
   "version": "1.0.0",
+  "packageManager": "yarn@1.22.22",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
