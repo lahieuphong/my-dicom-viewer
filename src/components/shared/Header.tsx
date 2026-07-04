@@ -93,6 +93,7 @@ export default function SharedHeader({
                   src="/imgs/HVTT-Logo.png"
                   alt="HVTT Logo"
                   fill
+                  sizes="(min-width: 768px) 192px, 144px"
                   className="object-contain"
                   priority
                 />

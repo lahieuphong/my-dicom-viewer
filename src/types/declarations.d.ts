@@ -7,7 +7,6 @@ declare module '*.sass';
 declare module '*.less';
 
 // --- third-party modules used without types ---
-declare module 'cornerstone-wado-image-loader';
 declare module 'cornerstone-tools';
 declare module 'cornerstone-math';
 

@@ -17,6 +17,26 @@ import { registerToolsOnce } from '@/lib/tools';
  */
 
 let initialized = false;
+let initPromise: Promise<{ csCore: any; dicomImageLoader: any }> | null = null;
+
+function ensureToolGroupExists() {
+  try {
+    const existing = ToolGroupManager.getToolGroup(TOOL_GROUP);
+    if (existing) return existing;
+  } catch {
+    // Some versions throw when the group is missing; create below.
+  }
+
+  try {
+    return ToolGroupManager.createToolGroup(TOOL_GROUP);
+  } catch (err) {
+    try {
+      return ToolGroupManager.getToolGroup(TOOL_GROUP);
+    } catch {
+      throw err;
+    }
+  }
+}
 
 function wrapReleaseGraphicsResourcesIfNeeded(obj: any) {
   try {
@@ -127,6 +147,25 @@ export async function initCornerstone() {
     };
   }
 
+  if (initPromise) {
+    return initPromise;
+  }
+
+  initPromise = initCornerstoneInternal();
+
+  try {
+    return await initPromise;
+  } catch (err) {
+    initPromise = null;
+    throw err;
+  }
+}
+
+async function initCornerstoneInternal() {
+  if (typeof window === 'undefined') {
+    return { csCore: null, dicomImageLoader: null };
+  }
+
   // instrumentation object (always present)
   try {
     (window as any).__cornerstoneStatus = (window as any).__cornerstoneStatus || {};
@@ -170,10 +209,10 @@ export async function initCornerstone() {
 
   // 5) ensure tool group exists (silent on duplicate)
   try {
-    ToolGroupManager.createToolGroup(TOOL_GROUP);
+    ensureToolGroupExists();
   } catch (err) {
-    // ignore duplicates
-    try { console.debug('[cornerstone] ToolGroup create may have failed / already exists', err); } catch {}
+    console.warn('[cornerstone] ensure tool group failed', err);
+    try { (window as any).__cornerstoneStatus.lastError = `[ensureToolGroupExists] ${String(err)}`; } catch {}
   }
 
   // 6) dynamic import dicom-image-loader (best-effort)

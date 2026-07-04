@@ -4,7 +4,7 @@ A web-based DICOM viewer built with Next.js and CornerstoneJS.
 
 ## Requirements
 
-- Node.js
+- Node.js 22 LTS
 - Yarn 1.x
 
 ## Install
