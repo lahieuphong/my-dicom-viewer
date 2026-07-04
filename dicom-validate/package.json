@@ -1,0 +1,16 @@
+{
+  "name": "dicom-validate",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dicom-parser": "^1.8.21",
+    "node-fetch": "^2.7.0"
+  }
+}
