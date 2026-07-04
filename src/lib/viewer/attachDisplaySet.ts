@@ -42,6 +42,110 @@ function imageListsEqual(a: any[] | null | undefined, b: any[] | null | undefine
   }
 }
 
+function clampIndex(index: number, imageCount: number): number {
+  return Math.max(0, Math.min(Number.isFinite(index) ? Math.floor(index) : 0, Math.max(0, imageCount - 1)));
+}
+
+function readViewportImageIndex(viewportInstance?: any, viewportEl?: HTMLElement | null): number | null {
+  try {
+    if (viewportInstance) {
+      if (typeof viewportInstance.getCurrentImageIdIndex === 'function') {
+        const idx = Number(viewportInstance.getCurrentImageIdIndex());
+        if (Number.isFinite(idx) && idx >= 0) return idx;
+      }
+      if (typeof viewportInstance.getImageIdIndex === 'function') {
+        const idx = Number(viewportInstance.getImageIdIndex());
+        if (Number.isFinite(idx) && idx >= 0) return idx;
+      }
+    }
+  } catch {}
+
+  try {
+    const en = getEnabledElementSafeLocal(viewportEl);
+    const vp = en?.viewport ?? en;
+    if (vp && typeof vp.getCurrentImageIdIndex === 'function') {
+      const idx = Number(vp.getCurrentImageIdIndex());
+      if (Number.isFinite(idx) && idx >= 0) return idx;
+    }
+    if (vp && typeof vp.getImageIdIndex === 'function') {
+      const idx = Number(vp.getImageIdIndex());
+      if (Number.isFinite(idx) && idx >= 0) return idx;
+    }
+  } catch {}
+
+  return null;
+}
+
+async function forceViewportToIndex(opts: {
+  renderingEngineRef?: EngineRef;
+  viewportInstance?: any;
+  viewportEl?: HTMLDivElement | null;
+  imageIds: string[];
+  index: number;
+  viewportId: string;
+  requestToken: string;
+}): Promise<number> {
+  const { renderingEngineRef, viewportInstance, viewportEl, imageIds, index, viewportId, requestToken } = opts;
+  const targetIndex = clampIndex(index, imageIds.length);
+  const targetImageId = imageIds[targetIndex];
+  const engine: any = renderingEngineRef?.current ?? null;
+
+  let vp: any = viewportInstance ?? null;
+  if (!vp && viewportEl) {
+    try {
+      vp = getEnabledElementSafeLocal(viewportEl)?.viewport ?? null;
+    } catch {}
+  }
+
+  try {
+    if (vp) {
+      let currentIds: string[] | null = null;
+      try {
+        currentIds = typeof vp.getImageIds === 'function' ? vp.getImageIds?.() ?? null : null;
+      } catch {}
+
+      if (typeof vp.setStack === 'function' && !imageListsEqual(currentIds, imageIds)) {
+        pushViewerLog('attach.forceIndex.setStack', { requestToken, targetIndex });
+        await Promise.resolve(vp.setStack(imageIds, targetIndex)).catch((err: any) => {
+          pushViewerLog('attach.forceIndex.setStack.error', { requestToken, targetIndex, err: String(err) });
+        });
+      }
+
+      const currentIndex = readViewportImageIndex(vp, viewportEl);
+      if (currentIndex !== targetIndex) {
+        if (typeof vp.setImageIndex === 'function') {
+          pushViewerLog('attach.forceIndex.setImageIndex', { requestToken, targetIndex, currentIndex });
+          await Promise.resolve(vp.setImageIndex(targetIndex)).catch((err: any) => {
+            pushViewerLog('attach.forceIndex.setImageIndex.error', { requestToken, targetIndex, err: String(err) });
+          });
+        } else if (typeof vp.setImageId === 'function' && targetImageId) {
+          pushViewerLog('attach.forceIndex.setImageId', { requestToken, targetIndex });
+          await Promise.resolve(vp.setImageId(targetImageId)).catch((err: any) => {
+            pushViewerLog('attach.forceIndex.setImageId.error', { requestToken, targetIndex, err: String(err) });
+          });
+        } else if (typeof vp.setStack === 'function') {
+          pushViewerLog('attach.forceIndex.setStack.fallback', { requestToken, targetIndex });
+          await Promise.resolve(vp.setStack(imageIds, targetIndex)).catch((err: any) => {
+            pushViewerLog('attach.forceIndex.setStackFallback.error', { requestToken, targetIndex, err: String(err) });
+          });
+        }
+      }
+    } else if (engine && typeof engine.setStacks === 'function') {
+      pushViewerLog('attach.forceIndex.engineSetStacks', { requestToken, targetIndex });
+      engine.setStacks([{ viewportId, imageIds, index: targetIndex, __requestToken: requestToken }]);
+    }
+  } catch (err) {
+    pushViewerLog('attach.forceIndex.error', { requestToken, targetIndex, err: String(err) });
+  }
+
+  try { engine?.resize?.(); } catch {}
+  try { engine?.renderViewport?.(viewportId); } catch {}
+  try { await vp?.render?.(); } catch {}
+  try { normalizeCanvasAndContext(viewportEl); } catch {}
+
+  return targetIndex;
+}
+
 export async function attachDisplaySetToViewport(opts: {
   displaySet: DisplaySet;
   renderingEngineRef?: EngineRef;
@@ -283,7 +387,7 @@ export async function attachDisplaySetToViewport(opts: {
     pushViewerLog('attach.preload.outer', { requestToken, err: String(e) });
   }
 
-  // 2) final housekeeping: reset/present/render (do NOT change the current frame arbitrarily)
+  // 2) final housekeeping: reset presentation before applying the requested frame.
   try {
     try { viewportInstance?.reset?.(); } catch {}
     try { renderingEngineRef?.current?.resize?.(); } catch {}
@@ -294,27 +398,25 @@ export async function attachDisplaySetToViewport(opts: {
     pushViewerLog('attach.finalHousekeeping.error', { requestToken, err: String(e) });
   }
 
-  // 3) Determine current effective index: try to read from viewportInstance or enabled element
-  let effectiveIndex = desiredIndex;
+  // 3) The requested index is authoritative. Preload/render nudges must not
+  // advance the stack and then become the locked display frame.
+  let effectiveIndex = await forceViewportToIndex({
+    renderingEngineRef,
+    viewportInstance,
+    viewportEl,
+    imageIds,
+    index: desiredIndex,
+    viewportId,
+    requestToken,
+  });
+
   try {
-    if (viewportInstance) {
-      try {
-        if (typeof viewportInstance.getCurrentImageIdIndex === 'function')
-          effectiveIndex = Number(viewportInstance.getCurrentImageIdIndex?.() ?? desiredIndex);
-      } catch {}
+    const runtimeIndex = readViewportImageIndex(viewportInstance, viewportEl);
+    if (runtimeIndex !== null && runtimeIndex !== effectiveIndex) {
+      pushViewerLog('attach.forceIndex.verifyMismatch', { requestToken, runtimeIndex, effectiveIndex });
     }
-    if ((typeof effectiveIndex !== 'number' || effectiveIndex < 0) && viewportEl) {
-      try {
-        const en = getEnabledElementSafeLocal(viewportEl as any);
-        if (en && en.viewport && typeof en.viewport.getCurrentImageIdIndex === 'function') {
-          effectiveIndex = Number(en.viewport.getCurrentImageIdIndex?.() ?? desiredIndex);
-        }
-      } catch {}
-    }
-    if (typeof effectiveIndex !== 'number' || effectiveIndex < 0) effectiveIndex = desiredIndex;
-    effectiveIndex = Math.max(0, Math.min(effectiveIndex, Math.max(0, imageIds.length - 1)));
   } catch (err) {
-    pushViewerLog('attach.calcEffectiveIndex.error', { requestToken, err: String(err) });
+    pushViewerLog('attach.forceIndex.verifyError', { requestToken, err: String(err) });
   }
 
   // 4) Lock viewport to the index we actually attached (so later callers don't stomp)

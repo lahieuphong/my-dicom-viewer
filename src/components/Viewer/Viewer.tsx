@@ -318,13 +318,10 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
     try {
       if (!viewportInstance) return false;
       const vi: any = viewportInstance;
-      // if engine/viewport exposes a rendered flag, use it
-      if (vi.viewportStatus === 'rendered') return true;
-      // or if viewportInstance has image ids
-      if (typeof vi.getImageIds === 'function') {
-        const ids = vi.getImageIds();
-        if (Array.isArray(ids) && ids.length > 0) return true;
-      }
+      const enabled = getEnabledElementSafeLocal(viewportEl);
+      const hasRenderedImage = Boolean((enabled as any)?.image);
+      if (vi.viewportStatus === 'rendered') return hasRenderedImage;
+      if (hasRenderedImage) return true;
       return false;
     } catch {
       return false;
@@ -597,7 +594,9 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
         try {
           const evName = (ToolEnums as any)?.Events?.STACK_NEW_IMAGE ?? 'cornerstone-stack-new-image';
           const targetEl = elToCheck ?? (viewportInstance as any)?.element ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
-          targetEl?.dispatchEvent?.(new CustomEvent(evName, { detail: { imageIdIndex: ds.initialImageIdIndex ?? 0 }, bubbles: true }));
+          const targetImageIndex = Math.max(0, Math.min(ds.initialImageIdIndex ?? 0, ds.imageIds.length - 1));
+          setCurrentFrame(targetImageIndex + 1);
+          targetEl?.dispatchEvent?.(new CustomEvent(evName, { detail: { imageIdIndex: targetImageIndex }, bubbles: true }));
         } catch (e) {
           console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] dispatch STACK_NEW_IMAGE failed`, e);
         }

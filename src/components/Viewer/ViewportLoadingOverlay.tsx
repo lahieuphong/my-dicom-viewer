@@ -1,5 +1,6 @@
 // src/components/Viewer/ViewportLoadingOverlay.tsx
 'use client';
+import Image from 'next/image';
 import React, { useEffect, useRef, useState } from 'react';
 
 export interface ViewportLoadingOverlayProps {
@@ -149,48 +150,55 @@ export default function ViewportLoadingOverlay({
 
   if (!shouldShow) return null;
 
-  const displayProgress = clamp(Math.round(internalProgress));
+  const displayProgress = clamp(Math.max(1, Math.round(internalProgress)), 1, 100);
+  const progressText = `${displayProgress}%`;
 
   return (
     <div
-      className={`absolute inset-0 z-40 flex items-center justify-center pointer-events-none ${className}`}
+      className={`absolute inset-0 z-40 flex items-center justify-center bg-black pointer-events-none ${className}`}
       aria-hidden={!visible}
     >
-      <div className="pointer-events-auto bg-card/90 p-4 rounded shadow-lg w-[min(95%,520px)]">
-        <div className="flex items-center space-x-3">
-          <div className="flex-1 min-w-0 w-full">
-            <div className="flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <div
-                  className="w-full bg-border rounded-full h-2 overflow-hidden"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={displayProgress}
-                  aria-label="Image loading progress"
-                >
-                  <div
-                    style={{
-                      width: `${displayProgress}%`,
-                      transition: `width ${transitionMs}ms linear`,
-                    }}
-                    className="h-2 rounded-full bg-gradient-to-r from-primary to-primary/80"
-                  />
-                </div>
+      <div className="flex w-[min(70vw,340px)] -translate-y-8 flex-col items-center gap-7">
+        <div className="relative flex h-[58px] w-[240px] max-w-[72vw] items-center justify-center">
+          <Image
+            src="/imgs/HVTT-Logo.png"
+            alt="HVTT Solution"
+            width={240}
+            height={58}
+            className="h-auto w-full object-contain drop-shadow-[0_0_18px_rgba(91,215,240,0.18)]"
+            priority
+          />
+        </div>
+
+        <div className="w-full">
+          <div className="flex items-center gap-4">
+            <div
+              className="h-[9px] flex-1 overflow-hidden rounded-full bg-[#062052]"
+              role="progressbar"
+              aria-valuemin={1}
+              aria-valuemax={100}
+              aria-valuenow={displayProgress}
+              aria-label="Image loading progress"
+            >
+              <div
+                style={{
+                  width: `${displayProgress}%`,
+                  transition: `width ${transitionMs}ms linear`,
+                }}
+                className="h-full rounded-full bg-[#5bd7f0] shadow-[0_0_14px_rgba(91,215,240,0.45)]"
+              />
+            </div>
+
+            {showPercent && (
+              <div className="w-12 text-right text-sm font-semibold leading-none text-slate-100 tabular-nums">
+                {progressText}
               </div>
-
-              {showPercent && (
-                <div className="text-xs font-medium tabular-nums w-12 text-right">
-                  {displayProgress}%
-                </div>
-              )}
-            </div>
-
-            {/* optional small caption */}
-            <div className="mt-2 text-xs text-muted-foreground">
-              {displayProgress < 100 ? 'Đang nạp hình — vui lòng chờ' : 'Hoàn tất'}
-            </div>
+            )}
           </div>
+
+          <span className="sr-only">
+            {displayProgress < 100 ? `Đang nạp hình ${progressText}` : 'Hoàn tất'}
+          </span>
         </div>
       </div>
     </div>

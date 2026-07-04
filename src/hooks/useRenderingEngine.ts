@@ -179,6 +179,7 @@ export function useRenderingEngine({
   const cleanupTimerRef = useRef<number | null>(null);
 
   const lastImageIndexRef = useRef<number | null>(null);
+  const previousSeriesIdRef = useRef<string | null>(null);
 
   const imageFilesJson = useMemo(() => {
     try {
@@ -268,12 +269,10 @@ export function useRenderingEngine({
             const vpReportsImages =
               Boolean(vpLocal && typeof vpLocal.getImageIds === 'function' && Array.isArray(vpLocal.getImageIds?.()) && (vpLocal.getImageIds() || []).length > 0);
 
-            const shouldDispatchWheel = hasImageOnEnabled || vpReportsImages;
-
-            if (shouldDispatchWheel) {
-              try {
-                candidateEl.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true, cancelable: true }));
-              } catch {}
+            if (hasImageOnEnabled || vpReportsImages) {
+              try { vpLocal?.render?.(); } catch {}
+              try { renderingEngineRef.current?.resize?.(); } catch {}
+              try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
             }
 
             try { normalizeCanvasAndContext(candidateEl); } catch {}
@@ -293,6 +292,12 @@ export function useRenderingEngine({
 
   useEffect(() => {
     if (!selectedSeriesId) return;
+    const shouldPreserveInitialIndex = previousSeriesIdRef.current === selectedSeriesId;
+    if (!shouldPreserveInitialIndex) {
+      lastImageIndexRef.current = null;
+    }
+    previousSeriesIdRef.current = selectedSeriesId;
+
     const myToken = Symbol('init');
     initTokenRef.current = myToken;
 
@@ -552,7 +557,10 @@ export function useRenderingEngine({
       async function performFallbackAttach(ids: string[]) {
         try {
           const csCore: any = (window as any).__cornerstoneCore ?? null;
-          const preferIdx = typeof lastImageIndexRef.current === 'number' ? lastImageIndexRef.current : initialIndex;
+          const preferIdx =
+            shouldPreserveInitialIndex && typeof lastImageIndexRef.current === 'number'
+              ? lastImageIndexRef.current
+              : initialIndex;
           const chosenIndex = Math.max(0, Math.min(preferIdx, Math.max(0, (ids?.length ?? 1) - 1)));
 
           const reqToken = `stk-fb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -624,7 +632,10 @@ export function useRenderingEngine({
 
       if (vp && imageIds && imageIds.length > 0) {
         try {
-          const preferIdx = typeof lastImageIndexRef.current === 'number' ? lastImageIndexRef.current : initialIndex;
+          const preferIdx =
+            shouldPreserveInitialIndex && typeof lastImageIndexRef.current === 'number'
+              ? lastImageIndexRef.current
+              : initialIndex;
           const safePreferIdx = Math.max(0, Math.min(preferIdx, (imageIds?.length ?? 1) - 1));
 
           const ok = await robustSetStack(vp, imageIds, safePreferIdx);
@@ -718,7 +729,9 @@ export function useRenderingEngine({
                           try {
                             let currentIdx = -1;
                             try { if (typeof (vp as any).getCurrentImageIdIndex === 'function') currentIdx = (vp as any).getCurrentImageIdIndex(); } catch {}
-                            const safeIdx = (typeof currentIdx === 'number' && currentIdx >= 0) ? currentIdx : (typeof lastImageIndexRef.current === 'number' ? lastImageIndexRef.current : -1);
+                            const safeIdx = (typeof currentIdx === 'number' && currentIdx >= 0)
+                              ? currentIdx
+                              : (shouldPreserveInitialIndex && typeof lastImageIndexRef.current === 'number' ? lastImageIndexRef.current : -1);
 
                             if (safeIdx >= 0 && typeof vp.setImageIndex === 'function') {
                               try {
