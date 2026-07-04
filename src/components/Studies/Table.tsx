@@ -4,6 +4,7 @@
 import { imageLoader } from '@cornerstonejs/core';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Loading } from '@/components/ui/loading';
 import { Button } from '@/components/ui/button';
 import {
@@ -42,6 +43,10 @@ export default function Table({ data: studies = [] }: Props) {
   });
 
   const router = useRouter();
+  const shouldReduceMotion = useReducedMotion();
+  const expandTransition = shouldReduceMotion
+    ? { duration: 0 }
+    : { duration: 0.34, ease: [0.22, 1, 0.36, 1] as const };
 
   useEffect(() => {
     console.log('[Table] studies received:', (studies || []).length);
@@ -248,85 +253,112 @@ export default function Table({ data: studies = [] }: Props) {
                     </TableCell>
                   </TableRow>
 
-                  {expanded[uid] && (
-                    <TableRow>
-                      <TableCell colSpan={9} className="p-0 bg-popover">
-                        <div className="px-6 py-4">
-                          <div className="grid grid-cols-4 gap-0 font-semibold text-sm border-b border-border pb-2">
-                            <div className="px-4">Diễn giải</div>
-                            <div className="px-4">Chuỗi</div>
-                            <div className="px-4">Thiết bị</div>
-                            <div className="px-4">Instances</div>
-                          </div>
-
-                          <div className="divide-y">
-                            {seriesList.length === 0 && (
-                              <div className="py-4 text-sm text-muted">Không có series</div>
-                            )}
-
-                            {seriesList.map((s, sidx) => {
-                              const instancesArr = (Array.isArray(s.instances) ? s.instances : []) as (Instance | string)[];
-                              const count = parseInt(String(s.seriesRelatedInstanceCount || instancesArr.length || '0')) || 0;
-
-                              return (
-                                <div key={`series-${s.seriesInstanceUID || sidx}`} className="grid grid-cols-4 gap-0 items-start py-4">
-                                  <div className="px-4">
-                                    <div className="text-sm">{truncate(normalizeValue(s.seriesDescription))}</div>
-                                  </div>
-
-                                  <div className="px-4">
-                                    <div className="text-sm">{truncate(normalizeValue(s.seriesNumber))}</div>
-                                  </div>
-
-                                  <div className="px-4">
-                                    <div className="text-sm">{truncate(normalizeValue(s.seriesModality))}</div>
-                                  </div>
-
-                                  <div className="px-4">
-                                    <div className="text-sm">{truncate(normalizeValue(String(count)))}</div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          <div className="pt-4">
-                            <Button
-                              disabled={loading}
-                              onClick={async () => {
-                                setLoading(true);
-                                const target = String(st.studyInstanceUID ?? uid);
-                                try {
-                                  // đảm bảo Cornerstone được init before navigation
-                                  await initCornerstone();
-                                } catch (e) {
-                                  console.warn('[Table] initCornerstone before navigation failed', e);
-                                  // continue anyway
-                                }
-
-                                // HARD NAVIGATION: full page load to viewer URL (avoids client-router timing races)
-                                const url = `/viewer/${encodeURIComponent(target)}`;
-                                try {
-                                  // use assign so browser history keeps previous page; replace() can be used if you don't want it
-                                  window.location.assign(url);
-                                } catch (err) {
-                                  // fallback to router.push if assign fails for some reason
-                                  try { router.push(url); } catch { /* ignore */ }
-                                }
-                              }}
-                              onMouseEnter={() => {
-                                prefetchFirstImageForStudy(st);
-                              }}
-                              className="bg-primary text-primary-foreground"
+                  <AnimatePresence initial={false}>
+                    {expanded[uid] && (
+                      <motion.tr
+                        key={`expanded-${uid}`}
+                        className="border-b bg-popover"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={expandTransition}
+                      >
+                        <TableCell colSpan={9} className="p-0 bg-popover overflow-hidden">
+                          <motion.div
+                            initial={{ height: 0, opacity: 0, y: -8 }}
+                            animate={{ height: 'auto', opacity: 1, y: 0 }}
+                            exit={{ height: 0, opacity: 0, y: -6 }}
+                            transition={expandTransition}
+                            className="overflow-hidden"
+                          >
+                            <motion.div
+                              initial={{ opacity: 0, y: -4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -4 }}
+                              transition={
+                                shouldReduceMotion
+                                  ? { duration: 0 }
+                                  : { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const }
+                              }
+                              className="px-6 py-4"
                             >
-                              <i className="fas fa-arrow-right mr-2" />
-                              Mở Viewer
-                            </Button>
-                          </div>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
+                              <div className="grid grid-cols-4 gap-0 font-semibold text-sm border-b border-border pb-2">
+                                <div className="px-4">Diễn giải</div>
+                                <div className="px-4">Chuỗi</div>
+                                <div className="px-4">Thiết bị</div>
+                                <div className="px-4">Instances</div>
+                              </div>
+
+                              <div className="divide-y">
+                                {seriesList.length === 0 && (
+                                  <div className="py-4 text-sm text-muted">Không có series</div>
+                                )}
+
+                                {seriesList.map((s, sidx) => {
+                                  const instancesArr = (Array.isArray(s.instances) ? s.instances : []) as (Instance | string)[];
+                                  const count = parseInt(String(s.seriesRelatedInstanceCount || instancesArr.length || '0')) || 0;
+
+                                  return (
+                                    <div key={`series-${s.seriesInstanceUID || sidx}`} className="grid grid-cols-4 gap-0 items-start py-4">
+                                      <div className="px-4">
+                                        <div className="text-sm">{truncate(normalizeValue(s.seriesDescription))}</div>
+                                      </div>
+
+                                      <div className="px-4">
+                                        <div className="text-sm">{truncate(normalizeValue(s.seriesNumber))}</div>
+                                      </div>
+
+                                      <div className="px-4">
+                                        <div className="text-sm">{truncate(normalizeValue(s.seriesModality))}</div>
+                                      </div>
+
+                                      <div className="px-4">
+                                        <div className="text-sm">{truncate(normalizeValue(String(count)))}</div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="pt-4">
+                                <Button
+                                  disabled={loading}
+                                  onClick={async () => {
+                                    setLoading(true);
+                                    const target = String(st.studyInstanceUID ?? uid);
+                                    try {
+                                      // đảm bảo Cornerstone được init before navigation
+                                      await initCornerstone();
+                                    } catch (e) {
+                                      console.warn('[Table] initCornerstone before navigation failed', e);
+                                      // continue anyway
+                                    }
+
+                                    // HARD NAVIGATION: full page load to viewer URL (avoids client-router timing races)
+                                    const url = `/viewer/${encodeURIComponent(target)}`;
+                                    try {
+                                      // use assign so browser history keeps previous page; replace() can be used if you don't want it
+                                      window.location.assign(url);
+                                    } catch (err) {
+                                      // fallback to router.push if assign fails for some reason
+                                      try { router.push(url); } catch { /* ignore */ }
+                                    }
+                                  }}
+                                  onMouseEnter={() => {
+                                    prefetchFirstImageForStudy(st);
+                                  }}
+                                  className="bg-primary text-primary-foreground"
+                                >
+                                  <i className="fas fa-arrow-right mr-2" />
+                                  Mở Viewer
+                                </Button>
+                              </div>
+                            </motion.div>
+                          </motion.div>
+                        </TableCell>
+                      </motion.tr>
+                    )}
+                  </AnimatePresence>
                 </React.Fragment>
               );
             })}
