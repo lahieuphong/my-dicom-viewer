@@ -198,7 +198,7 @@ export default function Table({ data: studies = [] }: Props) {
           "
         >
           <TableHeader>
-            <TableRow className="bg-card hover:bg-muted !border-b-0 cursor-default">
+            <TableRow className="bg-card hover:bg-card !border-b-0 cursor-default">
               <TableHead className="w-10 text-center">#</TableHead>
               <TableHead className="truncate">Tên bệnh nhân</TableHead>
               <TableHead className="truncate">Mã bệnh nhân</TableHead>
@@ -210,7 +210,7 @@ export default function Table({ data: studies = [] }: Props) {
               <TableHead className="truncate w-20 text-center">Thể hiện</TableHead>
             </TableRow>
 
-            <TableRow className="bg-card hover:bg-muted !border-b-0 cursor-default">
+            <TableRow className="bg-card hover:bg-card !border-b-0 cursor-default">
               <TableCell className="min-w-0" />
               {['name','id','date','description','modality','studyUID','accession'].map((key) => (
                 <TableCell key={key} className="min-w-0 md:min-w-full">
