@@ -229,8 +229,8 @@ export default function Table({ data: studies = [] }: Props) {
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-6 text-center text-muted">
-                  Không tìm thấy study phù hợp.
+                <TableCell colSpan={9} className="p-6 text-center text-foreground">
+                  Không tìm thấy study phù hợp
                 </TableCell>
               </TableRow>
             ) : null}
@@ -367,14 +367,12 @@ export default function Table({ data: studies = [] }: Props) {
                                       // continue anyway
                                     }
 
-                                    // HARD NAVIGATION: full page load to viewer URL (avoids client-router timing races)
                                     const url = `/viewer/${encodeURIComponent(target)}`;
                                     try {
-                                      // use assign so browser history keeps previous page; replace() can be used if you don't want it
-                                      window.location.assign(url);
+                                      router.push(url);
                                     } catch (err) {
-                                      // fallback to router.push if assign fails for some reason
-                                      try { router.push(url); } catch { /* ignore */ }
+                                      // fallback to hard navigation if the client router is unavailable
+                                      try { window.location.assign(url); } catch { /* ignore */ }
                                     }
                                   }}
                                   onMouseEnter={() => {

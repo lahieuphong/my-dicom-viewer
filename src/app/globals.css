@@ -116,8 +116,15 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    @apply bg-background text-foreground;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
   body {
-    @apply bg-background text-foreground transition-colors duration-300;
+    @apply min-h-full bg-background text-foreground transition-colors duration-300;
   }
 }
 
@@ -135,7 +142,7 @@
 
 @layer base {
   html, body, #__next {
-    @apply h-full;
+    @apply h-full bg-background text-foreground;
   }
 }
 

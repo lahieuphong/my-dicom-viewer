@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useTransition } from 'react';
 import { Loading } from '@/components/ui/loading';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -22,6 +22,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
+import { useTheme } from '@/context/ThemeContext';
 
 export interface SharedHeaderProps {
   showBackButton?: boolean;
@@ -44,7 +45,7 @@ export default function SharedHeader({
 }: SharedHeaderProps) {
   const router = useRouter();
   const { username, logout } = useAuth(); // ✅ Dùng context
-  const [isDark, setIsDark] = useState(false);
+  const { theme, setTheme } = useTheme();
   const [isPending, startTransition] = useTransition();
 
   const handleLogin = () => {
@@ -54,11 +55,7 @@ export default function SharedHeader({
   };
 
   const handleToggleTheme = (toDark: boolean) => {
-    const isCurrentlyDark = document.documentElement.classList.contains('dark');
-    if (toDark !== isCurrentlyDark) {
-      document.documentElement.classList.toggle('dark');
-      setIsDark(toDark);
-    }
+    setTheme(toDark ? 'dark' : 'light');
   };
 
   const getFallback = (name: string) =>
@@ -194,7 +191,7 @@ export default function SharedHeader({
                       <DropdownMenuPortal>
                         <DropdownMenuSubContent className="min-w-[140px]">
                           <DropdownMenuRadioGroup
-                            value={isDark ? 'dark' : 'light'}
+                            value={theme}
                             onValueChange={(value) =>
                               handleToggleTheme(value === 'dark')
                             }

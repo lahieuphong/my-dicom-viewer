@@ -5,18 +5,35 @@ import { AuthProvider } from '@/context/AuthContext';
 import { PatientProvider } from '@/context/PatientContext';
 import { StudiesProvider } from '@/context/StudiesContext';
 
-import { Toaster } from 'sonner';
+import { Toaster } from '@/components/ui/sonner';
 import CornerstonePrewarm from '@/components/CornerstonePrewarm';
 
 export const metadata = {
   title: 'DICOM Viewer',
 };
 
+const themeInitScript = `
+(function() {
+  try {
+    var storedTheme = window.localStorage.getItem('theme');
+    var theme = storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : 'dark';
+    var root = document.documentElement;
+    root.classList.toggle('dark', theme === 'dark');
+    root.style.colorScheme = theme;
+  } catch (_) {
+    document.documentElement.classList.add('dark');
+    document.documentElement.style.colorScheme = 'dark';
+  }
+})();
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className="h-full dark" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
+        <meta name="color-scheme" content="dark light" />
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <title>{metadata.title}</title>
         <link rel="icon" href="/HVTT.ico" />
         <link
@@ -25,7 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
-      <body className="transition-colors duration-300">
+      <body className="min-h-full bg-background text-foreground transition-colors duration-300">
         {/* Client component sẽ prewarm Cornerstone (tools + loader) */}
         <CornerstonePrewarm />
         <ThemeProvider>
@@ -38,9 +55,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </StudiesProvider>
             </PatientProvider>
           </AuthProvider>
-        </ThemeProvider>
 
-        <Toaster position="top-right" richColors />
+          <Toaster position="top-right" richColors />
+        </ThemeProvider>
       </body>
     </html>
   );
