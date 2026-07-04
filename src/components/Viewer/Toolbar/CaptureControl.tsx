@@ -71,7 +71,7 @@ function FormatDropdown({
         className="w-44 p-1 bg-white dark:bg-card border border-border rounded-lg shadow-md"
       >
         <DropdownMenuItem
-          className="flex items-center justify-between gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted/20 dark:hover:bg-white/5"
+          className="flex items-center justify-between gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted"
           onClick={() => onChange('png')}
         >
           <div className="flex items-center gap-3">
@@ -82,7 +82,7 @@ function FormatDropdown({
         </DropdownMenuItem>
 
         <DropdownMenuItem
-          className="flex items-center justify-between gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted/20 dark:hover:bg-white/5"
+          className="flex items-center justify-between gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted"
           onClick={() => onChange('jpeg')}
         >
           <div className="flex items-center gap-3">

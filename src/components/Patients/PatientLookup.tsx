@@ -101,7 +101,7 @@ export default function PatientLookup() {
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button
               type="submit"
-              className="w-full h-10 md:h-12 text-sm md:text-base font-medium bg-gradient-to-r from-blue-400 to-blue-600 hover:from-blue-500 hover:to-blue-500 text-white rounded-md"
+              className="w-full h-10 md:h-12 text-sm md:text-base font-medium bg-gradient-to-r from-blue-400 to-blue-600 hover:from-muted hover:to-muted hover:text-foreground text-white rounded-md"
               disabled={isPending}
             >
               Tra cứu Bệnh án

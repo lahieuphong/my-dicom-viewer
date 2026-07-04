@@ -130,7 +130,7 @@ export default function SharedHeader({
               {showSecurity && (
                 <Label
                   htmlFor="security"
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm md:text-base font-medium border border-green-600 dark:border-green-300 text-green-600 dark:text-green-300 rounded-md cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm md:text-base font-medium border border-green-600 dark:border-green-300 text-green-600 dark:text-green-300 rounded-md cursor-pointer hover:bg-muted transition-colors"
                 >
                   <i className="fas fa-shield-alt text-base" />
                   <span className="hidden md:inline">Bảo mật</span>
