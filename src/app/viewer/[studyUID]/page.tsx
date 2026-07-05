@@ -15,7 +15,7 @@ export default function ViewerPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-black">
+    <div className="flex flex-col h-screen overflow-hidden bg-background text-foreground">
       {/* Header cố định, không scroll */}
       <SharedHeader
         showBackButton

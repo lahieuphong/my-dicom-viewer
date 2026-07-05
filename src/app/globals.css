@@ -76,6 +76,7 @@
   --sidebar-accent-foreground: #000000;
   --sidebar-border: #e5e7eb;
   --sidebar-ring: #6366f1;
+  --viewport-background: #ffffff;
 }
 
 .dark {
@@ -110,6 +111,7 @@
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #2d2d2d;
   --sidebar-ring: #8b5cf6;
+  --viewport-background: #000000;
 }
 
 @layer base {
@@ -150,7 +152,7 @@
   position: relative;
   width: 100%;
   height: 100%;
-  background: black;
+  background: var(--viewport-background);
   overflow: hidden;
 }
 
@@ -158,6 +160,7 @@
   position: absolute;
   inset: 0;
   display: block;
+  background: var(--viewport-background);
 }
 
 /* src/styles/globals.css (hoặc file css chung) */

@@ -147,12 +147,14 @@ export function useRenderingEngine({
   mergedSeriesMap,
   voiDefaults,
   onFrameIndexChange,
+  viewportBackground,
 }: {
   elRef: React.RefObject<HTMLDivElement | null>;
   selectedSeriesId: string;
   mergedSeriesMap: Record<string, { files: string[]; metadata: any }>;
   voiDefaults: Record<string, { lower: number; upper: number }>;
   onFrameIndexChange?: (index: number) => void;
+  viewportBackground?: [number, number, number];
 }) {
   const renderingEngineRef = useRef<RenderingEngine | null>(null);
   const [viewportInstance, setViewportInstance] = useState<StackViewport | null>(null);
@@ -338,7 +340,14 @@ export function useRenderingEngine({
         await sleep(80);
 
         try {
-          await engine.setViewports?.([{ viewportId: VIEWPORT_ID, type: viewportType, element: mountEl }]);
+          await engine.setViewports?.([{
+            viewportId: VIEWPORT_ID,
+            type: viewportType,
+            element: mountEl,
+            defaultOptions: {
+              background: viewportBackground ?? [0, 0, 0],
+            },
+          }]);
         } catch (err) {}
 
         try { normalizeCanvasAndContext(mountEl); } catch {}
@@ -840,7 +849,7 @@ export function useRenderingEngine({
       } catch (e) {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSeriesId, imageFilesJson, voiDefaults, elRef]);
+  }, [selectedSeriesId, imageFilesJson, voiDefaults, elRef, viewportBackground]);
 
   return { renderingEngineRef, viewportInstance, viewportEl };
 }
