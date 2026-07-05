@@ -1,4 +1,4 @@
-// src/components/Viewer/SrNameDialog.tsx
+// src/components/Viewer/SR/SrNameDialog.tsx
 'use client';
 import React, { useEffect, useState } from 'react';
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from '@/components/ui/dialog';

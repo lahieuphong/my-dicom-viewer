@@ -4,8 +4,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import type { Series } from '@/lib/pacs/services';
-import MeasurementStats from '@/components/Viewer/Measurement/MeasurementStats';
-import EditLabelDialog from '@/components/Viewer/Measurement/EditLabelDialog';
 import { cn, formatStudyDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,6 +13,9 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import { safeGetEnabledElement as safeGetEnabled } from '@/lib/cornerstoneHelpers';
+
+import EditLabelDialog from './EditLabelDialog';
+import MeasurementStats from './MeasurementStats';
 
 interface MeasurementPanelProps {
   measurements: AnnotationMeasurement[];

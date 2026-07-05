@@ -1,4 +1,4 @@
-// // src/components/Viewer/SrPanel.tsx
+// // src/components/Viewer/SR/SrPanel.tsx
 // 'use client';
 
 // import React, { useState } from 'react';

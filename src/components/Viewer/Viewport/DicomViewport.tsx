@@ -1,4 +1,4 @@
-// src/components/Viewer/DicomViewport.tsx
+// src/components/Viewer/Viewport/DicomViewport.tsx
 'use client';
 import React from 'react';
 import { VIEWPORT_ID } from '@/constants/viewport';

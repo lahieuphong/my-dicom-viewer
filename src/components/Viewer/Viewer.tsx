@@ -12,11 +12,8 @@ import {
 import { imageLoader } from '@cornerstonejs/core';
 
 import { Loading } from '@/components/ui/loading';
-import Toolbar from '@/components/Viewer/Toolbar/ViewerToolbar';
-import DicomViewport from '@/components/Viewer/DicomViewport';
-import ViewportOverlay from '@/components/Viewer/ViewportOverlay';
-import SeriesSidebar from '@/components/Viewer/SeriesSidebar';
-import MeasurementPanel from '@/components/Viewer/Measurement/MeasurementPanel';
+import ViewerWorkspace from '@/components/Viewer/Workspace';
+import { useBatchedFrameState } from '@/hooks/useBatchedFrameState';
 
 import {
   ToolGroupManager,
@@ -38,14 +35,11 @@ import { useResetViewer } from '@/hooks/useResetViewer';
 import { useCine } from '@/hooks/useCine';
 import useViewerLayout from '@/hooks/useViewerLayout';
 
-import { Button } from '@/components/ui/button';
-
 import type { Series } from '@/lib/pacs/services';
 
 import { useMeasurementBridge } from '@/hooks/useMeasurementBridge';
 import { useSrExport } from '@/hooks/useSrExport';
 import { measurementToolIDs, toolNameMap } from '@/hooks/useToolManager';
-import SrNameDialog from '@/components/Viewer/SrNameDialog';
 import { ensureAnnotationAvailable } from '@/lib/annotationUtils';
 import { useRenderingEngine } from '@/hooks/useRenderingEngine';
 import { useEnsureImageRendered } from '@/hooks/useEnsureImageRendered';
@@ -55,7 +49,6 @@ import useImageReadiness from '@/hooks/useImageReadiness';
 import { enableElement } from '@/lib/enableElement';
 
 import { useForceZoomOne } from '@/hooks/useForceZoomOne';
-import ViewportLoadingOverlay from '@/components/Viewer/ViewportLoadingOverlay';
 
 
 import { normalizeId, getEnabledElementSafeLocal, safeInspect, safeInspectSimple } from '@/lib/viewer/dom';
@@ -72,20 +65,9 @@ import { disableReleaseGraphicsResourcesGlobally } from '@/lib/cornerstone';
 import { ATTEMPTS_ATTACH, ATTEMPTS_ANNOT } from '@/lib/viewer/constants';
 
 
-// Thay thế dòng khai báo component bằng đoạn sau:
-const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: string }) => {
-  const dbg = debugLabel ?? 'Viewer';
-
+const Viewer = ({ studyUID }: { studyUID: string; debugLabel?: string }) => {
   // cooldown (ms) sau khi attach hoàn tất: watchdog/fallback sẽ tôn trọng khoảng này
   const COOLDOWN_AFTER_ATTACH_MS = 3000;
-
-  // Log mount / unmount of Viewer component
-  useEffect(() => {
-    const t = Date.now();
-    return () => {
-    };
-  }, [dbg]);
-
 
   const viewportId = VIEWPORT_ID;
 
@@ -105,52 +87,11 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
 
   const [activeTool, setActiveTool] = useState<ToolID>('adjust');
 
-  const [currentFrame, setCurrentFrame] = useState(1);
-  const currentFrameRef = useRef(1);
-  const frameUiTimerRef = useRef<number | null>(null);
-  const pendingFrameRef = useRef<number | null>(null);
-  const lastFrameUiUpdateRef = useRef(0);
-
-  useEffect(() => {
-    currentFrameRef.current = currentFrame;
-  }, [currentFrame]);
-
-  useEffect(() => {
-    return () => {
-      if (frameUiTimerRef.current != null) {
-        window.clearTimeout(frameUiTimerRef.current);
-        frameUiTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  const setCurrentFrameBatched = useCallback((frame: number) => {
-    const next = Math.max(1, Math.floor(Number(frame) || 1));
-    pendingFrameRef.current = next;
-
-    const commit = () => {
-      frameUiTimerRef.current = null;
-      const pending = pendingFrameRef.current;
-      pendingFrameRef.current = null;
-      if (typeof pending !== 'number' || currentFrameRef.current === pending) return;
-      currentFrameRef.current = pending;
-      lastFrameUiUpdateRef.current = performance.now();
-      setCurrentFrame(pending);
-    };
-
-    const now = performance.now();
-    const elapsed = now - lastFrameUiUpdateRef.current;
-    const minIntervalMs = 66;
-
-    if (elapsed >= minIntervalMs && frameUiTimerRef.current == null) {
-      commit();
-      return;
-    }
-
-    if (frameUiTimerRef.current == null) {
-      frameUiTimerRef.current = window.setTimeout(commit, Math.max(0, minIntervalMs - elapsed));
-    }
-  }, []);
+  const {
+    currentFrame,
+    setCurrentFrame,
+    setCurrentFrameBatched,
+  } = useBatchedFrameState(1);
 
   const [voiRange, setVoiRange] = useState<{ lower: number; upper: number } | null>(null);
   const [fps, setFps] = useState(24);
@@ -252,15 +193,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
     enabled: true,   // 👈 bật/tắt cực dễ
     delayMs: 80,     // 👈 có thể chỉnh nếu cần
   });
-
-
-  // Log when viewportEl/viewportInstance change (quick watch)
-  useEffect(() => {
-  }, [dbg, viewportInstance]);
-
-  useEffect(() => {
-  }, [dbg, viewportEl]);
-
 
   // đặt gần các useEffect khác, trong body Viewer component
   useEffect(() => {
@@ -1661,215 +1593,79 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
   if (!studyMeta) return <Loading fullScreen message="Đang tải thông tin Study..." />;
 
   return (
-    <>
-      {loadingSeries && <Loading fullScreen message="Đang tải thông tin series..." />}
-
-      {!loadingSeries && mobileSeriesOpen && (
-        <SeriesSidebar
-          mobileSidebarOpen={true}
-          onCloseMobile={() => setMobileSeriesOpen(false)}
-          className="md:hidden"
-          seriesMap={mergedSeriesMap}
-          selectedSeries={selectedSeries}
-          onSelectSeries={(uid) => {
-            prevSeriesRef.current = selectedSeries;
-            setIsPlaying(false);
-            setCurrentFrame(1);
-            setVoiRange(null);
-            setSidebarLoadingSafe(true);
-            setSelectedSeries(uid);
-            setMobileSeriesOpen(false);
-          }}
-          studyDate={studyMeta.studyDate}
-          studyDescription={studyMeta.studyDescription}
-          collapsed={sidebarCollapsed}
-          setCollapsed={setSidebarCollapsed}
-          loadedSrList={loadedSrList}
-          activeSrId={activeSrId}
-          onSelectSr={handleSelectSr}
-          srGroups={srGroups}
-          studyUID={studyUID}
-          viewportId={VIEWPORT_ID}
-        />
-      )}
-
-      {!loadingSeries && mobileMeasurementsOpen && (
-        <MeasurementPanel
-          mobileSidebarOpen={true}
-          onCloseMobile={() => setMobileMeasurementsOpen(false)}
-          className="md:hidden"
-          measurements={measurementsForPanel}
-          collapsed={measurementCollapsed}
-          setCollapsed={setMeasurementCollapsed}
-          onUpdateLabel={updateLabel}
-          onSelectMeasurement={(m) => {
-            // fire-and-forget wrapper that prevents re-entrancy and ensures attach
-            void doUserSelectMeasurement(m);
-          }}
-          seriesMap={mergedSeriesMap}
-          seriesInstanceUID={mergedSeriesMap[selectedSeries]?.metadata?.seriesInstanceUID}
-          refreshMeasurements={refreshMeasurements}
-          currentFrame={currentFrame}
-          totalFrames={mergedSeriesMap[selectedSeries]?.files.length ?? 0}
-          viewportEl={viewportEl}
-          selectedMeasurementUID={selectedMeasurementUID}
-          studyDate={studyMeta.studyDate}
-          onRemoveMeasurement={handleRemoveMeasurement}
-          hiddenMeasurements={hiddenMeasurements}
-          onToggleVisibility={handleToggleVisibility}
-          onExportJSON={() => openSrNameDialog('json')}
-          onExportDICOMSR={() => openSrNameDialog('dicom')}
-          srList={loadedSrList}
-          activeSrId={activeSrId}
-          onSelectSr={handleSelectSr}
-        />
-      )}
-
-      <div
-        className="h-full items-stretch min-h-0"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: gridCols,
-        }}
-      >
-        {!loadingSeries && (
-          <SeriesSidebar
-            className="hidden md:block"
-            seriesMap={mergedSeriesMap}
-            selectedSeries={selectedSeries}
-            onSelectSeries={(uid) => {
-              prevSeriesRef.current = selectedSeries;
-              setIsPlaying(false);
-              setCurrentFrame(1);
-              setVoiRange(null);
-              setSidebarLoadingSafe(true);
-              setSelectedSeries(uid);
-            }}
-            studyDate={studyMeta.studyDate}
-            studyDescription={studyMeta.studyDescription}
-            collapsed={sidebarCollapsed}
-            setCollapsed={setSidebarCollapsed}
-            loadedSrList={loadedSrList}
-            activeSrId={activeSrId}
-            onSelectSr={handleSelectSr}
-            srGroups={srGroups}
-            studyUID={studyUID}
-            viewportId={VIEWPORT_ID}
-          />
-        )}
-
-        <main className="flex flex-col w-full h-full min-h-0">
-          {!isSR && (
-            <>
-              <div
-                className="
-                  flex items-center justify-between md:hidden w-full p-2
-                  bg-background dark:bg-background-dark
-                  border-b border-border dark:border-border-dark
-                  z-10
-                "
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="border border-border dark:border-border-dark"
-                  onClick={() => { blurViewportActiveElement(); setMobileSeriesOpen(true); }}
-                  aria-label="Open studies"
-                >
-                  <i className="fas fa-bars text-foreground dark:text-foreground-dark" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="border border-border dark:border-border-dark"
-                  onClick={() => { blurViewportActiveElement(); setMobileMeasurementsOpen(true); }}
-                  aria-label="Open measurements"
-                >
-                  <i className="fas fa-ruler text-foreground dark:text-foreground-dark" />
-                </Button>
-              </div>
-
-              <div className="sticky top-0 z-20 w-full bg-card border-b border-border">
-                <Toolbar
-                  activeTool={activeTool}
-                  onSelectTool={handleSelectTool}
-                  onReset={resetViewer}
-                  onRotate90={() => rotate()}
-                  onFlipHorizontal={() => flipHorizontal()}
-                  isPlaying={isPlaying}
-                  fps={fps}
-                  onTogglePlay={() => setIsPlaying((v) => !v)}
-                  onFpsChange={setFps}
-                  isLoading={loadingStack}
-                  viewportEl={viewportEl}
-                  isSeriesSR={isSeriesReadOnly || isCreatingSr}
-                />
-              </div>
-
-              <div className="relative flex-1 min-h-0 w-full">
-                {/* overlay loading trên viewport khi chưa có image */}
-                <ViewportLoadingOverlay visible={loadingStack || !imageAvailable} progress={loadingProgress} />
-
-                <DicomViewport
-                  elementRef={elRef}
-                  crosshair={activeTool !== 'adjust'}
-                />
-                <ViewportOverlay
-                  studyDate={studyMeta.studyDate}
-                  viewportEl={viewportEl}
-                  currentFrame={currentFrame}
-                  totalFrames={mergedSeriesMap[selectedSeries]?.files.length ?? 0}
-                />
-              </div>
-
-            </>
-          )}
-        </main>
-
-        {!loadingSeries && (
-          <MeasurementPanel
-            className="hidden md:block"
-            measurements={measurementsForPanel}
-            collapsed={measurementCollapsed}
-            setCollapsed={setMeasurementCollapsed}
-            onUpdateLabel={updateLabel}
-            onSelectMeasurement={(m) => {
-              // fire-and-forget wrapper that prevents re-entrancy and ensures attach
-              void doUserSelectMeasurement(m);
-            }}
-            seriesMap={mergedSeriesMap}
-            seriesInstanceUID={mergedSeriesMap[selectedSeries]?.metadata?.seriesInstanceUID}
-            refreshMeasurements={refreshMeasurements}
-            currentFrame={currentFrame}
-            totalFrames={mergedSeriesMap[selectedSeries]?.files.length ?? 0}
-            viewportEl={viewportEl}
-            selectedMeasurementUID={selectedMeasurementUID}
-            studyDate={studyMeta.studyDate}
-            onRemoveMeasurement={handleRemoveMeasurement}
-            hiddenMeasurements={hiddenMeasurements}
-            onToggleVisibility={handleToggleVisibility}
-            onExportJSON={() => openSrNameDialog('json')}
-            onExportDICOMSR={() => openSrNameDialog('dicom')}
-            srList={loadedSrList}
-            activeSrId={activeSrId}
-            onSelectSr={handleSelectSr}
-          />
-        )}
-      </div>
-
-      <SrNameDialog
-        open={srDialogOpen}
-        defaultName={srNameValue || ''}
-        isSaving={isCreatingSr}
-        onCancel={cancelSrDialog}
-        onSave={(name: string) => {
-          const trimmed = name?.trim?.() ?? '';
-          if (!trimmed) return;
-          executeSrExportWithName(trimmed);
-        }}
-      />
-
-    </>
+    <ViewerWorkspace
+      loadingSeries={loadingSeries}
+      gridCols={gridCols}
+      isSR={isSR}
+      studyUID={studyUID}
+      studyDate={studyMeta.studyDate}
+      studyDescription={studyMeta.studyDescription}
+      seriesMap={mergedSeriesMap}
+      selectedSeries={selectedSeries}
+      onSelectSeries={(uid) => {
+        prevSeriesRef.current = selectedSeries;
+        setIsPlaying(false);
+        setCurrentFrame(1);
+        setVoiRange(null);
+        setSidebarLoadingSafe(true);
+        setSelectedSeries(uid);
+      }}
+      onSelectMobileSeries={(uid) => {
+        prevSeriesRef.current = selectedSeries;
+        setIsPlaying(false);
+        setCurrentFrame(1);
+        setVoiRange(null);
+        setSidebarLoadingSafe(true);
+        setSelectedSeries(uid);
+        setMobileSeriesOpen(false);
+      }}
+      sidebarCollapsed={sidebarCollapsed}
+      setSidebarCollapsed={setSidebarCollapsed}
+      mobileSeriesOpen={mobileSeriesOpen}
+      setMobileSeriesOpen={setMobileSeriesOpen}
+      loadedSrList={loadedSrList}
+      activeSrId={activeSrId}
+      onSelectSr={handleSelectSr}
+      srGroups={srGroups}
+      mobileMeasurementsOpen={mobileMeasurementsOpen}
+      setMobileMeasurementsOpen={setMobileMeasurementsOpen}
+      measurements={measurementsForPanel}
+      measurementCollapsed={measurementCollapsed}
+      setMeasurementCollapsed={setMeasurementCollapsed}
+      onUpdateLabel={updateLabel}
+      onSelectMeasurement={(m) => {
+        void doUserSelectMeasurement(m);
+      }}
+      onRemoveMeasurement={handleRemoveMeasurement}
+      refreshMeasurements={refreshMeasurements}
+      hiddenMeasurements={hiddenMeasurements}
+      onToggleVisibility={handleToggleVisibility}
+      onExportJSON={() => openSrNameDialog('json')}
+      onExportDICOMSR={() => openSrNameDialog('dicom')}
+      currentFrame={currentFrame}
+      viewportEl={viewportEl}
+      selectedMeasurementUID={selectedMeasurementUID}
+      activeTool={activeTool}
+      onSelectTool={handleSelectTool}
+      onReset={resetViewer}
+      onRotate90={() => rotate()}
+      onFlipHorizontal={() => flipHorizontal()}
+      isPlaying={isPlaying}
+      fps={fps}
+      onTogglePlay={() => setIsPlaying((v) => !v)}
+      onFpsChange={setFps}
+      loadingStack={loadingStack}
+      imageAvailable={imageAvailable}
+      loadingProgress={loadingProgress}
+      isSeriesToolbarReadOnly={isSeriesReadOnly || isCreatingSr}
+      elementRef={elRef}
+      srDialogOpen={srDialogOpen}
+      srNameValue={srNameValue}
+      isCreatingSr={isCreatingSr}
+      onCancelSrDialog={cancelSrDialog}
+      onSaveSrDialog={executeSrExportWithName}
+      blurViewportActiveElement={blurViewportActiveElement}
+    />
   );
 };
 

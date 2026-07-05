@@ -10,10 +10,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuGroup,
 } from '@/components/ui/dropdown-menu';
-
-import CineControls from '@/components/Viewer/Toolbar/CineControls';
-import CaptureControl from '@/components/Viewer/Toolbar/CaptureControl';
 import { ToolID } from '@/hooks/useToolManager';
+
+import CaptureControl from './CaptureControl';
+import CineControls from './CineControls';
 
 interface ToolbarProps {
   activeTool: ToolID;

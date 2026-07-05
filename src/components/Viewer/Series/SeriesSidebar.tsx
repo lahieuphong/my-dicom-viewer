@@ -1,4 +1,4 @@
-// src/components/Viewer/SeriesSidebar.tsx
+// src/components/Viewer/Series/SeriesSidebar.tsx
 'use client';
 
 import React, { useState } from 'react';

@@ -1,4 +1,4 @@
-// src/components/Viewer/ViewportLoadingOverlay.tsx
+// src/components/Viewer/Viewport/ViewportLoadingOverlay.tsx
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 

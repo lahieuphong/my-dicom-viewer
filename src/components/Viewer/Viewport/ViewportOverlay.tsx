@@ -1,4 +1,4 @@
-// src/components/Viewer/ViewportOverlay.tsx
+// src/components/Viewer/Viewport/ViewportOverlay.tsx
 'use client';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getEnabledElement, Enums as CoreEnums } from '@cornerstonejs/core';
