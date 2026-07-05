@@ -2,6 +2,8 @@
 'use client';
 
 import React from 'react';
+import { BrandLoadingSpinner } from '@/components/ui/brand-loading';
+import { cn } from '@/lib/utils';
 
 export default function Loading({
   message,
@@ -12,17 +14,16 @@ export default function Loading({
 }) {
   return (
     <div
-      className={`${
+      className={cn(
         fullScreen
-          ? 'fixed inset-0 z-50 flex items-center justify-center bg-background'
-          : 'flex items-center justify-center bg-background dark:bg-background'
-      }`}
+          ? 'fixed inset-0 z-[80] flex items-center justify-center bg-black'
+          : 'flex min-h-[220px] items-center justify-center bg-black'
+      )}
+      aria-busy="true"
+      aria-live="polite"
     >
-      <div className="flex flex-col items-center space-y-4">
-        {/* spinner: neutral muted border with transparent top */}
-        <div className="w-12 h-12 border-4 border-muted border-t-transparent rounded-full animate-spin" />
-        {message && <p className="text-foreground text-sm">{message}</p>}
-      </div>
+      <BrandLoadingSpinner />
+      <span className="sr-only">{message ?? 'Đang tải'}</span>
     </div>
   );
 }
