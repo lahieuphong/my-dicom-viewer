@@ -279,16 +279,9 @@ function forceDeactivateAllTools(tg: any) {
 
 /* ================= Hook implementation ================= */
 
-// DEV flag used for sparse logging
-const __DEV__ = typeof process !== 'undefined' ? process.env.NODE_ENV === 'development' : false;
-
 export function useToolManager() {
   const [isToolReady, setIsToolReady] = useState(false);
   const addedToolNames = useRef<Set<string>>(new Set());
-
-  // DEV guard + one-time snapshot logger
-  const isDev = __DEV__;
-  const hasLoggedSnapshot = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -298,12 +291,10 @@ export function useToolManager() {
       try {
         // registerToolsOnce is idempotent and will add classes & ToolGroup config once
         registerToolsOnce();
-      } catch (e) {
-        if (isDev) console.warn('[useToolManager] registerToolsOnce failed', e);
-      }
+      } catch {}
       setIsToolReady(true);
     })();
-  }, [isDev]);
+  }, []);
 
   const activateTool = useCallback((tool: ToolID, opts?: { isSeriesSR?: boolean }) => {
     // UI-only shortcuts
@@ -319,37 +310,11 @@ export function useToolManager() {
 
     const tg = ToolGroupManager.getToolGroup(TOOL_GROUP);
 
-    // Snapshot for debugging — only in dev and only once
-    try {
-      const tgAny = tg as any;
-      const snapshot: any = {
-        exists: !!tg,
-        viewportIds:
-          tgAny && (typeof tgAny.getViewportIds === 'function'
-            ? tgAny.getViewportIds()
-            : (typeof tgAny.getViewports === 'function' ? tgAny.getViewports() : (tgAny.viewports ?? tgAny.viewportIds ?? undefined))),
-        tools: tgAny?.tools ?? (typeof tgAny.getTools === 'function' ? tgAny.getTools() : undefined),
-        toolNames: typeof tgAny.getToolNames === 'function' ? tgAny.getToolNames() : undefined,
-        lengthConfig: typeof tgAny.getToolConfiguration === 'function' ? tgAny.getToolConfiguration?.(LengthTool.toolName) : undefined,
-        toolGroupId: (tgAny && tgAny.id) || TOOL_GROUP,
-      };
-
-      // Only verbose in dev, and only once to avoid spamming on repeated activations.
-      if (isDev && !hasLoggedSnapshot.current) {
-        try { console.debug('[useToolManager] toolGroup snapshot', snapshot); } catch {}
-        hasLoggedSnapshot.current = true;
-      }
-    } catch (e) {
-      if (isDev) try { console.debug('[useToolManager] toolGroup snapshot failed', e); } catch {}
-    }
-
     if (!tg) {
-      if (isDev) console.warn('[useToolManager] ToolGroup not found:', TOOL_GROUP);
       return false;
     }
 
     if (isSeriesSR && measurementToolIDs.includes(tool)) {
-      if (isDev) console.warn('[useToolManager] Blocking measurement tool because series is SR', tool);
       const name = toolNameMap[tool];
       try {
         if (toolGroupHasTool(tg, name)) {
@@ -362,13 +327,11 @@ export function useToolManager() {
 
     const toolName = toolNameMap[tool];
     if (!toolName) {
-      if (isDev) console.warn('[useToolManager] Unknown tool', tool);
       return false;
     }
 
     // Basic validation: only attempt activation for known cornerstone tools
     if (!CORNERSTONE_TOOL_NAMES.includes(toolName)) {
-      if (isDev) console.warn('[useToolManager] Not a registered Cornerstone tool (skipping activation):', toolName);
       return false;
     }
 
@@ -379,21 +342,14 @@ export function useToolManager() {
         const added = tryAddToolToGroup(tg, toolName, toolClass);
         if (added) {
           addedToolNames.current.add(toolName);
-        } else {
-          // warn but continue — some ToolGroup flavors don't require explicit add
-          if (isDev) console.debug('[useToolManager] tryAddToolToGroup did not confirm addition (may be fine)', toolName);
         }
       }
-    } catch (e) {
-      if (isDev) console.warn('[useToolManager] tryAddToolToGroup error', e);
-    }
+    } catch {}
 
     // Deactivate others to avoid input conflicts
     try {
       forceDeactivateAllTools(tg);
-    } catch (e) {
-      if (isDev) console.warn('[useToolManager] forceDeactivateAllTools failed', e);
-    }
+    } catch {}
 
     // Composite adjust (WindowLevel + Pan + Zoom)
     if (tool === 'adjust') {
@@ -415,10 +371,8 @@ export function useToolManager() {
         const ok3 = trySetToolActive(tg, zoom, [{ mouseButton: ToolEnums.MouseBindings.Secondary }]);
 
         const result = ok1 || ok2 || ok3;
-        if (isDev) console.debug('[useToolManager] activate adjust result', { ok1, ok2, ok3, result });
         return result;
-      } catch (e) {
-        if (isDev) console.warn('[useToolManager] activate adjust failed', e);
+      } catch {
         return false;
       }
     }
@@ -427,21 +381,17 @@ export function useToolManager() {
     try {
       try { tg.setToolConfiguration?.(toolName, { bindings: [{ mouseButton: ToolEnums.MouseBindings.Primary }] }); } catch {}
       const activated = trySetToolActive(tg, toolName, [{ mouseButton: ToolEnums.MouseBindings.Primary }]);
-      if (isDev) console.debug('[useToolManager] trySetToolActive result', { toolName, activated });
       if (activated) return true;
 
       // Fallback without binding options
       const fallback = trySetToolActive(tg, toolName, undefined);
-      if (isDev) console.debug('[useToolManager] trySetToolActive fallback result', { toolName, fallback });
       if (fallback) return true;
 
-      if (isDev) console.error('[useToolManager] failed to activate tool', toolName);
       return false;
-    } catch (e) {
-      if (isDev) console.error('[useToolManager] unexpected activate error', e);
+    } catch {
       return false;
     }
-  }, [isDev]);
+  }, []);
 
   return {
     activateTool,

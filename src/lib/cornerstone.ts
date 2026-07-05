@@ -49,13 +49,8 @@ function wrapReleaseGraphicsResourcesIfNeeded(obj: any) {
         try {
           // Access property with Reflect.get inside try/catch (may throw for some exotic getters)
           val = Reflect.get(obj, key);
-        } catch (getErr) {
+        } catch {
           // If reading the property throws, skip this key
-          if (process.env.NODE_ENV === 'development') {
-            try {
-              console.debug('[cornerstone] wrapRelease: skipping key (getter threw)', key, getErr);
-            } catch {}
-          }
           continue;
         }
 
@@ -103,11 +98,8 @@ function wrapReleaseGraphicsResourcesIfNeeded(obj: any) {
             } catch {
               // can't redefine - ignore
             }
-          } catch (wrapErr) {
+          } catch {
             // swallow per-key errors
-            if (process.env.NODE_ENV === 'development') {
-              try { console.debug('[cornerstone] wrapRelease per-key wrapErr', key, wrapErr); } catch {}
-            }
           }
         } else {
           // if property not present or not function, try to set a safe noop if possible
@@ -119,19 +111,10 @@ function wrapReleaseGraphicsResourcesIfNeeded(obj: any) {
         }
       } catch (inner) {
         // swallow per-key errors
-        if (process.env.NODE_ENV === 'development') {
-          try { console.debug('[cornerstone] wrapReleaseGraphicsResources: per-key error', key, inner); } catch {}
-        }
       }
     }
-  } catch (outer) {
-    if (process.env.NODE_ENV === 'development') {
-      try {
-        console.debug('[cornerstone] wrapReleaseGraphicsResources top-level error', outer);
-        (window as any).__viewerLog = (window as any).__viewerLog || [];
-        (window as any).__viewerLog.push({ t: Date.now(), msg: `wrapRelease:top err=${String(outer)}` });
-      } catch {}
-    }
+  } catch {
+    // swallow top-level wrap errors
   }
 }
 

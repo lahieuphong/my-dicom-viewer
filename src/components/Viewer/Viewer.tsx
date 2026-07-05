@@ -55,7 +55,6 @@ import useImageReadiness from '@/hooks/useImageReadiness';
 import { enableElement } from '@/lib/enableElement';
 
 import { useForceZoomOne } from '@/hooks/useForceZoomOne';
-import DebugOverlay from '@/components/Viewer/DebugOverlay';
 import ViewportLoadingOverlay from '@/components/Viewer/ViewportLoadingOverlay';
 
 
@@ -1911,18 +1910,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
           executeSrExportWithName(trimmed);
         }}
       />
-
-      {process.env.NODE_ENV === 'development' && (
-        <DebugOverlay
-          renderingReady={!!(window as any).__cornerstoneReady}
-          cornerstoneImageLoader={(window as any).__cornerstoneImageLoader ?? null}
-          viewportEl={viewportEl}
-          viewportInstance={viewportInstance}
-          enabled={getEnabledElementSafeLocal(viewportEl)}
-          enabledHasImage={enabledHasImage}
-          imageCount={mergedSeriesMap[selectedSeries]?.files?.length ?? 0}
-        />
-      )}
 
     </>
   );

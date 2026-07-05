@@ -105,12 +105,6 @@ export function useMeasurementBridge({
         // Skip if UID was just removed (avoid re-attaching a just-removed annotation)
         try {
           if (recent && recent.has(uid)) {
-            if (process.env.NODE_ENV === 'development') {
-              try {
-                // eslint-disable-next-line no-console
-                console.debug('[useMeasurementBridge] skipping attach for recently removed', uid);
-              } catch {}
-            }
             continue;
           }
         } catch {

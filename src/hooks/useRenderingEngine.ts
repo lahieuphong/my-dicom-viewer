@@ -393,9 +393,6 @@ export function useRenderingEngine({
                     let currentIdx = -1;
                     try { if (typeof (vp as any).getCurrentImageIdIndex === 'function') currentIdx = (vp as any).getCurrentImageIdIndex(); } catch {}
                     if (currentIdx >= 0 && currentIdx !== targetIndex) {
-                      if (process.env.NODE_ENV === 'development') {
-                        console.debug('[vp.wrap] blocked vp.setStack due to recent user interaction', { currentIdx, targetIndex, sinceMs: now - lastUserTs });
-                      }
                       return false;
                     }
                   }
@@ -421,9 +418,6 @@ export function useRenderingEngine({
                       const currentIdx = (typeof (vp as any).getCurrentImageIdIndex === 'function') ? (vp as any).getCurrentImageIdIndex() : -1;
                       const targetIdx = ids.findIndex((x: string) => String(x) === String(id));
                       if (currentIdx >= 0 && targetIdx >= 0 && currentIdx !== targetIdx) {
-                        if (process.env.NODE_ENV === 'development') {
-                          console.debug('[vp.wrap] blocked vp.setImageId due to recent user interaction', { currentIdx, targetIdx, sinceMs: now - lastUserTs });
-                        }
                         return false;
                       }
                     } catch {}

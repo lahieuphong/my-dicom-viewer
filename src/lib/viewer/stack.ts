@@ -11,7 +11,6 @@ import {
   USER_COOLDOWN_MS,
 } from './constants'; // hoặc '@/lib/viewer/constants'
 import { wait } from '@/lib/utils/wait';
-import { logEnsureStackFailure } from './ensureStackLogger';
 
 // <- reuse centralized preload helper when caller doesn't provide one
 import { preloadImagesWithTimeout as sharedPreloadImagesWithTimeout } from '@/lib/viewer/preload';
@@ -42,8 +41,6 @@ export interface EnsureStackParams {
 
 /** IN-FLIGHT LOCK (prevent concurrent ensure for same viewportInstance) */
 const _ensuringMap = new WeakMap<any, boolean>(); // viewportInstance -> boolean
-
-const isDev = process.env.NODE_ENV === 'development';
 
 function pushViewerLog(evt: string, payload: Record<string, any> = {}) {
   try {
@@ -129,10 +126,6 @@ export async function loadImageSafe(imageId?: string | null): Promise<boolean> {
 
     return false;
   } catch (err) {
-    if (isDev) {
-      // eslint-disable-next-line no-console
-      console.debug('[stack] loadImageSafe failed for', imageId, err);
-    }
     pushViewerLog('stack.loadImageSafe.failed', { imageId, err: String(err) });
     return false;
   }
@@ -163,18 +156,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
   pushViewerLog('stack.start', { requestToken, imageCount: imageIds.length, desiredIndex });
 
   const devLogFalse = (reason: string) => {
-    try {
-      logEnsureStackFailure({
-        reason,
-        requestToken,
-        viewportId,
-        preserveCurrentIndex,
-        imageIds,
-        viewportEl,
-      });
-    } catch {
-      // never throw from logger
-    }
     pushViewerLog('stack.fail', { requestToken, reason });
   };
 
@@ -237,9 +218,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
 
       if (listsEqual && idxMatches) {
         pushViewerLog('stack.earlyExit.sameStackAndIndex', { requestToken });
-        if (isDev) {
-          console.debug('[ensureStackOnViewport] early-exit: viewport already has same stack+index');
-        }
         return true;
       }
     }
@@ -253,9 +231,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
     const lockedOwner = (viewportEl as any)?.dataset?.__stackLockedOwner ?? null;
     if (locked === '1' && lockedOwner) {
       pushViewerLog('stack.locked', { requestToken, lockedOwner });
-      if (isDev) {
-        console.debug('[stack.ensure] viewport is final-locked by owner, aborting', { lockedOwner });
-      }
       devLogFalse('final-lock');
       return false;
     }
@@ -263,9 +238,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
 
   if (viewportInstance && _ensuringMap.get(viewportInstance)) {
     pushViewerLog('stack.concurrentLock', { requestToken });
-    if (isDev) {
-      console.debug('[stack.ensure] concurrent ensure detected -> skipping');
-    }
     devLogFalse('concurrent-lock');
     return false;
   }
@@ -344,15 +316,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
               desiredIndex = typeof params.desiredIndex === 'number' ? params.desiredIndex : 0;
             }
             pushViewerLog('stack.preserveCurrentIndex', { requestToken, currentImageId, found, desiredIndex });
-            if (isDev) {
-              console.debug('[stack.ensure] preserve check', {
-                preserveCurrentIndex,
-                currentImageId,
-                foundIndex: found,
-                finalDesiredIndex: desiredIndex,
-                imageIdsLen: imageIds.length,
-              });
-            }
           } catch {
             desiredIndex = typeof params.desiredIndex === 'number' ? params.desiredIndex : 0;
           }
@@ -396,11 +359,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
 
         if (typeof currentIdx === 'number' && currentIdx >= 0 && currentIdx !== desiredIndex) {
           pushViewerLog('stack.userCooldown.abort', { requestToken, lastUserTs, now, currentIdx, desiredIndex });
-          if (isDev) {
-            console.debug(
-              `[stack] skipping attach because user interacted ${now - lastUserTs}ms ago, currentIdx=${currentIdx}, desired=${desiredIndex}`
-            );
-          }
           devLogFalse('user-cooldown');
           return false;
         }
@@ -422,15 +380,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
               if (typeof vp.setImageIndex === 'function' || typeof vp.setStack === 'function') {
                 // LOG before set
                 pushViewerLog('stack.tryAttach.setStart', { requestToken, method: typeof vp.setStack === 'function' ? 'setStack' : 'setImageIndex', targetIdx });
-                if (isDev) {
-                  console.debug('[TRACE stack] about to set stack', {
-                    method: typeof vp.setStack === 'function' ? 'setStack' : 'setImageIndex',
-                    desiredIndex: targetIdx,
-                    imageCount: imageIds.length,
-                    requestToken,
-                    viewportElTag: viewportEl?.tagName ?? null,
-                  });
-                }
 
                 try {
                   if (typeof vp.setImageIndex === 'function') {
@@ -493,9 +442,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
         }
       } catch (e) {
         pushViewerLog('stack.ensureImageRendered.error', { requestToken, err: String(e) });
-        if (isDev) {
-          console.debug('[stack] ensureImageRendered threw', e);
-        }
       }
     }
 
@@ -512,9 +458,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
       }
     } catch (e) {
       pushViewerLog('stack.preload.error', { requestToken, err: String(e) });
-      if (isDev) {
-        console.debug('[stack] preloadImagesWithTimeout failed', e);
-      }
     }
 
     /* ----------------------- Aggressive attempts to attach stack ----------------------- */
@@ -524,9 +467,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
       pushViewerLog('stack.attempt.start', { requestToken, attempt: i + 1, desiredIndex, imageCount: imageIds.length });
       if (shouldAbortBecauseSuperseded()) {
         pushViewerLog('stack.attempt.abortedSuperseded', { requestToken, attempt: i + 1 });
-        if (isDev) {
-          console.debug('[stack.ensure] aborted: superseded by newer request or final-lock', { requestToken, attempt: i + 1 });
-        }
         devLogFalse('concurrent-lock-or-superseded-or-final-lock');
         return false;
       }
@@ -534,16 +474,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
       try {
         // a) try viewportInstance.setStack
         if (viewportInstance && typeof viewportInstance.setStack === 'function') {
-          if (isDev) {
-            console.debug('[TRACE stack] about to set stack', {
-              method: 'setStack',
-              desiredIndex,
-              imageCount: imageIds.length,
-              attempt: i + 1,
-              requestToken,
-              viewportElTag: viewportEl?.tagName ?? null,
-            });
-          }
           try {
             await viewportInstance.setStack(imageIds, desiredIndex).catch((e: any) => {
               throw e;
@@ -554,15 +484,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
             throw err;
           }
         } else if (viewportInstance && (typeof viewportInstance.setImageId === 'function' || typeof viewportInstance.setImageIndex === 'function')) {
-          if (isDev) {
-            console.debug('[TRACE stack] about to set stack (setImageId/setImageIndex)', {
-              desiredIndex,
-              imageCount: imageIds.length,
-              attempt: i + 1,
-              requestToken,
-            });
-          }
-
           let currentIdx = -1;
           try {
             if (typeof viewportInstance.getCurrentImageIdIndex === 'function') {
@@ -598,15 +519,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
         } else {
           const eng: any = renderingEngineRef?.current;
           if (eng && typeof eng.setStacks === 'function') {
-            if (isDev) {
-              console.debug('[TRACE stack] about to set stack (engine.setStacks fallback)', {
-                desiredIndex,
-                imageCount: imageIds.length,
-                attempt: i + 1,
-                requestToken,
-                viewportElTag: viewportEl?.tagName ?? null,
-              });
-            }
             try {
               eng.setStacks([{ viewportId, imageIds, index: desiredIndex }]);
               pushViewerLog('stack.attempt.engineSet.done', { requestToken, attempt: i + 1 });
@@ -615,10 +527,8 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
             }
           }
         }
-      } catch (err) {
-        if (isDev) {
-          console.debug(`[stack] attempt ${i + 1} setStack/setImageId failed`, err);
-        }
+      } catch {
+        // best-effort attach attempt
       }
 
       // small wait then try to render
@@ -674,9 +584,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
       }
     } catch (err) {
       pushViewerLog('stack.finalCheck.error', { requestToken, err: String(err) });
-      if (isDev) {
-        console.debug('[stack] final enabled check threw', err);
-      }
     }
 
     try {
@@ -705,9 +612,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
 
             if (eq) {
               pushViewerLog('stack.finalCheck.enabledElementMatches', { requestToken });
-              if (process.env.NODE_ENV === 'development') {
-                console.debug('[stack.ensure] final-check succeeded: enabled element already holds same imageIds -> returning true');
-              }
               return true;
             }
           } catch {}
@@ -716,9 +620,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
         try {
           if ((en as any).image) {
             pushViewerLog('stack.finalCheck.enabledHasImage', { requestToken });
-            if (process.env.NODE_ENV === 'development') {
-              console.debug('[stack.ensure] final-check: enabled.image exists (single image) -> returning true');
-            }
             return true;
           }
         } catch {}
