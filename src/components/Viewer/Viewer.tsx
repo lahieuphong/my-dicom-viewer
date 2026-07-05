@@ -40,13 +40,13 @@ import type { Series } from '@/lib/pacs/services';
 import { useMeasurementBridge } from '@/hooks/useMeasurementBridge';
 import { useSrExport } from '@/hooks/useSrExport';
 import { measurementToolIDs, toolNameMap } from '@/hooks/useToolManager';
-import { ensureAnnotationAvailable } from '@/lib/annotationUtils';
+import { ensureAnnotationAvailable } from '@/lib/cornerstone/annotations';
 import { useRenderingEngine } from '@/hooks/useRenderingEngine';
 import { useEnsureImageRendered } from '@/hooks/useEnsureImageRendered';
 import useMeasurementSelector from '@/hooks/useMeasurementSelector';
 
 import useImageReadiness from '@/hooks/useImageReadiness';
-import { enableElement } from '@/lib/enableElement';
+import { enableElement } from '@/lib/cornerstone/element';
 
 import { useForceZoomOne } from '@/hooks/useForceZoomOne';
 

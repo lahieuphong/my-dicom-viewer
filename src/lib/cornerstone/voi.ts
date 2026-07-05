@@ -1,4 +1,4 @@
-// src/lib/voi.ts
+// src/lib/cornerstone/voi.ts
 import { cache } from '@cornerstonejs/core';
 
 type VOIResult = { lower: number; upper: number; source?: string } | null;
@@ -158,4 +158,3 @@ export default {
   cacheVOI,
   getInitialVOIFromSeriesMetadata,
 };
-

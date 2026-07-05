@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RenderingEngine } from '@cornerstonejs/core';
 import { getEnabledElement } from '@cornerstonejs/core';
-import { safeGetEnabledElement } from '@/lib/cornerstoneHelpers';
+import { safeGetEnabledElement } from '@/lib/cornerstone/helpers';
 
 // Reuse centralized helper
 import { waitForCornerstoneReady as waitForCornerstoneReadyShared } from '@/lib/viewer/polling';

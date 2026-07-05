@@ -2,8 +2,8 @@
 'use client';
 
 import type { Series } from '@/lib/pacs/services';
-import { getInitialVOIFromSeriesMetadata } from '@/lib/voi';
-import { normalizeImageId } from '@/lib/cornerstoneHelpers';
+import { getInitialVOIFromSeriesMetadata } from '@/lib/cornerstone/voi';
+import { normalizeImageId } from '@/lib/cornerstone/helpers';
 
 export interface DisplaySet {
   imageIds: string[];

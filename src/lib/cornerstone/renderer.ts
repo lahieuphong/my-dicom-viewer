@@ -1,4 +1,4 @@
-// src/lib/renderer.ts
+// src/lib/cornerstone/renderer.ts
 'use client';
 
 import { RenderingEngine } from '@cornerstonejs/core';

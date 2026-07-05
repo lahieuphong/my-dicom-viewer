@@ -3,7 +3,7 @@
 
 import { useCallback } from 'react';
 import { getEnabledElement, imageLoader } from '@cornerstonejs/core';
-import voiLib from '@/lib/voi';
+import voiLib from '@/lib/cornerstone/voi';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
 import { logCanvasState } from '@/lib/viewer/debugCanvas';

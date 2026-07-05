@@ -1,4 +1,4 @@
-// src/lib/tools.ts
+// src/lib/cornerstone/tools.ts
 'use client';
 
 import * as csTools from '@cornerstonejs/tools';

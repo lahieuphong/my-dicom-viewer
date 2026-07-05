@@ -7,8 +7,8 @@ import { annotation as csAnnotation } from '@cornerstonejs/tools';
 import { normalizeId, getEnabledElementSafeLocal } from '@/lib/viewer/dom';
 import { ensureStackOnViewport } from '@/lib/viewer/stack';
 import { preloadImagesWithTimeout } from '@/lib/viewer/preload';
-import { ensureAnnotationAvailable } from '@/lib/annotationUtils';
-import { enableElement } from '@/lib/enableElement';
+import { ensureAnnotationAvailable } from '@/lib/cornerstone/annotations';
+import { enableElement } from '@/lib/cornerstone/element';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { safeAddAnnotation, safeGetAnnotations } from '@/lib/viewer/annotationHelpers';
 

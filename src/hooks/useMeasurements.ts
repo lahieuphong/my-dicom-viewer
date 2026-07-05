@@ -17,7 +17,7 @@ import {
   Enums as ToolEnums,
 } from '@cornerstonejs/tools';
 import { VIEWPORT_ID } from '@/constants/viewport';
-import { safeGetEnabledElement, normalizeImageId as normalizeId } from '@/lib/cornerstoneHelpers';
+import { safeGetEnabledElement, normalizeImageId as normalizeId } from '@/lib/cornerstone/helpers';
 
 export interface AnnotationMeasurement {
   annotationUID: string;

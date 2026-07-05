@@ -21,7 +21,7 @@ import {
 
 import { initCornerstone } from '@/lib/cornerstone';
 import { TOOL_GROUP } from '@/constants/toolgroup';
-import { registerToolsOnce } from '@/lib/tools';
+import { registerToolsOnce } from '@/lib/cornerstone/tools';
 
 export type ToolID =
   | 'adjust'

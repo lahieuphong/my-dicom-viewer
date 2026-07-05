@@ -2,12 +2,12 @@
 import { useEffect, useRef } from 'react';
 import { annotation as csAnnotation } from '@cornerstonejs/tools';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
-import { ensureAnnotationAvailable } from '@/lib/annotationUtils';
+import { ensureAnnotationAvailable } from '@/lib/cornerstone/annotations';
 import {
   safeRemoveAnnotation,
   safeSetAnnotationVisibility,
   normalizeImageId,
-} from '@/lib/cornerstoneHelpers';
+} from '@/lib/cornerstone/helpers';
 
 /**
  * useMeasurementBridge

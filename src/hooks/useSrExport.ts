@@ -2,9 +2,9 @@
 'use client';
 import { saveAs } from 'file-saver';
 import { annotation as csAnnotation } from '@cornerstonejs/tools';
-import { buildStructuredReport } from '@/lib/srGenerator';
+import { buildStructuredReport } from '@/lib/sr/generator';
 import { getEnabledElement } from '@cornerstonejs/core';
-import { enableElement } from '@/lib/enableElement';
+import { enableElement } from '@/lib/cornerstone/element';
 import type { StackViewport } from '@cornerstonejs/core';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import type { Series } from '@/lib/pacs/services';

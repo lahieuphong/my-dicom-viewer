@@ -1,4 +1,4 @@
-// src/lib/srGenerator.ts
+// src/lib/sr/generator.ts
 import { annotation as csAnnotation } from '@cornerstonejs/tools';
 
 export interface SRMeasurement {

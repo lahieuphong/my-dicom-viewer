@@ -12,7 +12,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
-import { safeGetEnabledElement as safeGetEnabled } from '@/lib/cornerstoneHelpers';
+import { safeGetEnabledElement as safeGetEnabled } from '@/lib/cornerstone/helpers';
 
 import EditLabelDialog from './EditLabelDialog';
 import MeasurementStats from './MeasurementStats';

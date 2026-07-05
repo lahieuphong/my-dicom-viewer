@@ -1,11 +1,11 @@
-// src/lib/cornerstone.ts
+// src/lib/cornerstone/init.ts
 'use client';
 
 import * as csCoreStatic from '@cornerstonejs/core';
 import { init as initTools, ToolGroupManager } from '@cornerstonejs/tools';
 import { TOOL_GROUP } from '@/constants/toolgroup';
 // import { registerCornerstoneToolsOnce } from './registerCornerstoneTools';
-import { registerToolsOnce } from '@/lib/tools';
+import { registerToolsOnce } from './tools';
 
 
 /**

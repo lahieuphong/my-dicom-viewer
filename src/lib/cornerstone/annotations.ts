@@ -1,4 +1,4 @@
-// src/lib/annotationUtils.ts
+// src/lib/cornerstone/annotations.ts
 import { annotation as csAnnotation } from "@cornerstonejs/tools";
 
 /**

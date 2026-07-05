@@ -5,7 +5,7 @@
 
 'use client';
 
-import { normalizeImageId as normalizeImageIdFromHelpers } from '@/lib/cornerstoneHelpers';
+import { normalizeImageId as normalizeImageIdFromHelpers } from '@/lib/cornerstone/helpers';
 
 /**
  * Re-export canonical normalizer from shared helper so callers can continue

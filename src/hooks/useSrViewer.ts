@@ -4,8 +4,8 @@
 // import {
 //   addMeasurementsToState,
 //   parseSrContentToMeasurements,
-// } from '@/lib/annotationUtils';
-// import { enableElement } from '@/lib/enableElement';
+// } from '@/lib/cornerstone/annotations';
+// import { enableElement } from '@/lib/cornerstone/element';
 // import { WADO_RS_BASE, DEFAULT_HEADERS } from '@/lib/pacs/config';
 
 // type ExtraSeriesMapSetter = React.Dispatch<

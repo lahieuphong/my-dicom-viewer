@@ -1,4 +1,4 @@
-// src/lib/cornerstoneHelpers.ts
+// src/lib/cornerstone/helpers.ts
 /**
  * Helpers liên quan tới Cornerstone / EnabledElement / ImageId normalization
  * và một số wrapper "best-effort" để tương tác an toàn với API annotation.
