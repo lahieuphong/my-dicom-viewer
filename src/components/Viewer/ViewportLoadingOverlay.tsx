@@ -269,46 +269,53 @@ export default function ViewportLoadingOverlay({
   const progressText = `${displayProgress}%`;
 
   return (
-    <div
-      className={`absolute inset-0 z-40 flex items-center justify-center bg-black pointer-events-none ${className}`}
-      aria-hidden={!visible}
-    >
-      <div className="flex w-[min(70vw,340px)] -translate-y-8 flex-col items-center gap-7">
-        <div className="relative flex h-[88px] w-[88px] items-center justify-center">
-          <HvttLoadingLogo />
-        </div>
+    <>
+      <div
+        className="fixed inset-0 z-[45] pointer-events-none bg-black/45 backdrop-blur-[5px] backdrop-saturate-50"
+        aria-hidden="true"
+      />
 
-        <div className="w-full">
-          <div className="flex items-center gap-4">
-            <div
-              className="h-[9px] flex-1 overflow-hidden rounded-full bg-[#062052]"
-              role="progressbar"
-              aria-valuemin={1}
-              aria-valuemax={100}
-              aria-valuenow={displayProgress}
-              aria-label="Image loading progress"
-            >
-              <div
-                style={{
-                  width: `${displayProgress}%`,
-                  transition: `width ${transitionMs}ms linear`,
-                }}
-                className="h-full rounded-full bg-[#5bd7f0] shadow-[0_0_14px_rgba(91,215,240,0.45)]"
-              />
-            </div>
-
-            {showPercent && (
-              <div className="w-12 text-right text-sm font-semibold leading-none text-slate-100 tabular-nums">
-                {progressText}
-              </div>
-            )}
+      <div
+        className={`absolute inset-0 z-[46] flex items-center justify-center bg-black/78 pointer-events-none ${className}`}
+        aria-hidden={!visible}
+      >
+        <div className="flex w-[min(70vw,340px)] -translate-y-8 flex-col items-center gap-7">
+          <div className="relative flex h-[88px] w-[88px] items-center justify-center">
+            <HvttLoadingLogo />
           </div>
 
-          <span className="sr-only">
-            {displayProgress < 100 ? `Đang nạp hình ${progressText}` : 'Hoàn tất'}
-          </span>
+          <div className="w-full">
+            <div className="flex items-center gap-4">
+              <div
+                className="h-[9px] flex-1 overflow-hidden rounded-full bg-[#062052]"
+                role="progressbar"
+                aria-valuemin={1}
+                aria-valuemax={100}
+                aria-valuenow={displayProgress}
+                aria-label="Image loading progress"
+              >
+                <div
+                  style={{
+                    width: `${displayProgress}%`,
+                    transition: `width ${transitionMs}ms linear`,
+                  }}
+                  className="h-full rounded-full bg-[#5bd7f0] shadow-[0_0_14px_rgba(91,215,240,0.45)]"
+                />
+              </div>
+
+              {showPercent && (
+                <div className="w-12 text-right text-sm font-semibold leading-none text-slate-100 tabular-nums">
+                  {progressText}
+                </div>
+              )}
+            </div>
+
+            <span className="sr-only">
+              {displayProgress < 100 ? `Đang nạp hình ${progressText}` : 'Hoàn tất'}
+            </span>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
