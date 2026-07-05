@@ -16,8 +16,8 @@ export default function Loading({
     <div
       className={cn(
         fullScreen
-          ? 'fixed inset-0 z-[80] flex items-center justify-center bg-black'
-          : 'flex min-h-[220px] items-center justify-center bg-black'
+          ? 'fixed inset-0 z-[80] flex items-center justify-center bg-background text-foreground'
+          : 'flex min-h-[220px] items-center justify-center bg-background text-foreground'
       )}
       aria-busy="true"
       aria-live="polite"

@@ -196,7 +196,7 @@ export function BrandLoadingIndicator({
 
 export function BrandLoadingSpinner({ className }: { className?: string }) {
   return (
-    <div className={cn('flex -translate-y-8 flex-col items-center justify-center', className)}>
+    <div className={cn('flex flex-col items-center justify-center', className)}>
       <div className="relative flex h-[116px] w-[116px] items-center justify-center">
         <div
           className="
