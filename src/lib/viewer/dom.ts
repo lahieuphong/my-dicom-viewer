@@ -29,18 +29,6 @@ export const normalizeImageId = normalizeImageIdFromHelpers;
 export function getEnabledElementSafeLocal(vpEl: HTMLElement | null): any | null {
   if (!vpEl) return null;
 
-  // small helper to push debug info (non-blocking)
-  try {
-    const w: any = (typeof window !== 'undefined') ? (window as any) : null;
-    if (w) {
-      w.__viewerLog = w.__viewerLog || [];
-      // keep bounded size
-      if (w.__viewerLog.length > 2000) w.__viewerLog.splice(0, w.__viewerLog.length - 2000);
-    }
-    const push = (msg: any) => { try { if (w) w.__viewerLog.push({ t: Date.now(), msg }); } catch {} };
-    push(`getEnabledElementSafeLocal start for ${vpEl?.tagName}`);
-  } catch {}
-
   const tryGetFromCore = (core: any, el: Element | null) => {
     if (!core || !el) return null;
     try {
@@ -51,7 +39,6 @@ export function getEnabledElementSafeLocal(vpEl: HTMLElement | null): any | null
         } catch (err: any) {
           // If we hit a RangeError (call stack overflow) or other serious error, return null.
           if (err && err instanceof RangeError) {
-            try { (window as any).__viewerLog?.push({ t: Date.now(), msg: 'getEnabledElement -> RangeError, returning null' }); } catch {}
             return null;
           }
           // rethrow other unexpected errors so callers can decide
@@ -63,7 +50,6 @@ export function getEnabledElementSafeLocal(vpEl: HTMLElement | null): any | null
           return core.cornerstone.getEnabledElement(el as any);
         } catch (err: any) {
           if (err && err instanceof RangeError) {
-            try { (window as any).__viewerLog?.push({ t: Date.now(), msg: 'legacy cornerstone.getEnabledElement -> RangeError, returning null' }); } catch {}
             return null;
           }
           throw err;
@@ -101,7 +87,6 @@ export function getEnabledElementSafeLocal(vpEl: HTMLElement | null): any | null
     if (direct) return direct;
   } catch (err) {
     // If core.getEnabledElement throws other error, bail to null safely
-    try { (window as any).__viewerLog?.push({ t: Date.now(), msg: 'getEnabledElementSafeLocal direct tryGet threw, returning null' }); } catch {}
     return null;
   }
 
@@ -156,10 +141,8 @@ export function getEnabledElementSafeLocal(vpEl: HTMLElement | null): any | null
             } catch {}
             // mark ready so waiters/pollers can proceed
             try { (window as any).__cornerstoneReady = true; } catch {}
-            try { (window as any).__viewerLog?.push({ t: Date.now(), msg: 'dynamic import cornerstone core done -> __cornerstoneReady=true' }); } catch {}
           }
-        } catch (e) {
-          try { (window as any).__viewerLog?.push({ t: Date.now(), msg: `dynamic import cornerstone core failed: ${String(e)}` }); } catch {}
+        } catch {
         }
       })();
     }

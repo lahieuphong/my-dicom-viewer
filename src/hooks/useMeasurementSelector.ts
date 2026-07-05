@@ -15,22 +15,6 @@ import { safeAddAnnotation, safeGetAnnotations } from '@/lib/viewer/annotationHe
 // import chung constants để thống nhất attempts/timeouts
 import { ATTEMPTS_ANNOT } from '@/lib/viewer/constants';
 
-const VERBOSE_LOG = true; // bật/tắt log chi tiết (set false nếu muốn im lặng)
-const PREFIX = '[useMeasurementSelector]';
-
-function log(...args: any[]) {
-  if (!VERBOSE_LOG) return;
-  try {
-    console.warn(PREFIX, ...args);
-  } catch {}
-}
-
-function logError(...args: any[]) {
-  try {
-    console.error(PREFIX, ...args);
-  } catch {}
-}
-
 export type UseMeasurementSelectorOpts = {
   renderingEngineRef?: { current: any };
   viewportInstance: any | null;
@@ -51,8 +35,6 @@ export type UseMeasurementSelectorOpts = {
   safeRenderViewport: (vpId?: string) => void;
   ensureImageRendered?: any;
   preloadImagesWithTimeout?: typeof preloadImagesWithTimeout;
-
-  logDebug?: (msg: string, obj?: any) => void;
 
   selectionInProgressRef?: React.RefObject<{ current: any } | boolean | any>;
   selectedMeasurementUIDRef?: React.RefObject<string | null>;
@@ -76,7 +58,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     safeRenderViewport,
     ensureImageRendered,
     preloadImagesWithTimeout: preloadHelper,
-    logDebug,
     selectionInProgressRef,
     selectedMeasurementUIDRef,
   } = opts;
@@ -85,16 +66,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
   const selectFlowCounterRef = useRef(0);
   const selectingRef = useRef(false);
   const lastSelectingUIDRef = useRef<string | null>(null);
-
-  function dbg(msg: string, obj?: any) {
-    try {
-      if (typeof logDebug === 'function') {
-        logDebug(msg, obj);
-      } else {
-        log(msg, obj ?? '');
-      }
-    } catch {}
-  }
 
   function safeGetAnnotationsLocal(toolName: string | undefined, el: HTMLDivElement | null) {
     try {
@@ -116,13 +87,10 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     try {
       const prev = selectedRef && selectedRef.current ? selectedRef.current : null;
       if (prev === uid) {
-        log('skip setSelectedMeasurementUID (same)', { prev, uid });
         return;
       }
-      log('setSelectedMeasurementUID ->', uid, '(prev=', prev, ')');
       setter(uid);
     } catch (error) {
-      logError('safeSetSelectedMeasurementUIDHelper error', error);
       try { setter(uid); } catch {}
     }
   }
@@ -148,7 +116,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       const found = vpIds.findIndex((id) => normalizeId(id) === want);
       return found >= 0 && found === desiredIndex;
     } catch (error) {
-      logError('isViewportShowingDesiredImage error', error);
       return false;
     }
   }, [viewportInstance]);
@@ -164,18 +131,14 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     ) {
       try {
         if (!uid) {
-          dbg('maybeSetSelectedMeasurementUID -> clear requested', uid);
           safeSetSelectedMeasurementUIDHelper(setSelectedMeasurementUID, selectedMeasurementUIDRef, null);
           return;
         }
 
         const prev = selectedMeasurementUIDRef && selectedMeasurementUIDRef.current ? selectedMeasurementUIDRef.current : null;
         if (prev === uid) {
-          dbg('maybeSetSelectedMeasurementUID -> already set, skip', { prev, uid });
           return;
         }
-
-        dbg('maybeSetSelectedMeasurementUID -> start', { uid, desiredIndex, attempts: maxAttempts });
 
         for (let i = 0; i < maxAttempts; i += 1) {
           try {
@@ -183,20 +146,17 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
               try {
                 const ok = isViewportShowingDesiredImage(imageIds, desiredIndex);
                 if (ok) {
-                  dbg('maybeSetSelectedMeasurementUID -> viewport shows desired image, setting', { uid, attempt: i });
                   safeSetSelectedMeasurementUIDHelper(setSelectedMeasurementUID, selectedMeasurementUIDRef, uid);
                   return;
                 }
               } catch (e) {
-                dbg('maybeSetSelectedMeasurementUID -> isViewportShowingDesiredImage threw', e);
               }
             }
-          } catch (e) { dbg('maybeSetSelectedMeasurementUID -> viewport check outer threw', e); }
+          } catch {}
 
           try {
             const anns = safeGetAnnotations(undefined, viewportEl);
             if (Array.isArray(anns) && anns.some((a) => a?.annotationUID === uid)) {
-              dbg('maybeSetSelectedMeasurementUID -> annotation present in viewport annotations', { uid, attempt: i });
               safeSetSelectedMeasurementUIDHelper(setSelectedMeasurementUID, selectedMeasurementUIDRef, uid);
               return;
             }
@@ -204,22 +164,17 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
             try {
               const inst = (csAnnotation.state as any)?.getAnnotation?.(uid) ?? null;
               if (inst) {
-                dbg('maybeSetSelectedMeasurementUID -> instance found in csAnnotation.state', { uid, attempt: i });
                 safeSetSelectedMeasurementUIDHelper(setSelectedMeasurementUID, selectedMeasurementUIDRef, uid);
                 return;
               }
             } catch (e) {
-              dbg('maybeSetSelectedMeasurementUID -> csAnnotation.state.getAnnotation threw', e);
             }
-          } catch (e) { dbg('maybeSetSelectedMeasurementUID -> annotation presence check threw', e); }
+          } catch {}
 
           await new Promise((r) => setTimeout(r, attemptDelayMs));
         }
-
-        dbg('maybeSetSelectedMeasurementUID -> fallback set after retries', { uid });
         safeSetSelectedMeasurementUIDHelper(setSelectedMeasurementUID, selectedMeasurementUIDRef, uid);
       } catch (e) {
-        dbg('maybeSetSelectedMeasurementUID -> unexpected error, fallback set', e);
         try { safeSetSelectedMeasurementUIDHelper(setSelectedMeasurementUID, selectedMeasurementUIDRef, uid); } catch {}
       }
     },
@@ -235,7 +190,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
   const handleSelectMeasurement = useCallback(async (m: any) => {
     // Guard: avoid re-entrant selection for same uid
     if (selectingRef.current && lastSelectingUIDRef.current === (m?.annotationUID ?? null)) {
-      log('selection already in progress for same UID - skipping', m?.annotationUID);
       return;
     }
     selectingRef.current = true;
@@ -248,20 +202,16 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     try {
       const startAll = performance.now();
       const flowToken = ++selectFlowCounterRef.current;
-      log('START select', { token: flowToken, annotationUID: m?.annotationUID, selectedSeries });
 
       const targetSeriesUID = m.metadata?.seriesUID;
       if (!targetSeriesUID) {
-        logError('measurement missing seriesUID', m);
         return;
       }
 
       const imageIds = mergedSeriesMapRef.current?.[targetSeriesUID]?.files ?? [];
-      log('resolved imageIds len=', Array.isArray(imageIds) ? imageIds.length : 0);
 
       try {
         if (selectedMeasurementUIDRef && selectedMeasurementUIDRef.current === m.annotationUID) {
-          log('selectedMeasurementUIDRef already equals requested UID -> light-attach only', m.annotationUID);
           prevSeriesRef.current = selectedSeries;
           if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
 
@@ -271,33 +221,27 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
               if (inst) {
                 await safeAddAnnotation(inst, viewportEl);
                 try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(m.annotationUID, true); } catch {}
-                log('light-attach: existing instance attached');
                 selectionConfirmed = true;
               } else {
                 const maybe = await ensureAnnotationAvailable(m.annotationUID, 600, 30).catch(() => null);
                 if (maybe) {
                   await safeAddAnnotation(maybe, viewportEl);
                   try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(m.annotationUID, true); } catch {}
-                  log('light-attach: ensured instance attached');
                   selectionConfirmed = true;
                 } else {
-                  log('light-attach: no instance found');
                 }
               }
             }
           } catch (error) {
-            logError('light-attach failed', error);
           }
 
           safeRenderViewport(viewportId);
           return;
         }
       } catch (error) {
-        dbg('selectedMeasurementUIDRef compare threw', error);
       }
 
       if (!Array.isArray(imageIds) || imageIds.length === 0) {
-        log('no images in series, will attach annotation to current viewport (best-effort)');
         prevSeriesRef.current = selectedSeries;
 
         try {
@@ -306,22 +250,18 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
             if (inst) {
               await safeAddAnnotation(inst, viewportEl);
               try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(m.annotationUID, true); } catch {}
-              log('attached preexisting annotation (no images)');
               selectionConfirmed = true;
             } else {
               const maybe = await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(() => null);
               if (maybe) {
                 await safeAddAnnotation(maybe, viewportEl);
                 try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(m.annotationUID, true); } catch {}
-                log('attached ensured annotation (no images)');
                 selectionConfirmed = true;
               } else {
-                log('annotation instance not found (no images)');
               }
             }
           }
         } catch (error) {
-          logError('attach (no images) failed', error);
         }
 
         if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
@@ -347,30 +287,25 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       }
       if (typeof desiredIndex !== 'number' || Number.isNaN(desiredIndex)) desiredIndex = 0;
       desiredIndex = Math.max(0, Math.min(desiredIndex, imageIds.length - 1));
-      log('desiredIndex computed', desiredIndex);
 
       try {
         const tFast = performance.now();
         if (isViewportShowingDesiredImage(imageIds, desiredIndex)) {
-          log('FAST-PATH hit', { desiredIndex });
           prevSeriesRef.current = selectedSeries;
           if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
 
           const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
           if (inst) {
-            try { await safeAddAnnotation(inst, viewportEl); } catch (error) { dbg('safeAddAnnotation FAST-PATH failed', error); }
+            try { await safeAddAnnotation(inst, viewportEl); } catch {}
             try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(m.annotationUID, true); } catch {}
-            log('FAST-PATH: annotation attached (existing)');
             selectionConfirmed = true;
           } else {
             const maybe = await ensureAnnotationAvailable(m.annotationUID, 600, 30).catch(() => null);
             if (maybe) {
-              try { await safeAddAnnotation(maybe, viewportEl); } catch (error) { dbg('safeAddAnnotation FAST-PATH(ensured) failed', error); }
+              try { await safeAddAnnotation(maybe, viewportEl); } catch {}
               try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(m.annotationUID, true); } catch {}
-              log('FAST-PATH: annotation attached (ensured)');
               selectionConfirmed = true;
             } else {
-              log('FAST-PATH: annotation instance not found');
               selectionConfirmed = false;
             }
           }
@@ -383,22 +318,19 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           safeRenderViewport(viewportId);
           return;
         } else {
-          log('FAST-PATH miss (not showing desired image)', { tookMs: performance.now() - tFast });
         }
       } catch (error) {
-        dbg('FAST-PATH error', error);
       }
 
       try {
         if (viewportEl) {
-          try { enableElement(viewportEl); } catch (error) { dbg('enableElement failed', error); }
+          try { enableElement(viewportEl); } catch {}
           await new Promise((r) => setTimeout(r, 40));
         }
-      } catch (error) { dbg('pre-ensure enableElement failed', error); }
+      } catch {}
 
       let ok = false;
       try {
-        log('calling ensureStackOnViewport', { desiredIndex });
         ok = await ensureStackOnViewport({
           renderingEngineRef: renderingEngineRef as any,
           viewportInstance,
@@ -409,10 +341,8 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           preloadImagesWithTimeout: preloadHelper ?? preloadImagesWithTimeout,
           viewportId,
           settleMs: 120,
-        }).catch((error) => { dbg('ensureStackOnViewport catch', error); return false; });
-        log('ensureStackOnViewport finished', { ok });
+        }).catch(() => false);
       } catch (error) {
-        dbg('ensureStackOnViewport threw', error);
         ok = false;
       }
 
@@ -424,20 +354,17 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
           const maybe = inst ?? (await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(() => null));
           if (maybe) {
-            try { await safeAddAnnotation(maybe, viewportEl); } catch (error) { dbg('safeAddAnnotation failed', error); }
+            try { await safeAddAnnotation(maybe, viewportEl); } catch {}
             try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(m.annotationUID, true); } catch {}
-            log('annotation attached after setStack');
             selectionConfirmed = true;
           } else {
-            log('annotation instance not found after setStack', { annotationUID: m.annotationUID });
             selectionConfirmed = false;
           }
         } else {
           try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(m.annotationUID, true); } catch {}
-          log('annotation already present - visibility set', { annotationUID: m.annotationUID });
           selectionConfirmed = true;
         }
-      } catch (error) { dbg('attach annotation after setStack failed', error); }
+      } catch {}
 
       prevSeriesRef.current = selectedSeries;
       if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
@@ -450,15 +377,12 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       if (selectionConfirmed) {
         await maybeSetSelectedMeasurementUID(m.annotationUID, imageIds, desiredIndex);
       } else {
-        log('SKIP marking as selected because annotation/image not confirmed attached', { annotationUID: m.annotationUID, ok });
       }
 
       setCurrentFrame((desiredIndex ?? 0) + 1);
 
       await new Promise((r) => setTimeout(r, 40));
       safeRenderViewport(viewportId);
-
-      log('END select (robust)', { token: flowToken, ok: ok, selectionConfirmed, durationMs: performance.now() - startAll });
     } finally {
       try {
         if (selectionInProgressRef && typeof selectionInProgressRef === 'object' && 'current' in selectionInProgressRef) {
@@ -484,7 +408,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     preloadHelper,
     viewportId,
     isViewportShowingDesiredImage,
-    logDebug,
     selectionInProgressRef,
     selectedMeasurementUIDRef,
     maybeSetSelectedMeasurementUID,
@@ -493,7 +416,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
 
   const handleSelectSr = useCallback(async (srId: string | null) => {
     const token = ++selectFlowCounterRef.current;
-    log('START select SR', { token, srId });
     if (srId) {
       prevSeriesRef.current = selectedSeries;
       try { setActiveSrId?.(srId); } catch {}
@@ -507,7 +429,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           try {
             if (preloadHelper) await preloadHelper(imageIds, { concurrency: 3, perLoadTimeoutMs: 8000, limit: 6 });
             else await preloadImagesWithTimeout(imageIds, { concurrency: 3, perLoadTimeoutMs: 8000, limit: 6 });
-          } catch (error) { dbg('preload SR failed (non-fatal)', error); }
+          } catch {}
           if (ensureImageRendered && typeof ensureImageRendered === 'function') {
             await ensureImageRendered(viewportInstance, viewportEl, imageIds, Math.max(0, Math.min(desiredIndex, imageIds.length - 1)), 40, 200);
           } else {
@@ -521,7 +443,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
               viewportId,
             });
           }
-        } catch (error) { dbg('ensureImageRendered for SR failed', error); }
+        } catch {}
       }
 
       setSelectedSeries(srId);
@@ -541,9 +463,8 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
             try { await safeAddAnnotation(inst, viewportEl); } catch {}
             try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(m.annotationUID, !hiddenMeasurements?.has(m.annotationUID)); } catch {}
           } else {
-            dbg('SR annotation instance not found', m.annotationUID);
           }
-        } catch (error) { dbg('attach SR annotation failed', error); }
+        } catch {}
       }
 
       if (srMeasurements.length > 0) {
@@ -554,11 +475,9 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       }
 
       safeRenderViewport(viewportId);
-      log('END select SR', { token, srId });
     } else {
       try { setActiveSrId?.(null); } catch {}
       setSelectedSeries(prevSeriesRef.current ?? Object.keys(mergedSeriesMapRef.current || {})[0] ?? '');
-      log('CLOSED SR selection', { token });
     }
   }, [
     mergedSeriesMapRef,

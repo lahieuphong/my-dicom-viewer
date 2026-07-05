@@ -24,11 +24,7 @@ export async function POST(request: Request) {
     if (body.Password && typeof body.Password === 'string') {
       const md5 = crypto.createHash('md5').update(body.Password).digest('hex');
       body.Password = md5;
-      console.log('[proxy] Password MD5:', md5);
     }
-
-    console.log('[proxy] forwarding to:', BACKEND_URL);
-    console.log('[proxy] request body:', body);
 
     // Gọi lên backend với password đã MD5
     const res = await fetch(BACKEND_URL, {
@@ -36,14 +32,10 @@ export async function POST(request: Request) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-
-    console.log('[proxy] upstream status:', res.status);
     const data = await res.json();
-    console.log('[proxy] upstream data:', data);
 
     return NextResponse.json(data, { status: res.status });
   } catch (err: any) {
-    console.error('[proxy] ERROR:', err);
     return NextResponse.json(
       { result: -1, data: err.message || 'Proxy error' },
       { status: 500 }

@@ -88,7 +88,6 @@ function wrapReleaseGraphicsResourcesIfNeeded(obj: any) {
               try {
                 if (orig) return orig(...args);
               } catch (er) {
-                try { console.warn('[cornerstone] safeReleaseGraphicsResources caught', er); } catch {}
               }
             };
 
@@ -177,7 +176,6 @@ async function initCornerstoneInternal() {
   try {
     await initTools();
   } catch (err) {
-    console.warn('[cornerstone] init tools failed', err);
     try { (window as any).__cornerstoneStatus.lastError = String(err); } catch {}
   }
 
@@ -186,7 +184,6 @@ async function initCornerstoneInternal() {
     // registerCornerstoneToolsOnce();
     registerToolsOnce();
   } catch (err) {
-    console.warn('[cornerstone] registerToolsOnce failed', err);
     try { (window as any).__cornerstoneStatus.lastError = `[registerToolsOnce] ${String(err)}`; } catch {}
   }
 
@@ -194,7 +191,6 @@ async function initCornerstoneInternal() {
   try {
     ensureToolGroupExists();
   } catch (err) {
-    console.warn('[cornerstone] ensure tool group failed', err);
     try { (window as any).__cornerstoneStatus.lastError = `[ensureToolGroupExists] ${String(err)}`; } catch {}
   }
 
@@ -209,7 +205,6 @@ async function initCornerstoneInternal() {
         wrapReleaseGraphicsResourcesIfNeeded(dicomImageLoader);
         if ((dicomImageLoader as any).default) wrapReleaseGraphicsResourcesIfNeeded((dicomImageLoader as any).default);
       } catch (err) {
-        try { console.debug('[cornerstone] wrapReleaseGraphicsResources failed', err); } catch {}
       }
 
       // init dicom-image-loader with conservative worker count (cap to 2)
@@ -225,14 +220,13 @@ async function initCornerstoneInternal() {
           await dicomImageLoader.init({ maxWebWorkers });
         }
       } catch (err) {
-        console.warn('[cornerstone] dicom-image-loader init failed', err);
         try { (window as any).__cornerstoneStatus.lastError = `[dicom-image-loader init] ${String(err)}`; } catch {}
       }
 
       // register wadouri loader and metadata provider (if available)
       try {
         if (dicomImageLoader.wadouri && typeof dicomImageLoader.wadouri.register === 'function') {
-          try { dicomImageLoader.wadouri.register(); } catch (e) { console.warn('[cornerstone] wadouri.register failed', e); }
+          try { dicomImageLoader.wadouri.register(); } catch {}
         }
 
         const provider = dicomImageLoader.wadouri?.metaData?.metaDataProvider ?? null;
@@ -240,15 +234,12 @@ async function initCornerstoneInternal() {
           try {
             csCore.metaData.addProvider(provider, 0);
           } catch (err) {
-            console.warn('[cornerstone] addProvider(metaDataProvider) failed', err);
           }
         }
       } catch (err) {
-        console.warn('[cornerstone] dicomImageLoader providers registration failed', err);
       }
     }
   } catch (err) {
-    console.warn('[cornerstone] load dicom-image-loader failed', err);
   }
 
   // 7) Expose safe globals for convenience (prefer core.imageLoader where possible)
@@ -293,7 +284,6 @@ async function initCornerstoneInternal() {
                 try {
                   return orig.apply(this, args);
                 } catch (err) {
-                  try { console.warn('[cornerstone] patched unregisterGraphicsResources caught', err); } catch {}
                   // swallow
                 }
               };
@@ -301,10 +291,8 @@ async function initCornerstoneInternal() {
               proto.unregisterGraphicsResources = function noopUnregister() { /* no-op */ };
             }
             proto.__patched_unregisterGraphicsResources = true;
-            try { console.debug('[cornerstone] patched ImageMapper.unregisterGraphicsResources', Im); } catch {}
             return true;
           } catch (err) {
-            try { console.warn('[cornerstone] patchImageMapperOne failed', err); } catch {}
             return false;
           }
         };
@@ -320,7 +308,6 @@ async function initCornerstoneInternal() {
           if (tryPatchOne(c)) return true;
         }
       } catch (e) {
-        try { console.warn('[cornerstone] tryPatchImageMapperPrototype top failed', e); } catch {}
       }
       return false;
     }
@@ -341,10 +328,8 @@ async function initCornerstoneInternal() {
         }
       }, 250);
     } catch (e) {
-      try { console.warn('[cornerstone] repeated patch scheduling failed', e); } catch {}
     }
   } catch (e) {
-    try { console.warn('[cornerstone] scheduling repeated ImageMapper patch failed', e); } catch {}
   }
 
   // 8) instrumentation flags
@@ -379,17 +364,14 @@ async function initCornerstoneInternal() {
           try {
             return orig.apply(this, args);
           } catch (err) {
-            try { console.warn('[cornerstone] patched ImageMapper.unregisterGraphicsResources caught', err); } catch {}
             // swallow to avoid unhandled TypeError when library tries to deref null
             return;
           }
         };
       } catch (e) {
-        try { console.warn('[cornerstone] patch ImageMapper.unregisterGraphicsResources failed', e); } catch {}
       }
     }
   } catch (e) {
-    try { console.warn('[cornerstone] patch ImageMapper.unregisterGraphicsResources outer failed', e); } catch {}
   }
 
   // Gọi helper global patch càng sớm càng tốt (theo yêu cầu)
@@ -397,7 +379,6 @@ async function initCornerstoneInternal() {
     // disableReleaseGraphicsResourcesGlobally will try to wrap common globals safely
     disableReleaseGraphicsResourcesGlobally();
   } catch (e) {
-    try { console.warn('[cornerstone] disableReleaseGraphicsResourcesGlobally call failed', e); } catch {}
   }
 
   (window as any).__cornerstoneReady = true;
@@ -449,7 +430,6 @@ export function disableReleaseGraphicsResourcesGlobally() {
               try {
                 if (orig) return orig(...args);
               } catch (er) {
-                try { console.warn('[cornerstone] safeRelease caught', er); } catch {}
                 return;
               }
             };
@@ -501,9 +481,6 @@ export function disableReleaseGraphicsResourcesGlobally() {
       if ((window as any).__cornerstoneImageLoader) safeWrapVal((window as any).__cornerstoneImageLoader);
       if ((window as any).__cornerstoneCore) safeWrapVal((window as any).__cornerstoneCore);
     } catch {}
-
-    try { console.debug('[cornerstone] disableReleaseGraphicsResourcesGlobally: applied'); } catch {}
   } catch (e) {
-    try { console.warn('[cornerstone] disableReleaseGraphicsResourcesGlobally failed', e); } catch {}
   }
 }

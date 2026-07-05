@@ -319,7 +319,6 @@ export function buildStructuredReport(
 
     if (!refImageId) {
       reportIssues.push(`annotation ${annotationUID}: missing referencedImageId`);
-      console.warn(`[SR] annotation ${annotationUID}: missing referencedImageId`);
     }
 
     const meta = tryGetMeta(metaManager, refImageId);
@@ -340,7 +339,6 @@ export function buildStructuredReport(
     if (!referencedSOPInstanceUID) referencedSOPInstanceUID = inst?.metadata?.sopInstanceUID || inst?.sopInstanceUID || null;
     if (!referencedSOPInstanceUID) {
       reportIssues.push(`annotation ${annotationUID}: could not determine referencedSOPInstanceUID`);
-      console.warn(`[SR] annotation ${annotationUID}: could not determine referencedSOPInstanceUID`);
     }
 
     const frameOfReferenceUID = meta ? (getDicomTagString(meta, '00200052') || null) : (inst?.metadata?.frameOfReferenceUID ?? null);
@@ -349,7 +347,6 @@ export function buildStructuredReport(
     const pixelPoints = extractPointsFromInst(inst);
     if (!pixelPoints || pixelPoints.length === 0) {
       reportIssues.push(`annotation ${annotationUID}: no pixel points extracted`);
-      console.warn(`[SR] annotation ${annotationUID}: no pixel points extracted`);
     }
 
     // compute pixel length if possible
@@ -468,7 +465,7 @@ export function buildStructuredReport(
 
   (report as any)._issues = reportIssues;
 
-  if (reportIssues.length) console.warn('SR generation issues:', reportIssues);
+  if (reportIssues.length) {}
 
   return report;
 }

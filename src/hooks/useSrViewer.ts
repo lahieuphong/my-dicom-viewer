@@ -103,7 +103,6 @@
 //         }
 //       }
 //     } catch (e) {
-//       console.debug('[useSrViewer] wadors fetch error', e);
 //     }
 
 //     // fallback to application-level structured-report list under root (if present)
@@ -123,7 +122,6 @@
 //         return chosen?.sopInstanceUID ?? chosen?.srUID ?? chosen?.SOPInstanceUID ?? null;
 //       }
 //     } catch (e) {
-//       console.debug('[useSrViewer] structured-report fetch error', e);
 //     }
 
 //     return null;
@@ -143,7 +141,6 @@
 //         return Array.isArray(json) && json.length > 0 ? json[0] : json;
 //       }
 //     } catch (e) {
-//       console.debug('[useSrViewer] fetchSrJsonMetadata error', e);
 //     }
 
 //     // fallback: application-level structured-report list (root)
@@ -248,9 +245,7 @@
 //         else if (typeof re.render === 'function') re.render();
 //       }
 
-//       console.log('[useSrViewer] loaded SR into viewport', seriesUID);
 //     } catch (err) {
-//       console.error('[useSrViewer] Failed to view SR', err);
 //       throw err;
 //     }
 //   }

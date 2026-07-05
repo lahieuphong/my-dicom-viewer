@@ -457,7 +457,6 @@ export const useViewportAnnotations = ({
       result.push(...collect(SplineROITool.toolName, 'splineROI'));
       result.push(...collect(AngleTool.toolName, 'angle'));
     } catch (err) {
-      console.error('[useMeasurements] collectAnnotations error', err);
     }
 
     // Sort deterministically by annotationUID to avoid order flips causing false diffs
@@ -486,7 +485,6 @@ export const useViewportAnnotations = ({
             cb(ms);
           }
         } catch (e) {
-          console.warn('[useMeasurements] onMeasurementsChange threw', e);
         }
       }, 0);
     } catch (e) {
@@ -578,7 +576,6 @@ export const useViewportAnnotations = ({
         // Use the safe sender (deduped + deferred)
         sendMeasurementsSafe(next);
       } catch (e) {
-        console.warn('[useMeasurements] sendMeasurementsSafe failed', e);
       }
     } else {
       // no meaningful change; still update ref for consistency, but DO NOT call external callback
@@ -605,7 +602,6 @@ export const useViewportAnnotations = ({
           try {
             refreshRef.current();
           } catch (e) {
-            console.debug('[useMeasurements] refresh handler error', e);
           } finally {
             rafId = null;
           }
@@ -622,7 +618,6 @@ export const useViewportAnnotations = ({
       eventTarget.addEventListener(ToolEnums.Events.ANNOTATION_MODIFIED, handler);
       eventTarget.addEventListener(ToolEnums.Events.ANNOTATION_REMOVED, handler);
     } catch (e) {
-      console.warn('[useMeasurements] failed to add main annotation handlers', e);
     }
 
     return () => {
@@ -662,7 +657,6 @@ export const useViewportAnnotations = ({
           (ann.metadata as any).label = newLabel;
         }
       } catch (e) {
-        console.warn('[useMeasurements] updateLabel: failed to update annotation metadata', e);
       }
 
       setMeasurements((ms) =>

@@ -264,6 +264,7 @@ function trySetToolPassive(tg: any, toolName: string) {
 function forceDeactivateAllTools(tg: any) {
   if (!tg) return;
   for (const name of CORNERSTONE_TOOL_NAMES) {
+    if (name === StackScrollTool.toolName) continue;
     try {
       if (toolGroupHasTool(tg, name)) {
         trySetToolPassive(tg, name);
@@ -333,6 +334,21 @@ export function useToolManager() {
     // Basic validation: only attempt activation for known cornerstone tools
     if (!CORNERSTONE_TOOL_NAMES.includes(toolName)) {
       return false;
+    }
+
+    if (toolName === StackScrollTool.toolName) {
+      tryAddToolToGroup(tg, toolName, StackScrollTool);
+      try {
+        tg.setToolConfiguration?.(toolName, {
+          invert: false,
+          loop: true,
+          prefetch: { enabled: true, forward: 100, backward: 50 },
+          renderSynchronously: false,
+          stackScrollSpeed: 1,
+          wheelSensitivity: 1,
+        });
+      } catch {}
+      return trySetToolActive(tg, toolName, [{ mouseButton: ToolEnums.MouseBindings.Wheel }]);
     }
 
     // Ensure the tool exists in the ToolGroup (do NOT re-register globally here)

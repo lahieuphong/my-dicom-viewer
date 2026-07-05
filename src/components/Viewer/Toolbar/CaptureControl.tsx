@@ -178,7 +178,6 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
       ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, x, y, w, h);
       return true;
     } catch (err) {
-      console.warn('drawCanvas failed (CORS?):', err);
       return false;
     }
   };
@@ -209,7 +208,6 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
             ctx.drawImage(img, x, y, w, h);
             resolve(true);
           } catch (e) {
-            console.error('drawSVG failed:', e);
             resolve(false);
           } finally {
             URL.revokeObjectURL(url);
@@ -222,7 +220,6 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
         img.src = url;
       });
     } catch (err) {
-      console.warn('drawSVG top-level failed', err);
       return false;
     }
   };
@@ -315,7 +312,6 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
       try {
         drawWarningOverlay(ctx, width, height);
       } catch (err) {
-        console.warn('Failed to draw warning overlay', err);
       }
     }
 
@@ -354,7 +350,6 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
       const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png';
       await buildCompositeBlob(w, h, mime, 0.92);
     } catch (err) {
-      console.error('Preview failed', err);
     }
   };
 
@@ -365,7 +360,7 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
 
     const tryPreview = () => {
       if (cancelled) return;
-      handlePreview().catch((e) => console.error(e));
+      handlePreview().catch((e) => {});
     };
 
     timer = window.setTimeout(tryPreview, 200);
@@ -393,7 +388,6 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
       }
       setOpen(false);
     } catch (err) {
-      console.error('Save failed', err);
       alert('Save failed: ' + err);
     }
   };

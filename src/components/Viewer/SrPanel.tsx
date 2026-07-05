@@ -68,7 +68,6 @@
 //       const j = await res.json();
 //       setSrJson(j);
 //     } catch (err: any) {
-//       console.error('❌ Failed to load SR JSON:', err);
 //       setError(err?.message ?? 'Lỗi khi tải Structured Report JSON');
 //     } finally {
 //       setLoading(false);

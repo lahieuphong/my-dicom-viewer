@@ -26,9 +26,7 @@ export function useFlipHorizontal(
       });
 
       requestAnimationFrame(() => engine.renderViewport(viewportId));
-      console.log('Flip horizontal:', newFlip);
     } catch (e) {
-      console.error('Flip error:', e);
     }
   };
 

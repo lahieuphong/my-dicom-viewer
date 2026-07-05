@@ -82,7 +82,6 @@ export async function GET() {
         const dicomMessage = dcmjs.data.DicomMessage.readFile(uint8);
         dataset = dcmjs.data.DicomMetaDictionary.naturalizeDataset(dicomMessage.dict || {});
       } catch (err) {
-        console.warn('dcmjs parse failed for', filename, err);
         dataset = {};
       }
 
@@ -182,15 +181,11 @@ export async function GET() {
     }
 
     // --- DEBUG LOGS: print counts and a preview ---
-    console.log(`[api/dicoms] filesScanned=${fileNames.length}, studiesFound=${studies.length}`);
     if (studies.length > 0) {
-      console.log('[api/dicoms] preview study[0]:', JSON.stringify(studies[0], null, 2));
       const firstSeries = studies[0].series?.[0];
       if (firstSeries && firstSeries.instances && firstSeries.instances.length) {
-        console.log('[api/dicoms] first instance url:', firstSeries.instances[0].url);
       }
     } else {
-      console.log('[api/dicoms] no studies parsed — check public/dicoms exists and contains .dcm files');
     }
 
     // Cache and return
@@ -199,7 +194,6 @@ export async function GET() {
 
     return NextResponse.json(studies, { status: 200 });
   } catch (err) {
-    console.error('Error in /api/dicoms', err);
     return NextResponse.json({ error: 'Internal' }, { status: 500 });
   }
 }

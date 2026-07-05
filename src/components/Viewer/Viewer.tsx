@@ -82,9 +82,7 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
   // Log mount / unmount of Viewer component
   useEffect(() => {
     const t = Date.now();
-    console.info(`[${dbg}] component mount @ ${t}`);
     return () => {
-      console.info(`[${dbg}] component unmount @ ${Date.now()}`);
     };
   }, [dbg]);
 
@@ -108,6 +106,52 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
   const [activeTool, setActiveTool] = useState<ToolID>('adjust');
 
   const [currentFrame, setCurrentFrame] = useState(1);
+  const currentFrameRef = useRef(1);
+  const frameUiTimerRef = useRef<number | null>(null);
+  const pendingFrameRef = useRef<number | null>(null);
+  const lastFrameUiUpdateRef = useRef(0);
+
+  useEffect(() => {
+    currentFrameRef.current = currentFrame;
+  }, [currentFrame]);
+
+  useEffect(() => {
+    return () => {
+      if (frameUiTimerRef.current != null) {
+        window.clearTimeout(frameUiTimerRef.current);
+        frameUiTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const setCurrentFrameBatched = useCallback((frame: number) => {
+    const next = Math.max(1, Math.floor(Number(frame) || 1));
+    pendingFrameRef.current = next;
+
+    const commit = () => {
+      frameUiTimerRef.current = null;
+      const pending = pendingFrameRef.current;
+      pendingFrameRef.current = null;
+      if (typeof pending !== 'number' || currentFrameRef.current === pending) return;
+      currentFrameRef.current = pending;
+      lastFrameUiUpdateRef.current = performance.now();
+      setCurrentFrame(pending);
+    };
+
+    const now = performance.now();
+    const elapsed = now - lastFrameUiUpdateRef.current;
+    const minIntervalMs = 66;
+
+    if (elapsed >= minIntervalMs && frameUiTimerRef.current == null) {
+      commit();
+      return;
+    }
+
+    if (frameUiTimerRef.current == null) {
+      frameUiTimerRef.current = window.setTimeout(commit, Math.max(0, minIntervalMs - elapsed));
+    }
+  }, []);
+
   const [voiRange, setVoiRange] = useState<{ lower: number; upper: number } | null>(null);
   const [fps, setFps] = useState(24);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -177,9 +221,7 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
     selectedSeriesId: selectedSeries,
     mergedSeriesMap,
     voiDefaults,
-    onFrameIndexChange: (frame) => {
-      setCurrentFrame(frame);
-    },
+    onFrameIndexChange: setCurrentFrameBatched,
   });
 
   const { ensureImageRendered } = useEnsureImageRendered({
@@ -214,11 +256,9 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
 
   // Log when viewportEl/viewportInstance change (quick watch)
   useEffect(() => {
-    console.info(`[${dbg}] viewportInstance changed ->`, viewportInstance ? 'NOT NULL' : 'null');
   }, [dbg, viewportInstance]);
 
   useEffect(() => {
-    console.info(`[${dbg}] viewportEl changed ->`, viewportEl ? 'NOT NULL' : 'null', viewportEl ? safeInspectSimple(viewportEl) : null);
   }, [dbg, viewportEl]);
 
 
@@ -248,7 +288,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
         try {
           const csCore: any = await import('@cornerstonejs/core').catch(() => null);
           const en = csCore?.getEnabledElement ? csCore.getEnabledElement(vpEl) : null;
-          console.debug('[Viewer] after viewportInstance effect, enabledElement present?', !!en);
         } catch {}
       } catch (e) {
         // ignore
@@ -339,13 +378,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
   }, [imageAvailable, setLoadingStackSafe, setSidebarLoadingSafe]);
 
   useEffect(() => {
-    console.debug('[Viewer] image signals ->', {
-      hookImageReady,
-      enabledHasImage,
-      runtimeHasImage,
-      viewportRenderedSignal,
-      imageAvailable,
-    });
     if (imageAvailable) {
       setLoadingStackSafe(false);
       setSidebarLoadingSafe(false);
@@ -379,7 +411,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
     // This prevents premature attach attempts while viewportInstance/element are still being created.
     if (!selectedSeries) return;
     if (!viewportReady) {
-      console.debug(`[Viewer][ATTACH] skip attach for ${selectedSeries} because viewportReady=false`);
       return;
     }
 
@@ -388,25 +419,7 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
     const thisSession = (currentAttachSessionRef.current = (currentAttachSessionRef.current || 0) + 1);
 
     async function attachSelectedSeries() {
-      console.group('%c[attachSelectedSeries] CALLED', 'color: red; font-weight: bold');
-      console.trace('attachSelectedSeries stack');
-      console.groupEnd();
-
       attachCounterRef.current += 1;
-
-      console.warn(
-        `%c[ATTACH_SELECTED_SERIES] CALL #${attachCounterRef.current}`,
-        'color: red; font-weight: bold;',
-        {
-          selectedSeries,
-          session: thisSession,
-          viewportInstance: Boolean(viewportInstance),
-          viewportEl: Boolean(viewportEl),
-          time: performance.now().toFixed(1),
-        }
-      );
-
-      console.trace('[ATTACH_SELECTED_SERIES] call stack');
 
       const sessionAtStart = thisSession;
       const shouldAbort = () => sessionAtStart !== currentAttachSessionRef.current || cancelled;
@@ -443,9 +456,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
 
             if (vpShowsDesired) {
               // The viewport already shows the intended image/frame — skip expensive attach.
-              console.debug(
-                `[Viewer][ATTACH][sess=${sessionAtStart}] skip attach: viewport already showing desired series=${selectedSeries} idx=${desiredIdx}`
-              );
               // Ensure loading UI is not stuck
               setLoadingStackSafe(false);
               setSidebarLoadingSafe(false);
@@ -460,46 +470,41 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
           }
         } catch (e) {
           // ignore guard errors — proceed with normal attach if guard fails
-          console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] guard check threw`, e);
         }
 
         // ===== END QUICK GUARD =====
-
-        console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] start selectedSeries=${selectedSeries} images=${ds.imageIds.length}`);
         setLoadingStackSafe(true);
         setSidebarLoadingSafe(true);
 
         // 1) Wait for cornerstone readiness (cancellable)
         await waitForCornerstoneReady(5000).catch(() => false);
-        if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort after waitForCornerstoneReady`); return; }
+        if (shouldAbort()) return;
 
         // 2) Ensure element visible / small delay
         const visible = await waitForElementVisible(elToCheck, 5000).catch(() => false);
-        if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort after waitForElementVisible`); return; }
+        if (shouldAbort()) return;
         if (!visible) await new Promise((r) => setTimeout(r, 160));
-        if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort after small wait`); return; }
+        if (shouldAbort()) return;
 
         // 3) Warm first image quickly (best-effort)
         const firstImageId = ds.imageIds[ds.initialImageIdIndex ?? 0];
         try {
           await loadAndCacheImageWithTimeout(firstImageId, 6000).catch(() => {});
         } catch {}
-        if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort after warm-first-image`); return; }
+        if (shouldAbort()) return;
 
         // 4) Ensure engine/viewport registration (best-effort)
         try {
           await waitForEngineAndViewport(renderingEngineRef, viewportInstance, elToCheck as HTMLDivElement, 5000, 100);
         } catch (e) {
-          console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] waitForEngineAndViewport warning`, e);
         }
-        if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort after waitForEngineAndViewport`); return; }
+        if (shouldAbort()) return;
 
         // 5) Try to attach with multiple attempts + fallbacks
         let attached = false;
         const maxAttempts = ATTEMPTS_ATTACH;
         for (let attempt = 1; attempt <= maxAttempts && !attached && !shouldAbort(); attempt++) {
           try {
-            console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] attempt ${attempt} attaching displaySet`);
             attached = await attachDisplaySetToViewport({
               displaySet: ds,
               renderingEngineRef,
@@ -511,14 +516,11 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
               viewportId: VIEWPORT_ID,
             }).catch(() => false);
 
-            if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort inside attach attempt ${attempt}`); return; }
+            if (shouldAbort()) return;
 
             if (attached) break;
 
-            console.debug('[Viewer][ATTACH] fallback ensureStackOnViewport called (sess=', sessionAtStart, ')', { selectedSeries, desiredIndex: ds.initialImageIdIndex });
-            console.trace();
-
-            if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort after ensureStackOnViewport fallback`); return; }
+            if (shouldAbort()) return;
 
             // gentle nudge: normalize canvases, enable element, resize+render, force render check
             try { enableElement(elToCheck); } catch {}
@@ -528,11 +530,10 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
             try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
             try { await forceRenderCheck(elToCheck as HTMLDivElement, viewportInstance, renderingEngineRef); } catch {}
 
-            if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort after gentle nudge`); return; }
+            if (shouldAbort()) return;
 
             await new Promise((r) => setTimeout(r, 220 + attempt * 80));
           } catch (err) {
-            console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] attach attempt ${attempt} threw`, err);
             await new Promise((r) => setTimeout(r, 200 + attempt * 100));
           }
         } // end attempts
@@ -549,7 +550,7 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
               }
             }
           } catch {}
-          if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort after warm-and-fallback`); return; }
+          if (shouldAbort()) return;
 
           try {
             try { normalizeCanvasAndContext(elToCheck); } catch {}
@@ -557,7 +558,7 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
             await forceRenderCheck(elToCheck as HTMLDivElement, viewportInstance, renderingEngineRef);
           } catch {}
         }
-        if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort before final settle`); return; }
+        if (shouldAbort()) return;
 
         // 7) Final settle: reset/presentation -> render -> wait two RAF -> normalize + forceRenderCheck
         try {
@@ -585,9 +586,8 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
           try { ensureCanvasSizing(elToCheck); } catch {}
           try { await forceRenderCheck(elToCheck as HTMLDivElement, viewportInstance, renderingEngineRef); } catch {}
         } catch (e) {
-          console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] final housekeeping failed`, e);
         }
-        if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort after final housekeeping`); return; }
+        if (shouldAbort()) return;
 
         // 8) Fire STACK_NEW_IMAGE so tools react like OHIF
         try {
@@ -597,9 +597,8 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
           setCurrentFrame(targetImageIndex + 1);
           targetEl?.dispatchEvent?.(new CustomEvent(evName, { detail: { imageIdIndex: targetImageIndex }, bubbles: true }));
         } catch (e) {
-          console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] dispatch STACK_NEW_IMAGE failed`, e);
         }
-        if (shouldAbort()) { console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] abort after dispatch`); return; }
+        if (shouldAbort()) return;
 
         // 9) Start background preload (safe, cancellable via shouldAbort checks in onProgress)
         // khi attach finished thành công (trong finally, khi !shouldAbort())
@@ -636,10 +635,7 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
             lastAttachedViewportElRef.current = elToCheck;
           } catch {}
         }
-
-        console.debug(`[Viewer][ATTACH][sess=${sessionAtStart}] attach finished (attached=${Boolean(attached)})`);
       } catch (err) {
-        console.warn('[Viewer] attachSelectedSeries top-level error', err);
       } finally {
         if (!shouldAbort()) {
           try {
@@ -674,7 +670,7 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
       cancelled = true;
       clearTimeout(kickTimer);
       currentAttachSessionRef.current = (currentAttachSessionRef.current || 0) + 1;
-      try { disableReleaseGraphicsResourcesGlobally(); } catch (e) { console.debug('[Viewer] disableReleaseGraphicsResourcesGlobally failed', e); }
+      try { disableReleaseGraphicsResourcesGlobally(); } catch {}
       if (finalTimer != null) {
         try { clearTimeout(finalTimer); } catch {}
         finalTimer = null;
@@ -721,7 +717,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
 
   handleMeasurementsChangeImplRef.current = (current) => {
     try {
-      console.debug('[Viewer] handleMeasurementsChange called', { currentLength: current.length });
     } catch {}
 
     setAllMeasurements((prev) => {
@@ -841,7 +836,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
 
           mergedMap.set(m.annotationUID, mergedItem);
         } catch (err) {
-          console.warn('[Viewer] handleMeasurementsChange: failed to merge measurement', m?.annotationUID, err);
         }
       }
 
@@ -852,7 +846,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
       const next = Array.from(uniqueByUID.values());
 
       try {
-        console.debug('[Viewer] handleMeasurementsChange -> merged total:', next.length);
       } catch (e) {}
 
       // If selectedMeasurementUID no longer present, clear it (defer)
@@ -902,7 +895,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
     try {
       handleMeasurementsChangeImplRef.current?.(current);
     } catch (e) {
-      console.warn('[Viewer] handleMeasurementsChange wrapper failed', e);
     }
   }, []);
   // ---------------------------------------------------------------
@@ -934,10 +926,8 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
       } catch (err: any) {
         const msg = String(err || '').toLowerCase();
         if (msg.includes('destroy')) return;
-        console.warn('[Viewer] safeRenderViewport: render failed', err);
       }
     } catch (e) {
-      console.warn('[Viewer] safeRenderViewport failed', e);
     }
   }
 
@@ -955,7 +945,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
         if (msg.includes('destroy')) return;
       }
     } catch (e) {
-      console.warn('[Viewer] safeResizeAndRender failed', e);
     }
   }
 
@@ -1029,7 +1018,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
   async function doUserSelectMeasurement(m: any) {
     if (!m) return;
     if (selectionInProgressRef.current) {
-      console.debug('[Viewer] doUserSelectMeasurement skip because selectionInProgressRef already true');
       return;
     }
 
@@ -1050,7 +1038,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
       try {
         await handleSelectMeasurement(m);
       } catch (err) {
-        console.warn('[Viewer] handleSelectMeasurement (user) failed', err);
       }
 
       // After main flow: try to ensure annotation is attached/visible
@@ -1170,11 +1157,9 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
         try {
           return await viewSrRef.current(seriesUID, instanceUID);
         } catch (err) {
-          console.warn('[useSrExport -> forwarded viewSr] failed', err);
           return false;
         }
       }
-      console.warn('[useSrExport -> viewSr] viewSrRef not ready');
       return false;
     },
   });
@@ -1220,7 +1205,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
         prevLoadedSrRef.current = Array.from(new Set(createdIds));
       }
     } catch (e) {
-      console.warn('[Viewer] SR export failed', e);
     } finally {
       setIsCreatingSr(false);
       setPendingSrType(null);
@@ -1242,7 +1226,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
     (typeof selectedSeries === 'string' && selectedSeries.startsWith?.('SR_'));
 
   const handleSelectTool = useCallback((tool: ToolID) => {
-    console.log('[Viewer] request to set active tool', { tool, isSeriesReadOnly });
     if (!isToolReady) {
       setActiveTool(tool);
       return;
@@ -1252,11 +1235,9 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
       if (ok) {
         setActiveTool(tool);
       } else {
-        console.warn('[Viewer] activation was blocked by tool manager, keeping adjust');
         setActiveTool('adjust');
       }
     } catch (e) {
-      console.warn('[Viewer] activateTool threw', e);
       setActiveTool('adjust');
     }
   }, [isToolReady, activateTool, isSeriesReadOnly]);
@@ -1305,7 +1286,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
     if (typeof window !== 'undefined') {
       (window as any).__CURRENT_SERIES_IS_SR = !!isSeriesReadOnly;
     }
-    console.log('[Viewer] __CURRENT_SERIES_IS_SR set ->', !!isSeriesReadOnly);
   }, [isSeriesReadOnly]);
 
   useEffect(() => {
@@ -1361,7 +1341,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
         lastActivatedToolRef.current = null;
       }
     } catch (e) {
-      console.warn('[Viewer] activateTool failed', e);
       lastActivatedToolRef.current = null;
     }
   }, [activeTool, isToolReady, isSeriesReadOnly, activateTool]);
@@ -1451,7 +1430,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
       try {
         (el as HTMLElement).dataset.__lastUserInteraction = String(Date.now());
         // small debug
-        // console.debug('[Viewer] mark user interaction', el.dataset.__lastUserInteraction);
       } catch {}
     };
 
@@ -1482,14 +1460,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
         window.removeEventListener('keydown', onKey);
       } catch {}
     };
-  }, [viewportEl]);
-
-
-  useEffect(() => {
-    if (!viewportEl) return;
-    try {
-      console.debug('[Viewer][debug] viewportEl children', Array.from(viewportEl.querySelectorAll('*')).slice(0,20).map(n => n.outerHTML?.slice?.(0,200)));
-    } catch {}
   }, [viewportEl]);
 
 
@@ -1607,7 +1577,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
       // Force redraw
       setTimeout(() => safeRenderViewport(VIEWPORT_ID), 0);
     } catch (err) {
-      console.warn('[Viewer] handleRemoveMeasurement error', err);
     }
   }, [safeRenderViewport, refreshMeasurements]);
 
@@ -1657,7 +1626,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
     safeRenderViewport,
     ensureImageRendered,
     preloadImagesWithTimeout,
-    logDebug: (m, o) => console.debug('[useMeasurementSelector]', m, o),
     // <-- pass ref so hook can mark selection in progress
     selectionInProgressRef,
     // <-- NEW: allow selector to compare current selection and avoid redundant sets
@@ -1687,16 +1655,6 @@ const Viewer = ({ studyUID, debugLabel }: { studyUID: string; debugLabel?: strin
 
 
   useEffect(() => {
-    console.debug('[Viewer] viewport created', {
-      viewportId: VIEWPORT_ID,
-      element: viewportEl,
-      instance: viewportInstance,
-      instanceEl: viewportInstance?.element,
-    });
-  }, [viewportInstance, viewportEl]);
-
-  useEffect(() => {
-    console.debug('[Viewer] selectedMeasurementUID changed ->', { selectedMeasurementUID, selectedMeasurementUIDRef: selectedMeasurementUIDRef.current });
   }, [selectedMeasurementUID]);
 
 

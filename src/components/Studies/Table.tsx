@@ -79,9 +79,7 @@ export default function Table({ data: studies = [] }: Props) {
     : { duration: 0.34, ease: [0.22, 1, 0.36, 1] as const };
 
   useEffect(() => {
-    console.log('[Table] studies received:', (studies || []).length);
     if (studies && studies.length) {
-      console.log('[Table] studies[0] preview:', studies[0]);
     }
   }, [studies]);
 
@@ -92,10 +90,8 @@ export default function Table({ data: studies = [] }: Props) {
       try {
         await initCornerstone();
         if (mounted) {
-          console.debug('[Table] initCornerstone prewarm done');
         }
       } catch (err) {
-        console.warn('[Table] prewarm initCornerstone failed', err);
       }
     })();
     return () => { mounted = false; };
@@ -114,7 +110,6 @@ export default function Table({ data: studies = [] }: Props) {
       f(st.studyInstanceUID).includes(f(filters.studyUID)) &&
       f(st.accessionNumber).includes(f(filters.accession))
     );
-    console.log('[Table] filtered length:', list.length);
     return list;
   }, [studies, filters]);
 
@@ -162,18 +157,15 @@ export default function Table({ data: studies = [] }: Props) {
       try {
         if (imageLoader && typeof (imageLoader as any).loadAndCacheImage === 'function') {
           await (imageLoader as any).loadAndCacheImage(imageId).catch((err: any) => {
-            console.warn('[Studies Table][prefetch] loadAndCacheImage failed for', imageId, err);
           });
         } else {
           const csCore = await import('@cornerstonejs/core').catch(()=>null);
           if (csCore && csCore.imageLoader && typeof csCore.imageLoader.loadAndCacheImage === 'function') {
             await csCore.imageLoader.loadAndCacheImage(imageId).catch((err: any) => {
-              console.warn('[Studies Table][prefetch][dyn] loadAndCacheImage failed for', imageId, err);
             });
           }
         }
       } catch (e) {
-        console.warn('[Studies Table][prefetch] unexpected error for', imageId, e);
       }
     } catch (err) {
       // swallow errors
@@ -363,7 +355,6 @@ export default function Table({ data: studies = [] }: Props) {
                                       // đảm bảo Cornerstone được init before navigation
                                       await initCornerstone();
                                     } catch (e) {
-                                      console.warn('[Table] initCornerstone before navigation failed', e);
                                       // continue anyway
                                     }
 

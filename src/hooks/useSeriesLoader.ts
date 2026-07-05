@@ -82,7 +82,6 @@ export function useSeriesLoader(studyUID: string) {
         setSrSeriesUIDs([]);
         setSrSeriesMeta([]);
       } catch (error) {
-        console.error('Failed to load series:', error);
       } finally {
         setLoading(false);
       }

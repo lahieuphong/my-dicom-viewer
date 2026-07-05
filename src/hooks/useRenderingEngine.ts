@@ -14,12 +14,6 @@ import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canv
 import { logCanvasState } from '@/lib/viewer/debugCanvas';
 import { ATTEMPTS_ENGINE, USER_COOLDOWN_MS } from '@/lib/viewer/constants';
 
-function safeLog(...args: any[]) {
-  try {
-    console.debug('[useRenderingEngine]', ...args.map((a) => (typeof a === 'object' ? '[obj]' : a)));
-  } catch {}
-}
-
 const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitForElement(ref: React.RefObject<HTMLElement | null>, timeout = 3000) {
@@ -109,9 +103,7 @@ function tryDetachViewportSafely(engine: RenderingEngine | null, viewportId = VI
     if (typeof (engine as any).setViewports === 'function') {
       try {
         (engine as any).setViewports([]);
-        safeLog('tryDetachViewportSafely: engine.setViewports([])');
       } catch (e) {
-        safeLog('engine.setViewports([]) failed', e);
       }
     }
 
@@ -120,16 +112,12 @@ function tryDetachViewportSafely(engine: RenderingEngine | null, viewportId = VI
       if (oldVp && typeof (oldVp as any).setElement === 'function') {
         try {
           (oldVp as any).setElement(null);
-          safeLog('tryDetachViewportSafely: oldVp.setElement(null)');
         } catch (e) {
-          safeLog('oldVp.setElement(null) failed', e);
         }
       }
     } catch (e) {
-      safeLog('tryDetachViewportSafely: getViewport/setElement attempt failed', e);
     }
   } catch (e) {
-    safeLog('tryDetachViewportSafely failed', e);
   }
 }
 
@@ -213,7 +201,6 @@ export function useRenderingEngine({
       };
       requestAnimationFrame(loop);
     } catch (e) {
-      safeLog('forceRenderFrames error', e);
     }
   };
 
@@ -448,10 +435,10 @@ export function useRenderingEngine({
         if (tg && engine?.id) {
           const present = (typeof (tg as any).getViewportIds === 'function' ? tg.getViewportIds() : typeof (tg as any).getViewports === 'function' ? (tg as any).getViewports() : []) ?? [];
           if (!present.includes?.(VIEWPORT_ID)) {
-            try { tg.addViewport(VIEWPORT_ID, engine.id); } catch (err) { safeLog('ToolGroup.addViewport failed', err); }
+            try { tg.addViewport(VIEWPORT_ID, engine.id); } catch {}
           }
         }
-      } catch (e) { safeLog('ToolGroup registration error', e); }
+      } catch {}
 
       // observe resize changes
       try {
@@ -464,16 +451,15 @@ export function useRenderingEngine({
                 const eng = engine ?? renderingEngineRef.current;
                 eng?.resize?.();
               } catch (e) {
-                safeLog('resize call failed in ResizeObserver', e);
               }
-              try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch (e) { safeLog('renderViewport failed in ResizeObserver', e); }
-              try { logCanvasState('RESIZE observer', mountEl); } catch (e) { safeLog('logCanvasState RESIZE observer failed', e); }
+              try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
+              try { logCanvasState('RESIZE observer', mountEl); } catch {}
               try { normalizeCanvasAndContext(mountEl); } catch {}
-            } catch (err) { safeLog('resizeObserver callback error', err); }
+            } catch {}
           });
-          try { resizeObserverRef.current.observe(mountEl); } catch (err) { safeLog('failed observe mountEl', err); }
+          try { resizeObserverRef.current.observe(mountEl); } catch {}
         }
-      } catch (err) { safeLog('setup ResizeObserver failed', err); }
+      } catch {}
 
       const imageIds = mergedSeriesMap[selectedSeriesId]?.files ?? [];
       const initialIndex = 0;
@@ -502,13 +488,10 @@ export function useRenderingEngine({
         for (let i = 0; i < attempts && !cancelled; i++) {
           try {
             if (vpCandidate && typeof vpCandidate.setStack === 'function') {
-              console.trace('🔥 FRAME SET HERE');
               await vpCandidate.setStack(ids, idx);
             } else if (vpCandidate && typeof vpCandidate.setImageId === 'function') {
-              console.trace('🔥 FRAME SET HERE');
               await vpCandidate.setImageId(ids[idx]);
             } else if (renderingEngineRef.current && typeof (renderingEngineRef.current as any).setStacks === 'function') {
-              console.trace('🔥 FRAME SET HERE');
               (renderingEngineRef.current as any).setStacks([{ viewportId: VIEWPORT_ID, imageIds: ids, index: idx, __requestToken: reqToken }]);
             } else {
               return true;
@@ -516,7 +499,6 @@ export function useRenderingEngine({
 
             try {
               if (vpCandidate && typeof vpCandidate.setImageIndex === 'function') {
-                console.trace('🔥 FRAME SET HERE');
                 vpCandidate.setImageIndex(idx);
               } else if (vpCandidate && typeof vpCandidate.getImageIds === 'function') {
                 const idsLocal = vpCandidate.getImageIds?.() ?? [];
@@ -568,7 +550,6 @@ export function useRenderingEngine({
 
           try {
             if (renderingEngineRef.current && typeof (renderingEngineRef.current as any).setStacks === 'function') {
-              console.trace('🔥 FRAME SET HERE');
               (renderingEngineRef.current as any).setStacks([{ viewportId: VIEWPORT_ID, imageIds: ids, index: chosenIndex, __requestToken: reqToken }]);
             }
           } catch (e) {}
@@ -714,7 +695,6 @@ export function useRenderingEngine({
                       if (vp && typeof vp.setImageIndex === 'function') {
                         const idx = typeof vp.getCurrentImageIdIndex === 'function' ? (vp.getCurrentImageIdIndex() ?? 0) : 0;
                         try { 
-                          console.trace('🔥 FRAME SET HERE');
                           vp.setImageIndex(idx);
                         } catch (e) {}
                       } else if (vp && typeof vp.getImageIds === 'function') {
@@ -729,7 +709,6 @@ export function useRenderingEngine({
 
                             if (safeIdx >= 0 && typeof vp.setImageIndex === 'function') {
                               try {
-                                console.trace('🔥 FRAME SET HERE');
                                 vp.setImageIndex(safeIdx);
                               } catch (e) {
                                 try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
@@ -812,7 +791,6 @@ export function useRenderingEngine({
                   try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
                 }
               } catch (err) {
-                safeLog('[useRenderingEngine] applyVOI error (initial image):', err);
               }
             } catch (err) {}
           })();

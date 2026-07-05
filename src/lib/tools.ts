@@ -96,9 +96,9 @@ export function registerToolsOnce(): void {
             invert: false,
             loop: true,
             prefetch: { enabled: true, forward: 100, backward: 50 },
-            renderSynchronously: true,
-            stackScrollSpeed: 5,
-            wheelSensitivity: 3,
+            renderSynchronously: false,
+            stackScrollSpeed: 1,
+            wheelSensitivity: 1,
           });
 
           // make wheel scroll active by default so users can scroll stacks
@@ -115,7 +115,6 @@ export function registerToolsOnce(): void {
   } catch (e) {
     // swallow top-level errors to keep best-effort (don't break app)
     // eslint-disable-next-line no-console
-    console.warn('[registerToolsOnce] unexpected error', e);
   } finally {
     _registered = true;
   }

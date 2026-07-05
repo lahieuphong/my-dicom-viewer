@@ -57,17 +57,11 @@ export default function ViewportOverlay({
   /* -------------------- Sync when parent prop changes (authoritative) -------------------- */
   useEffect(() => {
     const newVal = currentFrame ?? 1;
-    // only update & log if changed
     if (displayFrameRef.current !== newVal) {
       setDisplayFrame(newVal);
       displayFrameRef.current = newVal;
-      // TRACE log required by instructions
-      try {
-        // eslint-disable-next-line no-console
-        console.debug('[TRACE ViewportOverlay] prop currentFrame ->', newVal, 'total', totalFrames);
-      } catch {}
     }
-  }, [currentFrame, totalFrames]);
+  }, [currentFrame]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -114,11 +108,6 @@ export default function ViewportOverlay({
               if (displayFrameRef.current !== newVal) {
                 setDisplayFrame(newVal);
                 displayFrameRef.current = newVal;
-                try {
-                  // TRACE log
-                  // eslint-disable-next-line no-console
-                  console.debug('[TRACE ViewportOverlay] initial read ->', newVal, 'total', totalFrames);
-                } catch {}
               }
             }
           } catch {
@@ -155,17 +144,6 @@ export default function ViewportOverlay({
           if (displayFrameRef.current !== newVal) {
             setDisplayFrame(newVal);
             displayFrameRef.current = newVal;
-            try {
-              // TRACE log required by instructions
-              // eslint-disable-next-line no-console
-              console.debug('[TRACE ViewportOverlay] stack new image index ->', newVal, 'total', totalFrames);
-            } catch {}
-          } else {
-            // optionally log duplicates if needed for debug
-            try {
-              // eslint-disable-next-line no-console
-              console.debug('[TRACE ViewportOverlay] stack event ignored (no change) ->', newVal, 'total', totalFrames);
-            } catch {}
           }
         }
       } catch {}
@@ -175,7 +153,10 @@ export default function ViewportOverlay({
       currentEl.addEventListener(STACK_NEW_IMAGE_EVENT, stackHandler as EventListener);
     } catch {}
 
-    /* -------------------- Poll zoom & fallback image index each frame -------------------- */
+    /* -------------------- Poll zoom & fallback image index at a controlled rate -------------------- */
+    const pollIntervalMs = 180;
+    let lastPollTs = 0;
+
     const shouldPoll = () => {
       if (!mountedRef.current) return false;
       if (!currentEl) return false;
@@ -191,6 +172,8 @@ export default function ViewportOverlay({
 
     const loop = () => {
       try {
+        rafIdRef.current = null;
+
         if (!shouldPoll()) {
           timeoutIdRef.current = window.setTimeout(() => {
             if (!mountedRef.current) return;
@@ -198,6 +181,13 @@ export default function ViewportOverlay({
           }, 500);
           return;
         }
+
+        const now = performance.now();
+        if (now - lastPollTs < pollIntervalMs) {
+          rafIdRef.current = requestAnimationFrame(loop);
+          return;
+        }
+        lastPollTs = now;
 
         const en = (() => {
           try {
@@ -242,11 +232,6 @@ export default function ViewportOverlay({
                 if (displayFrameRef.current !== newVal) {
                   setDisplayFrame(newVal);
                   displayFrameRef.current = newVal;
-                  try {
-                    // TRACE log per instructions
-                    // eslint-disable-next-line no-console
-                    console.debug('[TRACE ViewportOverlay] poll ->', newVal, 'total', totalFrames);
-                  } catch {}
                 }
               }
             } catch {}
@@ -256,7 +241,9 @@ export default function ViewportOverlay({
         }
       } catch {}
 
-      rafIdRef.current = requestAnimationFrame(loop);
+      if (mountedRef.current && rafIdRef.current == null) {
+        rafIdRef.current = requestAnimationFrame(loop);
+      }
     };
 
     loop();

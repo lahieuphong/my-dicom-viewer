@@ -141,7 +141,6 @@ export function useViewportState({
         const idx = Math.max(0, Math.floor(Number(frameOneBased) || 0) - 1);
         if (viewportInstance && typeof viewportInstance.setImageIndex === 'function') {
           try {
-            console.trace('🔥 FRAME SET HERE');
             viewportInstance.setImageIndex(idx);
             setCurrentFrameState(idx + 1);
             return true;
@@ -151,7 +150,6 @@ export function useViewportState({
           try {
             const ids = viewportInstance.getImageIds?.() ?? null;
             if (Array.isArray(ids) && ids.length) {
-              console.trace('🔥 FRAME SET HERE');
               await viewportInstance.setStack(ids, Math.max(0, Math.min(idx, ids.length - 1)));
               setCurrentFrameState(Math.max(0, Math.min(idx, ids.length - 1)) + 1);
               return true;
@@ -203,12 +201,10 @@ export function useViewportState({
       const idx = Math.max(0, Math.floor(Number(snap.frameIndex) || 0));
       try {
         if (vp && typeof vp.setImageIndex === 'function') {
-          console.trace('🔥 FRAME SET HERE');
           vp.setImageIndex(idx);
         } else if (vp && typeof vp.setStack === 'function') {
           const ids = vp.getImageIds?.() ?? null;
           if (Array.isArray(ids) && ids.length) {
-            console.trace('🔥 FRAME SET HERE');
             await vp.setStack(ids, Math.max(0, Math.min(idx, ids.length - 1)));
           }
         }

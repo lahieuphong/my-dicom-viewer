@@ -91,18 +91,15 @@ export function useEnsureImageRendered(options: {
       try {
         if (imageLoader && typeof (imageLoader as any).loadAndCacheImage === 'function') {
           await (imageLoader as any).loadAndCacheImage(desiredImageId).catch((err: any) => {
-            console.warn('[useEnsureImageRendered][preload] loadAndCacheImage failed for', desiredImageId, err);
           });
         } else {
           const csCore = await import('@cornerstonejs/core').catch(() => null);
           if (csCore && csCore.imageLoader && typeof csCore.imageLoader.loadAndCacheImage === 'function') {
             await csCore.imageLoader.loadAndCacheImage(desiredImageId).catch((err: any) => {
-              console.warn('[useEnsureImageRendered][preload][dyn] loadAndCacheImage failed for', desiredImageId, err);
             });
           }
         }
       } catch (e) {
-        console.warn('[useEnsureImageRendered][preload] unexpected error for', desiredImageId, e);
       }
 
       if (isStale()) return false;
@@ -138,36 +135,30 @@ export function useEnsureImageRendered(options: {
                 : -1;
 
             if (currentIndex === -1) {
-              console.trace('🔥 FRAME SET HERE');
               await vpInstance.setStack(imageIds, desiredIndexClamped);
             }
             try {
               logCanvasState?.('AFTER setStack', vpEl);
             } catch (e) {}
           } catch (err) {
-            console.warn('[useEnsureImageRendered] vpInstance.setStack threw', err);
           }
         } else if (vpInstance && isVpAlive(vpInstance) && typeof vpInstance.setImageId === 'function') {
           try {
-            console.trace('🔥 FRAME SET HERE');
             await vpInstance.setImageId(desiredImageId);
             try {
               logCanvasState?.('AFTER setStack', vpEl);
             } catch (e) {}
           } catch (err) {
-            console.warn('[useEnsureImageRendered] vpInstance.setImageId threw', err);
           }
         } else {
           const engineAny = engine as any;
           if (engineAny && isEngineAlive(engineAny) && typeof engineAny.setStacks === 'function') {
             try {
-              console.trace('🔥 FRAME SET HERE');
               await engineAny.setStacks([{ viewportId: VIEWPORT_ID, imageIds, index: desiredIndexClamped }]);
               try {
                 logCanvasState?.('AFTER setStack', vpEl);
               } catch (e) {}
             } catch (err) {
-              console.debug('[useEnsureImageRendered] engine.setStacks fallback failed', err);
             }
           }
         }
@@ -201,13 +192,11 @@ export function useEnsureImageRendered(options: {
           try { engine?.renderViewport?.(VIEWPORT_ID); } catch {}
           try { normalizeCanvasAndContext(vpEl); } catch {}
         } catch (e) {
-          console.debug('[useEnsureImageRendered] presentation/reset/render extra steps failed', e);
         }
 
         try { if (vpInstance && typeof vpInstance.render === 'function') await vpInstance.render(); } catch {}
         try { engine?.renderViewport?.(VIEWPORT_ID); } catch {}
       } catch (e) {
-        console.warn('[useEnsureImageRendered] setStack/setImageId failed', e);
       }
 
       await wait(30);
@@ -255,7 +244,6 @@ export function useEnsureImageRendered(options: {
                   },
                 });
               } catch (e) {
-                console.debug('[useEnsureImageRendered] applyVOI failed', e);
               }
             }
           }
@@ -336,22 +324,6 @@ export function useEnsureImageRendered(options: {
           if ((enabled as any)?.image) return true;
         }
       } catch {}
-
-      try {
-        const enabled = getEnabledSafe();
-        console.debug('[useEnsureImageRendered final state]', {
-          enabledExists: !!enabled,
-          hasImage: !!(enabled as any)?.image,
-          index: typeof enabled?.viewport?.getCurrentImageIdIndex === 'function'
-            ? enabled.viewport.getCurrentImageIdIndex()
-            : null,
-          viewportImageIds: (enabled?.viewport as any)?.getImageIds?.() ?? null,
-          vpEl,
-          vpInstanceExists: !!vpInstance,
-        });
-      } catch (e) {
-        console.warn('[useEnsureImageRendered] final debug failed', e);
-      }
 
       return false;
     },

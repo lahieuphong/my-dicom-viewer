@@ -7,7 +7,6 @@ interface MeasurementStatsProps {
 }
 
 export default function MeasurementStats({ type, stats }: MeasurementStatsProps) {
-  // console.log('[MeasurementStats]', { type, stats });
   if (!stats) return null;
 
   const baseClass = "text-xs text-secondary-foreground";

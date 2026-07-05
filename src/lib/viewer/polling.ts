@@ -113,7 +113,6 @@ export async function waitForEngineAndViewport(
 
 /**
  * Log a compact safe summary about enabled element / canvas / viewportInstance.
- * Use console.debug with a safe plain object to avoid devtools trying to recursively
  * evaluate a circular/huge object which sometimes triggers RangeError while expanding.
  */
 export function logEnabledDebug(el: HTMLElement | null, vpInstance: any, renderingEngineRef?: RefObject<any>) {
@@ -157,9 +156,7 @@ export function logEnabledDebug(el: HTMLElement | null, vpInstance: any, renderi
     }
 
     // Use debug so devtools won't attempt deep expansion unless user explicitly expands
-    try { console.debug('[DEBUG safe] enabled element snapshot', safe); } catch {}
   } catch (outer) {
-    try { console.warn('[DEBUG] logEnabledDebug failed (outer)', outer); } catch {}
   }
 }
 
@@ -214,6 +211,5 @@ export async function forceRenderCheck(el: HTMLElement | null, vpInstance: any, 
 
     logEnabledDebug(el, vpInstance, renderingEngineRef);
   } catch (e) {
-    try { console.warn('[DEBUG] forceRenderCheck failed', e); } catch {}
   }
 }

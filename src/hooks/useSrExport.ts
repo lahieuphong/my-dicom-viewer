@@ -425,7 +425,6 @@ export function useSrExport(deps: UseSrExportDeps) {
           try { stateAny.triggerAnnotationModified?.(inst, viewportEl); } catch (_) {}
           try { tryLockAnnotationByUid(inst.annotationUID); } catch (_) {}
         } catch (e) {
-          console.warn('[SR Restore] addAnnotation failed', inst?.annotationUID, e);
         }
       }
     }
@@ -515,7 +514,6 @@ export function useSrExport(deps: UseSrExportDeps) {
       const targetInitialIndex = (measurementsFromSR.length && measurementsFromSR.find(m => String(m.metadata.seriesUID) === String(targetId))?.metadata.frameIndex) ?? 0;
 
       if (Array.isArray(targetFiles) && targetFiles.length > 0) {
-        console.trace('🔥 FRAME SET HERE');
         await viewportInstance.setStack(targetFiles, Math.min(Math.max(0, targetInitialIndex), targetFiles.length - 1));
         // small delay to ensure stack is updated
         await new Promise((r) => setTimeout(r, 50));
@@ -532,7 +530,6 @@ export function useSrExport(deps: UseSrExportDeps) {
         }
       }
     } catch (err) {
-      console.warn('[SR Restore] setStack for activated SR failed', err);
     }
 
     // render
@@ -587,7 +584,6 @@ export function useSrExport(deps: UseSrExportDeps) {
       const fileName = `SR_${studyUID}_${sanitizeFileName(documentTitle || 'report')}.json`;
       saveAs(new Blob([JSON.stringify(srRequest, null, 2)], { type: 'application/json' }), fileName);
     } catch (e) {
-      console.warn('[Export SR] save JSON failed', e);
     }
 
     // NO server POST in static-local mode.
@@ -596,13 +592,11 @@ export function useSrExport(deps: UseSrExportDeps) {
     try {
       await forceRemoveOriginalAnnotations(uids, viewportEl);
     } catch (e) {
-      console.warn('[Export SR] force remove originals failed', e);
     }
 
     try {
       setAllMeasurements((prev) => prev.filter((m) => !uids.includes(m.annotationUID)));
     } catch (e) {
-      console.warn('[Export SR] clearing exported measurements failed', e);
     }
 
     const createdIds = await restoreSavedInstances(instancesSaved);
@@ -620,7 +614,6 @@ export function useSrExport(deps: UseSrExportDeps) {
       const dcmBlob = new Blob([JSON.stringify(srRequest, null, 2)], { type: 'application/dicom' });
       saveAs(dcmBlob, fileName);
     } catch (e) {
-      console.warn('[Export SR] save DICOM placeholder failed', e);
     }
 
     // NO server POST in static-local mode.
@@ -629,7 +622,6 @@ export function useSrExport(deps: UseSrExportDeps) {
     try {
       await forceRemoveOriginalAnnotations(uids, viewportEl);
     } catch (e) {
-      console.warn('[Export SR] force remove originals failed', e);
     }
 
     try {

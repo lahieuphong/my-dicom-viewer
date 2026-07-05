@@ -16,11 +16,9 @@ export function StudiesProvider({ children }: React.PropsWithChildren) {
   useEffect(() => {
     (async () => {
       try {
-        const data = await fetchStudiesWithMeta();
-        console.log('🩺 [PACS] fetchStudiesWithMeta response →', data); // ✅ Log client-side
+        const data = await fetchStudiesWithMeta(); // ✅ Log client-side
         setStudies(data);
       } catch (error) {
-        console.error('❌ Failed to load studies:', error);
       }
     })();
   }, []);

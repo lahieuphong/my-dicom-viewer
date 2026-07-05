@@ -15,7 +15,6 @@ export default function CornerstonePrewarm() {
         await initCornerstone();
         (window as any).__cornerstonePrewarmDone = true;
       } catch (e) {
-        console.warn('[CornerstonePrewarm] init failed', e);
       }
     })();
   }, []);

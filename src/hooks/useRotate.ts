@@ -10,7 +10,6 @@ export function useRotate(viewportInstance: StackViewport | null) {
       viewportInstance.setViewPresentation(pres);
       viewportInstance.render();
     } catch (e) {
-      console.error('Rotate error:', e);
     }
   };
 

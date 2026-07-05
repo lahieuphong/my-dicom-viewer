@@ -105,7 +105,6 @@ export function useImageReadiness({
         if (!csOk) {
           // allow fallback path (don't crash) — continue to poll fallback later
           // eslint-disable-next-line no-console
-          console.debug('[useImageReadiness] cornerstone init not ready before ensureImageRendered');
         } else {
           try {
             // warm-up decoder using shared preload helper

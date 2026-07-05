@@ -376,7 +376,6 @@ export default function MeasurementPanel({
                                         } catch (err) {
                                           // don't break UI; log in console
                                           // eslint-disable-next-line no-console
-                                          console.warn('[MeasurementPanel] onRemoveMeasurement threw', err);
                                         }
 
                                         // Parent may update; optionally request refresh (best-effort)

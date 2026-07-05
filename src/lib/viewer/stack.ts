@@ -42,16 +42,6 @@ export interface EnsureStackParams {
 /** IN-FLIGHT LOCK (prevent concurrent ensure for same viewportInstance) */
 const _ensuringMap = new WeakMap<any, boolean>(); // viewportInstance -> boolean
 
-function pushViewerLog(evt: string, payload: Record<string, any> = {}) {
-  try {
-    const w: any = (typeof window !== 'undefined') ? (window as any) : null;
-    if (!w) return;
-    w.__viewerLog = w.__viewerLog || [];
-    w.__viewerLog.push({ t: Date.now(), evt, ...payload });
-    if (w.__viewerLog.length > 4000) w.__viewerLog.splice(0, w.__viewerLog.length - 4000);
-  } catch {}
-}
-
 function makeToken(): string {
   try {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
@@ -91,11 +81,9 @@ export async function loadImageSafe(imageId?: string | null): Promise<boolean> {
       const globalFn = win?.__cornerstoneImageLoaderFn ?? null;
       if (typeof globalFn === 'function') {
         await globalFn(imageId).catch(() => {});
-        pushViewerLog('stack.loadImageSafe.usedGlobalFn', { imageId });
         return true;
       }
     } catch (err) {
-      pushViewerLog('stack.loadImageSafe.globalFnError', { imageId, err: String(err) });
     }
 
     // 2) Global cornerstone core-ish loader
@@ -104,11 +92,9 @@ export async function loadImageSafe(imageId?: string | null): Promise<boolean> {
       const loaderFromGlobal = csGlobal?.imageLoader ?? null;
       if (loaderFromGlobal && typeof loaderFromGlobal.loadAndCacheImage === 'function') {
         await loaderFromGlobal.loadAndCacheImage(imageId).catch(() => {});
-        pushViewerLog('stack.loadImageSafe.usedCsCore', { imageId });
         return true;
       }
     } catch (err) {
-      pushViewerLog('stack.loadImageSafe.csCoreError', { imageId, err: String(err) });
     }
 
     // 3) Dynamic import of @cornerstonejs/core
@@ -117,16 +103,13 @@ export async function loadImageSafe(imageId?: string | null): Promise<boolean> {
       const dyn = csCore ? (csCore as any).imageLoader : null;
       if (dyn && typeof dyn.loadAndCacheImage === 'function') {
         await dyn.loadAndCacheImage(imageId).catch(() => {});
-        pushViewerLog('stack.loadImageSafe.usedDynamic', { imageId });
         return true;
       }
     } catch (err) {
-      pushViewerLog('stack.loadImageSafe.dynamicError', { imageId, err: String(err) });
     }
 
     return false;
   } catch (err) {
-    pushViewerLog('stack.loadImageSafe.failed', { imageId, err: String(err) });
     return false;
   }
 }
@@ -153,10 +136,8 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
 
   const requestToken = makeToken();
 
-  pushViewerLog('stack.start', { requestToken, imageCount: imageIds.length, desiredIndex });
 
   const devLogFalse = (reason: string) => {
-    pushViewerLog('stack.fail', { requestToken, reason });
   };
 
   if (!Array.isArray(imageIds) || imageIds.length === 0) {
@@ -217,7 +198,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
         currentIdx === desiredIndex;
 
       if (listsEqual && idxMatches) {
-        pushViewerLog('stack.earlyExit.sameStackAndIndex', { requestToken });
         return true;
       }
     }
@@ -230,14 +210,12 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
     const locked = (viewportEl as any)?.dataset?.__stackLocked ?? null;
     const lockedOwner = (viewportEl as any)?.dataset?.__stackLockedOwner ?? null;
     if (locked === '1' && lockedOwner) {
-      pushViewerLog('stack.locked', { requestToken, lockedOwner });
       devLogFalse('final-lock');
       return false;
     }
   } catch {}
 
   if (viewportInstance && _ensuringMap.get(viewportInstance)) {
-    pushViewerLog('stack.concurrentLock', { requestToken });
     devLogFalse('concurrent-lock');
     return false;
   }
@@ -315,7 +293,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
             } else {
               desiredIndex = typeof params.desiredIndex === 'number' ? params.desiredIndex : 0;
             }
-            pushViewerLog('stack.preserveCurrentIndex', { requestToken, currentImageId, found, desiredIndex });
           } catch {
             desiredIndex = typeof params.desiredIndex === 'number' ? params.desiredIndex : 0;
           }
@@ -358,7 +335,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
         }
 
         if (typeof currentIdx === 'number' && currentIdx >= 0 && currentIdx !== desiredIndex) {
-          pushViewerLog('stack.userCooldown.abort', { requestToken, lastUserTs, now, currentIdx, desiredIndex });
           devLogFalse('user-cooldown');
           return false;
         }
@@ -379,7 +355,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
             if (vp) {
               if (typeof vp.setImageIndex === 'function' || typeof vp.setStack === 'function') {
                 // LOG before set
-                pushViewerLog('stack.tryAttach.setStart', { requestToken, method: typeof vp.setStack === 'function' ? 'setStack' : 'setImageIndex', targetIdx });
 
                 try {
                   if (typeof vp.setImageIndex === 'function') {
@@ -387,26 +362,20 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
                   } else if (typeof vp.setStack === 'function') {
                     await vp.setStack(imageIds, targetIdx).catch(() => {});
                   }
-                  pushViewerLog('stack.tryAttach.setDone', { requestToken, targetIdx });
                 } catch (err) {
-                  pushViewerLog('stack.tryAttach.setError', { requestToken, targetIdx, err: String(err) });
                 }
               }
             } else {
               const eng: any = renderingEngineRef?.current;
               const finalIdx = Math.max(0, Math.min(idxToUse, imageIds.length - 1));
               if (eng && typeof eng.setStacks === 'function') {
-                pushViewerLog('stack.tryAttach.engineSetStart', { requestToken, finalIdx });
                 try {
                   eng.setStacks([{ viewportId, imageIds, index: finalIdx }]);
-                  pushViewerLog('stack.tryAttach.engineSetDone', { requestToken, finalIdx });
                 } catch (err) {
-                  pushViewerLog('stack.tryAttach.engineSetError', { requestToken, finalIdx, err: String(err) });
                 }
               }
             }
           } catch (err) {
-            pushViewerLog('stack.tryAttach.innerError', { requestToken, err: String(err) });
           }
 
           try {
@@ -418,15 +387,12 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
           try {
             const target = imageIds[Math.max(0, Math.min(idxToUse, imageIds.length - 1))];
             if (target) {
-              pushViewerLog('stack.tryAttach.preloadSingle', { requestToken, target });
               await loadImageSafe(target).catch(() => {});
             }
           } catch (err) {
-            pushViewerLog('stack.tryAttach.preloadSingleError', { requestToken, err: String(err) });
           }
         }
       } catch (err) {
-        pushViewerLog('stack.tryAttach.outerError', { requestToken, err: String(err) });
       }
       return false;
     }
@@ -435,38 +401,30 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
     if (typeof ensureImageRendered === 'function' && viewportInstance && viewportEl) {
       try {
         const ok = await ensureImageRendered(viewportInstance, viewportEl, imageIds, desiredIndex, 40, 200).catch(() => false);
-        pushViewerLog('stack.ensureImageRendered.result', { requestToken, ok });
         if (ok) {
           const elToCheck = viewportEl;
           if (await tryAttachOrPreload(elToCheck, desiredIndex)) return true;
         }
       } catch (e) {
-        pushViewerLog('stack.ensureImageRendered.error', { requestToken, err: String(e) });
       }
     }
 
     /* ----------------------- Preload a few images (best-effort) ----------------------- */
     try {
       if (typeof preloadFn === 'function') {
-        pushViewerLog('stack.preload.start', { requestToken, limit: 4 });
         await preloadFn(imageIds, { concurrency: 3, perLoadTimeoutMs: 6000, limit: 4 }).catch(() => {});
-        pushViewerLog('stack.preload.done', { requestToken });
       } else {
         const tgt = imageIds[Math.max(0, Math.min(desiredIndex, imageIds.length - 1))];
-        pushViewerLog('stack.preload.single', { requestToken, target: tgt });
         await loadImageSafe(tgt).catch(() => {});
       }
     } catch (e) {
-      pushViewerLog('stack.preload.error', { requestToken, err: String(e) });
     }
 
     /* ----------------------- Aggressive attempts to attach stack ----------------------- */
     const attempts = ATTEMPTS_SETSTACK;
 
     for (let i = 0; i < attempts; i++) {
-      pushViewerLog('stack.attempt.start', { requestToken, attempt: i + 1, desiredIndex, imageCount: imageIds.length });
       if (shouldAbortBecauseSuperseded()) {
-        pushViewerLog('stack.attempt.abortedSuperseded', { requestToken, attempt: i + 1 });
         devLogFalse('concurrent-lock-or-superseded-or-final-lock');
         return false;
       }
@@ -478,9 +436,7 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
             await viewportInstance.setStack(imageIds, desiredIndex).catch((e: any) => {
               throw e;
             });
-            pushViewerLog('stack.attempt.setStack.done', { requestToken, attempt: i + 1 });
           } catch (err) {
-            pushViewerLog('stack.attempt.setStack.error', { requestToken, attempt: i + 1, err: String(err) });
             throw err;
           }
         } else if (viewportInstance && (typeof viewportInstance.setImageId === 'function' || typeof viewportInstance.setImageIndex === 'function')) {
@@ -512,18 +468,14 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
                 eng.setStacks([{ viewportId, imageIds, index: preferIdx }]);
               }
             }
-            pushViewerLog('stack.attempt.setImage.done', { requestToken, attempt: i + 1, preferIdx });
           } catch (err) {
-            pushViewerLog('stack.attempt.setImage.error', { requestToken, attempt: i + 1, err: String(err) });
           }
         } else {
           const eng: any = renderingEngineRef?.current;
           if (eng && typeof eng.setStacks === 'function') {
             try {
               eng.setStacks([{ viewportId, imageIds, index: desiredIndex }]);
-              pushViewerLog('stack.attempt.engineSet.done', { requestToken, attempt: i + 1 });
             } catch (err) {
-              pushViewerLog('stack.attempt.engineSet.error', { requestToken, attempt: i + 1, err: String(err) });
             }
           }
         }
@@ -544,7 +496,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
       try {
         const elToCheck = viewportEl ?? (viewportInstance as any)?.element ?? null;
         if (await tryAttachOrPreload(elToCheck, desiredIndex)) {
-          pushViewerLog('stack.attempt.attach.success', { requestToken, attempt: i + 1 });
           return true;
         }
       } catch {
@@ -556,12 +507,9 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
         const eng: any = renderingEngineRef?.current;
         if (eng && typeof eng.setStacks === 'function') {
           try {
-            pushViewerLog('stack.attempt.engineSet.retry', { requestToken, attempt: i + 1 });
             eng.setStacks([{ viewportId, imageIds, index: desiredIndex }]);
             renderingEngineRef?.current?.renderViewport?.(viewportId);
-            pushViewerLog('stack.attempt.engineSet.retryDone', { requestToken, attempt: i + 1 });
           } catch (e) {
-            pushViewerLog('stack.attempt.engineSet.retryError', { requestToken, attempt: i + 1, err: String(e) });
           }
         }
       } catch {}
@@ -579,11 +527,9 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
     try {
       const elToCheck = viewportEl ?? (viewportInstance as any)?.element ?? null;
       if (await tryAttachOrPreload(elToCheck, desiredIndex)) {
-        pushViewerLog('stack.finalCheck.attach.success', { requestToken });
         return true;
       }
     } catch (err) {
-      pushViewerLog('stack.finalCheck.error', { requestToken, err: String(err) });
     }
 
     try {
@@ -611,7 +557,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
             })();
 
             if (eq) {
-              pushViewerLog('stack.finalCheck.enabledElementMatches', { requestToken });
               return true;
             }
           } catch {}
@@ -619,7 +564,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
 
         try {
           if ((en as any).image) {
-            pushViewerLog('stack.finalCheck.enabledHasImage', { requestToken });
             return true;
           }
         } catch {}
@@ -647,7 +591,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
         } catch {}
       }
     } catch {}
-    pushViewerLog('stack.complete', { requestToken });
   }
 }
 

@@ -10,7 +10,6 @@ export function useResetViewer(
     try {
       await resetToInitial(viewportInstance);
     } catch (e) {
-      console.error('Reset error:', e);
     }
   };
 }
