@@ -61,8 +61,8 @@ export function normalizeValue(v: any): string {
   if (typeof v === 'object') {
     // Person name objects
     if ('Alphabetic' in v || 'Ideographic' in v || 'Phonetic' in v) {
-      // @ts-ignore
-      const parts = [v.Alphabetic, v.Ideographic, v.Phonetic].filter(Boolean).map(String);
+      const personName = v as { Alphabetic?: unknown; Ideographic?: unknown; Phonetic?: unknown };
+      const parts = [personName.Alphabetic, personName.Ideographic, personName.Phonetic].filter(Boolean).map(String);
       const joined = parts.length ? parts.join('\\') : '';
       return isPlaceholderToken(joined) ? PLACEHOLDER : joined;
     }
@@ -106,8 +106,8 @@ export function fieldToString(v: any): string {
   }
   if (typeof v === 'object') {
     if ('Alphabetic' in v || 'Ideographic' in v || 'Phonetic' in v) {
-      // @ts-ignore
-      const parts = [v.Alphabetic, v.Ideographic, v.Phonetic].filter(Boolean).map(String);
+      const personName = v as { Alphabetic?: unknown; Ideographic?: unknown; Phonetic?: unknown };
+      const parts = [personName.Alphabetic, personName.Ideographic, personName.Phonetic].filter(Boolean).map(String);
       return parts.join('\\');
     }
     if ('Value' in v && Array.isArray((v as any).Value)) {

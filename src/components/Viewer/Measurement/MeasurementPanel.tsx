@@ -375,8 +375,7 @@ export default function MeasurementPanel({
                                         try {
                                           onRemoveMeasurement(item.annotationUID);
                                         } catch (err) {
-                                          // don't break UI; log in console
-                                          // eslint-disable-next-line no-console
+                                          // don't break UI
                                         }
 
                                         // Parent may update; optionally request refresh (best-effort)

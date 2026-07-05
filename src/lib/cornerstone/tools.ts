@@ -114,7 +114,6 @@ export function registerToolsOnce(): void {
     }
   } catch (e) {
     // swallow top-level errors to keep best-effort (don't break app)
-    // eslint-disable-next-line no-console
   } finally {
     _registered = true;
   }

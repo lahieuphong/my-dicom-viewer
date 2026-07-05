@@ -35,7 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="color-scheme" content="dark light" />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <title>{metadata.title}</title>
-        <link rel="icon" href="/HVTT.ico" />
+        <link rel="icon" href="/brand/favicon.ico" />
         <link
           rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"

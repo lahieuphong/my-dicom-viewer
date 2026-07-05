@@ -53,12 +53,6 @@ public/dicoms/
 *.nii
 *.nii.gz
 
-# Local validation outputs
-validator_result.txt
-dicom-validate/reports/
-dicom-validate/output/
-dicom-validate/tmp/
-
 # IDE / editor
 .vscode/
 .idea/

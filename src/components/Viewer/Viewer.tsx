@@ -51,8 +51,8 @@ import { enableElement } from '@/lib/cornerstone/element';
 import { useForceZoomOne } from '@/hooks/useForceZoomOne';
 
 
-import { normalizeId, getEnabledElementSafeLocal, safeInspect, safeInspectSimple } from '@/lib/viewer/dom';
-import { waitForElementVisible, waitForCornerstoneReady, waitForEngineAndViewport, logEnabledDebug, forceRenderCheck } from '@/lib/viewer/polling';
+import { normalizeId, getEnabledElementSafeLocal } from '@/lib/viewer/dom';
+import { waitForElementVisible, waitForCornerstoneReady, waitForEngineAndViewport, forceRenderCheck } from '@/lib/viewer/polling';
 import { preloadImagesWithTimeout, loadAndCacheImageWithTimeout } from '@/lib/viewer/preload';
 import { safeAddAnnotation, safeGetAnnotations, safeRemoveAnnotationByUID, safeGetAnnotationInstance } from '@/lib/viewer/annotationHelpers';
 
@@ -65,7 +65,7 @@ import { disableReleaseGraphicsResourcesGlobally } from '@/lib/cornerstone';
 import { ATTEMPTS_ATTACH, ATTEMPTS_ANNOT } from '@/lib/viewer/constants';
 
 
-const Viewer = ({ studyUID }: { studyUID: string; debugLabel?: string }) => {
+const Viewer = ({ studyUID }: { studyUID: string }) => {
   // cooldown (ms) sau khi attach hoàn tất: watchdog/fallback sẽ tôn trọng khoảng này
   const COOLDOWN_AFTER_ATTACH_MS = 3000;
 
@@ -216,7 +216,7 @@ const Viewer = ({ studyUID }: { studyUID: string; debugLabel?: string }) => {
         try { renderingEngineRef.current?.resize?.(); } catch {}
         try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
 
-        // finally, try to check enabled element and log if missing (debug)
+        // final readiness check
         try {
           const csCore: any = await import('@cornerstonejs/core').catch(() => null);
           const en = csCore?.getEnabledElement ? csCore.getEnabledElement(vpEl) : null;
@@ -1361,7 +1361,6 @@ const Viewer = ({ studyUID }: { studyUID: string; debugLabel?: string }) => {
     const markInteraction = () => {
       try {
         (el as HTMLElement).dataset.__lastUserInteraction = String(Date.now());
-        // small debug
       } catch {}
     };
 
@@ -1518,7 +1517,11 @@ const Viewer = ({ studyUID }: { studyUID: string; debugLabel?: string }) => {
   function handleToggleVisibility(uid: string) {
     setHiddenMeasurements((prev) => {
       const set = new Set(prev);
-      set.has(uid) ? set.delete(uid) : set.add(uid);
+      if (set.has(uid)) {
+        set.delete(uid);
+      } else {
+        set.add(uid);
+      }
       return set;
     });
 

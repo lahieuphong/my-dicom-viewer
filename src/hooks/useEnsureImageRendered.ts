@@ -6,7 +6,6 @@ import { getEnabledElement, imageLoader } from '@cornerstonejs/core';
 import voiLib from '@/lib/cornerstone/voi';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
-import { logCanvasState } from '@/lib/viewer/debugCanvas';
 import { ATTEMPTS_POLL } from '@/lib/viewer/constants';
 import { wait } from '@/lib/utils/wait';
 
@@ -67,10 +66,6 @@ export function useEnsureImageRendered(options: {
         vpInstance = vpInstanceParam ?? null;
         vpEl = vpElParam;
       }
-
-      try {
-        logCanvasState?.('START ensureImageRendered', vpEl);
-      } catch (e) {}
 
       const isStale = () => {
         if (renderingEngineRef?.current !== engine) return true;
@@ -137,17 +132,11 @@ export function useEnsureImageRendered(options: {
             if (currentIndex === -1) {
               await vpInstance.setStack(imageIds, desiredIndexClamped);
             }
-            try {
-              logCanvasState?.('AFTER setStack', vpEl);
-            } catch (e) {}
           } catch (err) {
           }
         } else if (vpInstance && isVpAlive(vpInstance) && typeof vpInstance.setImageId === 'function') {
           try {
             await vpInstance.setImageId(desiredImageId);
-            try {
-              logCanvasState?.('AFTER setStack', vpEl);
-            } catch (e) {}
           } catch (err) {
           }
         } else {
@@ -155,9 +144,6 @@ export function useEnsureImageRendered(options: {
           if (engineAny && isEngineAlive(engineAny) && typeof engineAny.setStacks === 'function') {
             try {
               await engineAny.setStacks([{ viewportId: VIEWPORT_ID, imageIds, index: desiredIndexClamped }]);
-              try {
-                logCanvasState?.('AFTER setStack', vpEl);
-              } catch (e) {}
             } catch (err) {
             }
           }
@@ -252,7 +238,6 @@ export function useEnsureImageRendered(options: {
           try {
             if (vpInstance && typeof vpInstance.render === 'function') {
               await vpInstance.render();
-              try { logCanvasState?.('AFTER VOI render', vpEl); } catch (e) {}
             }
             try { engine?.renderViewport?.(VIEWPORT_ID); } catch {}
             try { normalizeCanvasAndContext(vpEl); } catch {}
@@ -304,11 +289,9 @@ export function useEnsureImageRendered(options: {
           const enabled = getEnabledSafe();
           const hasImage = Boolean((enabled as any)?.image);
           if (hasImage) {
-            try { logCanvasState?.(`POLL success attempt=${attempts}`, vpEl); } catch (e) {}
             return true;
           }
         } catch {}
-        try { logCanvasState?.(`POLL retry attempt=${attempts}`, vpEl); } catch (e) {}
         await wait(retryDelay);
         attempts += 1;
         try { normalizeCanvasAndContext(vpEl); } catch {}

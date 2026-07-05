@@ -26,7 +26,7 @@ export default function SrNameDialog({ open, defaultName = '', isSaving = false,
         <DialogHeader>
           <DialogTitle>Đặt tên cho SR</DialogTitle>
           <DialogDescription>
-            Vui lòng nhập tên cho Structured Report (tên này sẽ hiển thị thay cho "Group X").
+            Vui lòng nhập tên cho Structured Report (tên này sẽ hiển thị thay cho &quot;Group X&quot;).
           </DialogDescription>
         </DialogHeader>
 

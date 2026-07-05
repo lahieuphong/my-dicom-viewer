@@ -10,11 +10,6 @@ import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import type { Series } from '@/lib/pacs/services';
 import { normalizeId } from '@/lib/viewer/dom';
 
-// Debug helper: expose csAnnotation to console while developing (remove in prod)
-if (typeof window !== 'undefined') {
-  (window as any).csAnnotation = csAnnotation;
-}
-
 type UseSrExportDeps = {
   allMeasurements: AnnotationMeasurement[];
   mergedSeriesMap: Record<string, { files: string[]; metadata: Series }>;
@@ -326,7 +321,7 @@ export function useSrExport(deps: UseSrExportDeps) {
 
     for (const [baseSeriesId, instList] of Array.from(groups.entries())) {
       groupIndex += 1;
-      let baseId = baseSeriesId === '__unknown__' ? mergedKeys[0] : baseSeriesId;
+      const baseId = baseSeriesId === '__unknown__' ? mergedKeys[0] : baseSeriesId;
       if (!baseId) continue;
 
       const baseFiles = mergedSeriesMap[baseId]?.files ?? [];

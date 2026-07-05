@@ -70,7 +70,7 @@ function wrapReleaseGraphicsResourcesIfNeeded(obj: any) {
         if (typeof current === 'function') {
           try {
             // bind original if possible, but guard if binding fails
-            let orig: Function | null = null;
+            let orig: ((...args: any[]) => any) | null = null;
             try {
               orig = current.bind(val);
             } catch {

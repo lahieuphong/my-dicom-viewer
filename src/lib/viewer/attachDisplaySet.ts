@@ -156,7 +156,7 @@ export async function attachDisplaySetToViewport(opts: {
   // If caller supplies desiredIndex we respect it; otherwise default to initialImageIdIndex OR 0.
   const defaultDesiredIndex =
     typeof optDesiredIndex === 'number' ? optDesiredIndex : Math.max(0, (displaySet.initialImageIdIndex ?? 0));
-  let desiredIndex = Math.max(0, Math.min(defaultDesiredIndex, imageIds.length - 1));
+  const desiredIndex = Math.max(0, Math.min(defaultDesiredIndex, imageIds.length - 1));
 
   // generate a request token to mark ownership of changes
   const requestToken = (() => {
@@ -356,7 +356,7 @@ export async function attachDisplaySetToViewport(opts: {
 
   // 3) The requested index is authoritative. Preload/render nudges must not
   // advance the stack and then become the locked display frame.
-  let effectiveIndex = await forceViewportToIndex({
+  const effectiveIndex = await forceViewportToIndex({
     renderingEngineRef,
     viewportInstance,
     viewportEl,

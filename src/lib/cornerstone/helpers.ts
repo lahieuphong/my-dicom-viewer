@@ -46,7 +46,6 @@ export function getEnabledElementSafe(el: HTMLElement | null): any | null {
   const tryGet = (candidate: Element | null) => {
     try {
       // Prefer global cornerstone (works for some integrations)
-      // @ts-ignore
       const globalCornerstone = (window as any).cornerstone;
       if (globalCornerstone && typeof globalCornerstone.getEnabledElement === 'function') {
         try {
@@ -137,52 +136,6 @@ export function normalizeImageId(id?: string): string {
 export const normalizeId = normalizeImageId;
 
 /* =========================
-   Safe inspect (debug)
-   ========================= */
-
-/**
- * Lightweight safe inspection useful for debug logs.
- * Avoids calling getters that may throw; returns a shallow summary.
- */
-export function safeInspect(obj: any, maxKeys = 40): any {
-  try {
-    if (obj == null) return obj;
-    const t = typeof obj;
-    if (t === 'string' || t === 'number' || t === 'boolean') return obj;
-    if (obj instanceof HTMLElement) {
-      return {
-        __type: 'HTMLElement',
-        tagName: obj.tagName,
-        id: obj.id || null,
-        className: obj.className || null,
-        width: (obj as any).offsetWidth ?? null,
-        height: (obj as any).offsetHeight ?? null,
-      };
-    }
-    const out: Record<string, any> = { __type: Object.prototype.toString.call(obj) };
-    const keys = Object.keys(obj).slice(0, maxKeys);
-    for (const k of keys) {
-      try {
-        const v = obj[k];
-        const vt = typeof v;
-        if (vt === 'function') out[k] = '[fn]';
-        else if (v instanceof HTMLElement) out[k] = { __type: 'HTMLElement', tagName: v.tagName, id: v.id || null };
-        else if (vt === 'object' && v !== null) out[k] = `[object ${Object.prototype.toString.call(v)}]`;
-        else out[k] = v;
-      } catch {
-        out[k] = '[throws]';
-      }
-    }
-    try { if (obj?.id) out.__id = obj.id; } catch {}
-    try { if (obj?.name) out.__name = obj.name; } catch {}
-    try { if (obj?.constructor?.name) out.__ctor = obj.constructor.name; } catch {}
-    return out;
-  } catch {
-    return '[inspect-failed]';
-  }
-}
-
-/* =========================
    Annotation helpers (best-effort wrappers)
    ========================= */
 
@@ -260,14 +213,6 @@ export async function safeRemoveAnnotation(stateAny: any, annotationUID: string)
 }
 
 /* =========================
-   Viewport instrumentation
-   ========================= */
-
-export function instrumentViewportLogging(vp: any): void {
-  void vp;
-}
-
-/* =========================
    Exports summary
    ========================= */
 
@@ -276,8 +221,6 @@ export function instrumentViewportLogging(vp: any): void {
   - safeGetEnabledElement
   - getEnabledElementSafe
   - normalizeImageId (alias normalizeId)
-  - safeInspect
   - safeSetAnnotationVisibility
   - safeRemoveAnnotation
-  - instrumentViewportLogging
 */

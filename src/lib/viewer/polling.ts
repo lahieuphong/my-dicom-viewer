@@ -3,7 +3,7 @@
 // Polling / wait / render-nudge helpers for Viewer.
 
 import type { RefObject } from 'react';
-import { getEnabledElementSafeLocal, safeInspect } from './dom';
+import { getEnabledElementSafeLocal } from './dom';
 import { VIEWPORT_ID } from '@/constants/viewport';
 
 /**
@@ -112,55 +112,6 @@ export async function waitForEngineAndViewport(
 }
 
 /**
- * Log a compact safe summary about enabled element / canvas / viewportInstance.
- * evaluate a circular/huge object which sometimes triggers RangeError while expanding.
- */
-export function logEnabledDebug(el: HTMLElement | null, vpInstance: any, renderingEngineRef?: RefObject<any>) {
-  try {
-    const safe: Record<string, any> = { enabledExists: false };
-
-    try {
-      const en = getEnabledElementSafeLocal(el);
-      safe.enabledExists = !!en;
-
-      if (en) {
-        try { safe.imageExists = !!en.image; } catch { safe.imageExists = 'error'; }
-        try { safe.imageId = typeof en.image?.imageId === 'string' ? en.image.imageId : String(en.image?.imageId ?? 'n/a'); } catch { safe.imageId = 'error'; }
-        try { safe.columns = typeof en.image?.columns === 'number' ? en.image.columns : null; } catch { safe.columns = 'error'; }
-        try { safe.rows = typeof en.image?.rows === 'number' ? en.image.rows : null; } catch { safe.rows = 'error'; }
-      }
-    } catch (e: any) {
-      safe._getEnabledErr = (e && e.message) ? e.message : String(e);
-    }
-
-    try {
-      const canvas = (el?.querySelector?.('canvas.cornerstone-canvas') ?? el?.querySelector?.('canvas')) as HTMLCanvasElement | null;
-      if (canvas) {
-        safe.canvas = { clientWidth: canvas.clientWidth, clientHeight: canvas.clientHeight, bufferWidth: canvas.width, bufferHeight: canvas.height, dpr: typeof window !== 'undefined' ? window.devicePixelRatio : null };
-      } else {
-        safe.canvas = null;
-      }
-    } catch (e) {
-      safe.canvas = { error: String(e) };
-    }
-
-    try {
-      if (vpInstance) {
-        safe.vpInstance = { hasRender: typeof vpInstance?.render === 'function', hasSetStack: typeof vpInstance?.setStack === 'function' };
-        try { safe.vpInstance.getImageIdsLen = Array.isArray(vpInstance.getImageIds?.()) ? vpInstance.getImageIds().length : null; } catch {}
-      } else {
-        safe.vpInstance = null;
-      }
-    } catch (e) {
-      safe.vpInstance = { error: String(e) };
-    }
-
-    // Use debug so devtools won't attempt deep expansion unless user explicitly expands
-  } catch (outer) {
-  }
-}
-
-/**
  * Small helper: force a lightweight repaint of an element to work around cases where
  * the canvas doesn't repaints until a user-driven composite/reflow (scroll, resize).
  */
@@ -187,9 +138,6 @@ function forceRepaint(el: HTMLElement | null) {
  */
 export async function forceRenderCheck(el: HTMLElement | null, vpInstance: any, renderingEngineRef?: RefObject<any>) {
   try {
-    // Do lightweight debug only (avoid expanding big objects)
-    logEnabledDebug(el, vpInstance, renderingEngineRef);
-
     if (vpInstance) {
       try { if (typeof vpInstance.reset === 'function') vpInstance.reset(); } catch {}
       try { const maybe = vpInstance.render?.(); if (maybe && typeof maybe.then === 'function') await maybe; } catch {}
@@ -206,10 +154,8 @@ export async function forceRenderCheck(el: HTMLElement | null, vpInstance: any, 
     // eslint-disable-next-line no-await-in-loop
     await new Promise((r) => setTimeout(r, 80));
 
-    // Best‑effort force a repaint on the element before final debug snapshot
+    // Best-effort force a repaint on the element.
     try { forceRepaint(el); } catch {}
-
-    logEnabledDebug(el, vpInstance, renderingEngineRef);
   } catch (e) {
   }
 }

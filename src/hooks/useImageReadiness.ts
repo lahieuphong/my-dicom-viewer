@@ -104,7 +104,6 @@ export function useImageReadiness({
         const csOk = await waitForCornerstoneReadyShared(3500).catch(() => false);
         if (!csOk) {
           // allow fallback path (don't crash) — continue to poll fallback later
-          // eslint-disable-next-line no-console
         } else {
           try {
             // warm-up decoder using shared preload helper

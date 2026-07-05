@@ -264,10 +264,9 @@ export const useViewportAnnotations = ({
     } catch {
       // fallback: attempt to call global cornerstone if present
       try {
-        // @ts-ignore
-        if (typeof (globalThis as any).cornerstone?.getEnabledElement === 'function') {
-          // @ts-ignore
-          enabled = (globalThis as any).cornerstone.getEnabledElement(element);
+        const globalCornerstone = (globalThis as any).cornerstone;
+        if (typeof globalCornerstone?.getEnabledElement === 'function') {
+          enabled = globalCornerstone.getEnabledElement(element);
         }
       } catch {
         enabled = null;

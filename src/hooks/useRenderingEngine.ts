@@ -11,7 +11,6 @@ import { VIEWPORT_ID } from '@/constants/viewport';
 import { enableElement } from '@/lib/cornerstone/element';
 import { getEnabledElementSafeLocal } from '@/lib/viewer/dom';
 import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canvasUtils';
-import { logCanvasState } from '@/lib/viewer/debugCanvas';
 import { ATTEMPTS_ENGINE, USER_COOLDOWN_MS } from '@/lib/viewer/constants';
 
 const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -295,7 +294,7 @@ export function useRenderingEngine({
       }
     } catch {}
 
-    let cancelled = false;
+    const cancelled = false;
     let engine: any = null;
     let vp: any = null;
 
@@ -351,7 +350,6 @@ export function useRenderingEngine({
 
         try { renderingEngineRef.current?.resize?.(); } catch {}
         try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-        try { logCanvasState('AFTER setViewports', mountEl); } catch (e) {}
       } catch (err) {}
 
       try { vp = engine.getViewport?.(VIEWPORT_ID); } catch {}
@@ -421,14 +419,6 @@ export function useRenderingEngine({
       try { enableElement((vp?.element as HTMLElement) ?? mountEl); } catch {}
       try { normalizeCanvasAndContext((vp?.element as HTMLElement) ?? mountEl); } catch {}
 
-      try {
-        if (vp?.element) {
-          logCanvasState('AFTER enableElement', vp.element);
-        } else {
-          logCanvasState('AFTER enableElement', mountEl);
-        }
-      } catch (e) {}
-
       // register viewport with tool group
       try {
         const tg = ToolGroupManager.getToolGroup(TOOL_GROUP);
@@ -453,7 +443,6 @@ export function useRenderingEngine({
               } catch (e) {
               }
               try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-              try { logCanvasState('RESIZE observer', mountEl); } catch {}
               try { normalizeCanvasAndContext(mountEl); } catch {}
             } catch {}
           });
@@ -814,7 +803,7 @@ export function useRenderingEngine({
 
     // cleanup
     return () => {
-      let cancelledLocal = true;
+      const cancelledLocal = true;
       const tokenAtCleanup = initTokenRef.current;
       const delayMs = 120;
 

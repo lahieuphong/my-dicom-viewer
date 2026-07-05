@@ -2,7 +2,6 @@ export * from './annotationHelpers';
 export * from './attachDisplaySet';
 export * from './canvasUtils';
 export * from './constants';
-export * from './debugCanvas';
 export * from './displaySet';
 export * from './dom';
 export * from './polling';

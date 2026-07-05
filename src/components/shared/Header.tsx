@@ -87,7 +87,7 @@ export default function SharedHeader({
             {showLogo && (
               <div className="relative w-36 h-10 md:w-48 md:h-14 flex-shrink-0">
                 <Image
-                  src="/imgs/HVTT-Logo.png"
+                  src="/brand/hvtt-logo.png"
                   alt="HVTT Logo"
                   fill
                   sizes="(min-width: 768px) 192px, 144px"
