@@ -11,7 +11,6 @@ import {
 
 import { imageLoader } from '@cornerstonejs/core';
 
-import { Loading } from '@/components/ui/loading';
 import ViewerWorkspace from '@/components/Viewer/Workspace';
 import { useBatchedFrameState } from '@/hooks/useBatchedFrameState';
 
@@ -24,7 +23,6 @@ import {
 import { TOOL_GROUP } from '@/constants/toolgroup';
 import { VIEWPORT_ID } from '@/constants/viewport';
 
-import { useStudies } from '@/context/StudiesContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useSeriesLoader } from '@/hooks/useSeriesLoader';
 import { useMeasurements, AnnotationMeasurement } from '@/hooks/useMeasurements';
@@ -36,7 +34,7 @@ import { useResetViewer } from '@/hooks/useResetViewer';
 import { useCine } from '@/hooks/useCine';
 import useViewerLayout from '@/hooks/useViewerLayout';
 
-import type { Series } from '@/lib/pacs/services';
+import { fetchStudyMeta, type Series, type Study } from '@/lib/pacs/services';
 
 import { useMeasurementBridge } from '@/hooks/useMeasurementBridge';
 import { useSrExport } from '@/hooks/useSrExport';
@@ -65,6 +63,20 @@ import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canv
 import { disableReleaseGraphicsResourcesGlobally } from '@/lib/cornerstone';
 import { ATTEMPTS_ATTACH, ATTEMPTS_ANNOT } from '@/lib/viewer/constants';
 
+function createFallbackStudyMeta(studyUID: string): Study {
+  return {
+    studyInstanceUID: studyUID,
+    patientName: '-',
+    patientId: '-',
+    studyDate: '-',
+    studyDescription: studyUID,
+    accessionNumber: '-',
+    modalitiesInStudy: '-',
+    seriesCount: 0,
+    imageCount: 0,
+    series: [],
+  };
+}
 
 const Viewer = ({ studyUID }: { studyUID: string }) => {
   // cooldown (ms) sau khi attach hoàn tất: watchdog/fallback sẽ tôn trọng khoảng này
@@ -132,13 +144,29 @@ const Viewer = ({ studyUID }: { studyUID: string }) => {
   const prevSeriesRef = useRef<string | null>(null);
   const viewSrRef = useRef<((seriesUID: string, instanceUID?: string | null) => Promise<boolean>) | null>(null);
 
-  const { studies } = useStudies();
   const { theme } = useTheme();
-  const studyMeta = studies.find((s) => s.studyInstanceUID === studyUID);
+  const [studyMeta, setStudyMeta] = useState<Study>(() => createFallbackStudyMeta(studyUID));
   const viewportBackground = useMemo<[number, number, number]>(
     () => (theme === 'dark' ? [0, 0, 0] : [1, 1, 1]),
     [theme]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    setStudyMeta(createFallbackStudyMeta(studyUID));
+
+    fetchStudyMeta(studyUID)
+      .then((meta) => {
+        if (!cancelled && meta) {
+          setStudyMeta(meta);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [studyUID]);
 
   const {
     seriesMap,
@@ -1599,8 +1627,6 @@ const Viewer = ({ studyUID }: { studyUID: string }) => {
   useEffect(() => {
   }, [selectedMeasurementUID]);
 
-
-  if (!studyMeta) return <Loading fullScreen message="Đang tải thông tin Study..." />;
 
   return (
     <ViewerWorkspace

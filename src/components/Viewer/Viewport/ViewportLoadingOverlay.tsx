@@ -156,12 +156,12 @@ export default function ViewportLoadingOverlay({
   return (
     <>
       <div
-        className="fixed inset-0 z-[45] pointer-events-none bg-black/45 backdrop-blur-[5px] backdrop-saturate-50"
+        className="fixed inset-0 z-[45] pointer-events-none bg-background/55 backdrop-blur-[5px] backdrop-saturate-50 dark:bg-black/45"
         aria-hidden="true"
       />
 
       <div
-        className={`absolute inset-0 z-[46] flex items-center justify-center bg-black/78 pointer-events-none ${className}`}
+        className={`absolute inset-0 z-[46] flex items-center justify-center bg-background/70 pointer-events-none dark:bg-black/78 ${className}`}
         aria-hidden={!visible}
       >
         <BrandLoadingIndicator

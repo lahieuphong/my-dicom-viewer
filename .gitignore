@@ -46,6 +46,7 @@ yarn-error.log*
 # DICOM / medical image data
 # Do not commit patient or sample DICOM files to a public repository.
 public/dicoms/
+public/dicom-manifest.json
 *.dcm
 *.dicom
 *.DCM

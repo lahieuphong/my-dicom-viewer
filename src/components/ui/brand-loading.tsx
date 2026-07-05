@@ -164,7 +164,7 @@ export function BrandProgressBar({
         </div>
 
         {showPercent && (
-          <div className="w-12 text-right text-sm font-semibold leading-none text-slate-100 tabular-nums">
+          <div className="w-12 text-right text-sm font-semibold leading-none text-foreground tabular-nums dark:text-slate-100">
             {displayProgress}%
           </div>
         )}

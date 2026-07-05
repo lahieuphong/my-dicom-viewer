@@ -1,4 +1,3 @@
-import { imageLoader } from '@cornerstonejs/core';
 import type { Study } from '@/lib/pacs/services';
 import { fieldToString, normalizeValue } from '@/lib/utils';
 import type { Instance, SeriesWithInstances, StudyFilters } from './types';
@@ -50,58 +49,5 @@ export function getSeriesInstanceCount(series: SeriesWithInstances) {
 }
 
 export async function prefetchFirstImageForStudy(study: Study) {
-  try {
-    const seriesList = getStudySeries(study);
-    if (!seriesList || seriesList.length === 0) return;
-
-    let instanceCandidate: string | undefined;
-    for (const series of seriesList) {
-      const instances = (series.instances ?? []) as (Instance | string)[];
-      if (Array.isArray(instances) && instances.length > 0) {
-        const first = instances[0];
-        if (typeof first === 'string') {
-          instanceCandidate = first;
-        } else if (first && typeof first === 'object') {
-          instanceCandidate = first.url || first.filename || undefined;
-        }
-        if (instanceCandidate) break;
-      }
-    }
-
-    if (!instanceCandidate) return;
-
-    let absoluteUrl = String(instanceCandidate || '');
-    if (!absoluteUrl.startsWith('http')) {
-      if (typeof window !== 'undefined') {
-        absoluteUrl = `${window.location.origin}${absoluteUrl}`;
-      } else {
-        return;
-      }
-    }
-
-    const isLocalhost =
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1' ||
-        window.location.hostname === '::1');
-    const urlWithCacheBust = isLocalhost
-      ? `${absoluteUrl}${absoluteUrl.includes('?') ? '&' : '?'}cacheBust=${Date.now()}`
-      : absoluteUrl;
-    const imageId = `wadouri:${urlWithCacheBust}`;
-
-    try {
-      if (imageLoader && typeof (imageLoader as any).loadAndCacheImage === 'function') {
-        await (imageLoader as any).loadAndCacheImage(imageId).catch(() => {});
-      } else {
-        const csCore = await import('@cornerstonejs/core').catch(() => null);
-        if (
-          csCore &&
-          csCore.imageLoader &&
-          typeof csCore.imageLoader.loadAndCacheImage === 'function'
-        ) {
-          await csCore.imageLoader.loadAndCacheImage(imageId).catch(() => {});
-        }
-      }
-    } catch {}
-  } catch {}
+  void study;
 }

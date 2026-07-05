@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useReducedMotion } from 'framer-motion';
-import type { Study } from '@/lib/pacs/services';
+import { fetchSeries, type Study } from '@/lib/pacs/services';
 import { Loading } from '@/components/ui/loading';
 import {
   Table as ShadTable,
@@ -13,12 +13,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { initCornerstone } from '@/lib/cornerstone';
 import StudiesFilterRow from './StudiesFilterRow';
 import StudyDataRow from './StudyDataRow';
 import StudyExpandedRow from './StudyExpandedRow';
 import { emptyStudyFilters } from './types';
-import type { StudiesTableProps } from './types';
+import type { SeriesWithInstances, StudiesTableProps } from './types';
 import {
   filterStudies,
   getStudyInstanceTotal,
@@ -31,6 +30,9 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState(emptyStudyFilters);
+  const [seriesByStudy, setSeriesByStudy] = useState<Partial<Record<string, SeriesWithInstances[]>>>({});
+  const [seriesLoadingByStudy, setSeriesLoadingByStudy] = useState<Partial<Record<string, boolean>>>({});
+  const seriesRequestsRef = useRef<Partial<Record<string, Promise<void>>>>({});
 
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
@@ -38,26 +40,41 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
     ? { duration: 0 }
     : { duration: 0.34, ease: [0.22, 1, 0.36, 1] as const };
 
-  useEffect(() => {
-    (async () => {
-      try {
-        await initCornerstone();
-      } catch {}
-    })();
-  }, []);
-
   const filteredStudies = useMemo(
     () => filterStudies(studies || [], filters),
     [studies, filters]
   );
 
-  const handleOpenViewer = async (study: Study, uid: string) => {
+  const ensureSeriesLoaded = useCallback(
+    (study: Study, uid: string) => {
+      if (seriesByStudy[uid] || seriesRequestsRef.current[uid]) return;
+
+      const target = String(study.studyInstanceUID ?? uid);
+      setSeriesLoadingByStudy((current) => ({ ...current, [uid]: true }));
+
+      const request = fetchSeries(target)
+        .then((series) => {
+          setSeriesByStudy((current) => ({
+            ...current,
+            [uid]: series as SeriesWithInstances[],
+          }));
+        })
+        .catch(() => {
+          setSeriesByStudy((current) => ({ ...current, [uid]: [] }));
+        })
+        .finally(() => {
+          delete seriesRequestsRef.current[uid];
+          setSeriesLoadingByStudy((current) => ({ ...current, [uid]: false }));
+        });
+
+      seriesRequestsRef.current[uid] = request;
+    },
+    [seriesByStudy]
+  );
+
+  const handleOpenViewer = (study: Study, uid: string) => {
     setLoading(true);
     const target = String(study.studyInstanceUID ?? uid);
-
-    try {
-      await initCornerstone();
-    } catch {}
 
     const url = `/viewer/${encodeURIComponent(target)}`;
     try {
@@ -111,8 +128,9 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
 
             {filteredStudies.map((study, index) => {
               const uid = getStudyUid(study, index);
-              const seriesList = getStudySeries(study);
+              const seriesList = seriesByStudy[uid] ?? getStudySeries(study);
               const totalInstances = getStudyInstanceTotal(study, seriesList);
+              const isExpanded = Boolean(expanded[uid]);
 
               return (
                 <React.Fragment key={`study-${uid}-${index}`}>
@@ -120,19 +138,23 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
                     study={study}
                     index={index}
                     totalInstances={totalInstances}
-                    onToggle={() =>
+                    onToggle={() => {
                       setExpanded((current) => ({
                         ...current,
                         [uid]: !current[uid],
-                      }))
-                    }
+                      }));
+                      if (!isExpanded) {
+                        ensureSeriesLoaded(study, uid);
+                      }
+                    }}
                   />
 
                   <StudyExpandedRow
-                    visible={Boolean(expanded[uid])}
+                    visible={isExpanded}
                     uid={uid}
                     study={study}
                     seriesList={seriesList}
+                    seriesLoading={Boolean(seriesLoadingByStudy[uid])}
                     loading={loading}
                     expandTransition={expandTransition}
                     shouldReduceMotion={Boolean(shouldReduceMotion)}

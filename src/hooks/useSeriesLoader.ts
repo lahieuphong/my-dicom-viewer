@@ -28,7 +28,7 @@ export function useSeriesLoader(studyUID: string) {
 
     const loadSeries = async () => {
       try {
-        // 1) Fetch all series for this study using existing service (reads /api/dicoms static index)
+        // 1) Fetch only the series for this study. The studies list stays lightweight.
         const allSeries = await fetchSeries(studyUID);
         // filter out SR from "image series"
         const imageSeries = allSeries.filter(s => s.seriesModality !== 'SR');
@@ -37,7 +37,7 @@ export function useSeriesLoader(studyUID: string) {
         const voiMap: Record<string, VoiRange> = {};
 
         if (USE_STATIC_DICOMS) {
-          // Static mode: build imageIds from instance url fields returned by /api/dicoms
+          // Static mode: build imageIds from instance url fields returned by the series endpoint.
           for (const series of imageSeries) {
             const seriesInstanceUID = series.seriesInstanceUID;
             const insts = (series as any).instances ?? [];

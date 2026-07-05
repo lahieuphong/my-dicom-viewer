@@ -7,7 +7,8 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "dicom:manifest": "node scripts/generate-dicom-manifest.mjs"
   },
   "dependencies": {
     "@cornerstonejs/core": "^3.28.0",

@@ -7,15 +7,14 @@ import SharedFooter from '@/components/shared/Footer';
 import SharedHeader from '@/components/shared/Header';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import Loading from '@/components/ui/loading';
-import { useStudies } from '@/context/StudiesContext';
+import { StudiesProvider, useStudies } from '@/context/StudiesContext';
 import StudiesTable from '../Table';
 
 function StudiesPageContent() {
-  const { studies } = useStudies();
+  const { studies, loading: studiesLoading } = useStudies();
   const searchParams = useSearchParams();
   const queryPatient = searchParams.get('patientId');
   const studyUID = searchParams.get('study');
-  const loading = studies.length === 0 && !queryPatient;
 
   if (studyUID) {
     return (
@@ -42,6 +41,7 @@ function StudiesPageContent() {
   const filteredStudies = queryPatient
     ? studies.filter((study) => study.patientId === queryPatient)
     : studies;
+  const showInitialLoading = studiesLoading && studies.length === 0;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -74,7 +74,7 @@ function StudiesPageContent() {
         </div>
 
         <div className="px-2 relative min-h-[200px]">
-          {loading ? (
+          {showInitialLoading ? (
             <Loading message="Đang tải danh sách studies..." />
           ) : (
             <>
@@ -104,8 +104,10 @@ function StudiesPageContent() {
 
 export default function StudiesPage() {
   return (
-    <Suspense fallback={<Loading message="Đang tải trang..." />}>
-      <StudiesPageContent />
-    </Suspense>
+    <StudiesProvider>
+      <Suspense fallback={<Loading message="Đang tải trang..." />}>
+        <StudiesPageContent />
+      </Suspense>
+    </StudiesProvider>
   );
 }

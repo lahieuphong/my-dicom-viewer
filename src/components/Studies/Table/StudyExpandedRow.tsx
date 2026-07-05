@@ -11,6 +11,7 @@ type StudyExpandedRowProps = {
   uid: string;
   study: Study;
   seriesList: SeriesWithInstances[];
+  seriesLoading: boolean;
   loading: boolean;
   expandTransition: unknown;
   shouldReduceMotion: boolean;
@@ -23,6 +24,7 @@ export default function StudyExpandedRow({
   uid,
   study,
   seriesList,
+  seriesLoading,
   loading,
   expandTransition,
   shouldReduceMotion,
@@ -67,11 +69,15 @@ export default function StudyExpandedRow({
                 </div>
 
                 <div className="divide-y">
-                  {seriesList.length === 0 && (
+                  {seriesLoading && (
+                    <div className="py-4 text-sm text-muted-foreground">Đang tải series...</div>
+                  )}
+
+                  {!seriesLoading && seriesList.length === 0 && (
                     <div className="py-4 text-sm text-muted">Không có series</div>
                   )}
 
-                  {seriesList.map((series, seriesIndex) => (
+                  {!seriesLoading && seriesList.map((series, seriesIndex) => (
                     <div
                       key={`series-${series.seriesInstanceUID || seriesIndex}`}
                       className="grid grid-cols-4 gap-0 items-start py-4"
