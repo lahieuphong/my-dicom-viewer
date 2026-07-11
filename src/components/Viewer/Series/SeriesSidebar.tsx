@@ -130,6 +130,7 @@ export default function SeriesSidebar({
       className={cn(
         'bg-card text-foreground flex flex-col h-full transition-all duration-200',
         mobileSidebarOpen ? 'absolute inset-y-0 left-0 w-2/3 z-50' : 'hidden md:block',
+        !mobileSidebarOpen && 'border-r border-border',
         className
       )}
     >
@@ -147,7 +148,7 @@ export default function SeriesSidebar({
 
       <div
         className={cn(
-          'relative flex items-center px-2 py-2',
+          'relative flex h-[52px] min-h-[52px] items-center px-2 py-0',
           !collapsed && 'border-b border-border'
         )}
       >
@@ -159,7 +160,7 @@ export default function SeriesSidebar({
         <Button
           variant="ghost"
           size="icon"
-          className="ml-auto p-2 hidden md:inline-flex border border-border"
+          className="ml-auto hidden h-9 w-9 md:inline-flex border border-border"
           onClick={() => setCollapsed(!collapsed)}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
@@ -169,8 +170,8 @@ export default function SeriesSidebar({
 
       {!collapsed && (
         <>
-          <div className="px-4 py-2 border-b border-border flex items-center justify-between">
-            <div className="flex flex-col min-w-0">
+          <div className="min-h-[64px] pl-4 pr-2 py-2 border-b border-border flex items-center justify-between gap-3">
+            <div className="flex flex-col justify-center min-w-0">
               <div className="text-sm font-semibold truncate" title={formattedDate}>
                 {formattedDate}
               </div>
@@ -183,11 +184,11 @@ export default function SeriesSidebar({
             <Button
               variant="ghost"
               size="icon"
-              className="p-1 border border-border"
+              className="h-9 w-9 shrink-0 border border-border"
               onClick={() => setListCollapsed((prev) => !prev)}
               aria-label={listCollapsed ? 'Open list' : 'Close list'}
             >
-              <i className={`fas fa-chevron-${listCollapsed ? 'down' : 'up'} text-xs`} />
+              <i className={`fas fa-chevron-${listCollapsed ? 'down' : 'up'}`} />
             </Button>
           </div>
 

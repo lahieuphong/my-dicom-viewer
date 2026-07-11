@@ -259,7 +259,7 @@ export default function ViewerWorkspace({
                 </Button>
               </div>
 
-              <div className="sticky top-0 z-20 w-full bg-card border-b border-border">
+              <div className="sticky top-0 z-20 h-[52px] min-h-[52px] w-full bg-card border-b border-border">
                 <Toolbar
                   activeTool={activeTool}
                   onSelectTool={onSelectTool}

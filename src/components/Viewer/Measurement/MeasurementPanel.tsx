@@ -118,6 +118,7 @@ export default function MeasurementPanel({
       className={cn(
         'bg-card text-foreground flex flex-col h-full transition-all duration-200',
         mobileSidebarOpen ? 'absolute inset-y-0 right-0 w-2/3 z-50' : 'hidden md:block',
+        !mobileSidebarOpen && 'border-l border-border',
         className
       )}
     >
@@ -133,7 +134,7 @@ export default function MeasurementPanel({
         </Button>
       )}
 
-      <div className={cn('relative flex items-center px-2 py-2', !collapsed && 'border-b border-border')}>
+      <div className={cn('relative flex h-[52px] min-h-[52px] items-center px-2 py-0', !collapsed && 'border-b border-border')}>
         <Button
           variant="ghost"
           size="icon"

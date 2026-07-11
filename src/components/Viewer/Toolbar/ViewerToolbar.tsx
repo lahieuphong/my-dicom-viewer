@@ -90,11 +90,11 @@ export default function Toolbar({
   const otherIcon = isOtherToolActive ? getIconForOtherTool(activeTool) : 'tools';
 
   return (
-    <div className="overflow-x-auto">
+    <div className="h-full overflow-x-auto">
       <div
         className="
           flex flex-nowrap justify-center items-center whitespace-nowrap
-          gap-1 sm:gap-2 px-2 py-1
+          h-full gap-1 sm:gap-2 px-2 py-0
           bg-card
         "
       >
