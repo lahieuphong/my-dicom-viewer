@@ -16,6 +16,7 @@ import { safeGetEnabledElement as safeGetEnabled } from '@/lib/cornerstone/helpe
 
 import EditLabelDialog from './EditLabelDialog';
 import MeasurementStats from './MeasurementStats';
+import PanelScrollArea from '@/components/Viewer/PanelScrollArea';
 
 interface MeasurementPanelProps {
   measurements: AnnotationMeasurement[];
@@ -117,7 +118,7 @@ export default function MeasurementPanel({
     <aside
       className={cn(
         'bg-card text-foreground flex flex-col h-full min-h-0 transition-all duration-200',
-        mobileSidebarOpen ? 'absolute inset-y-0 right-0 w-2/3 z-50' : 'hidden md:block',
+        mobileSidebarOpen ? 'absolute inset-y-0 right-0 w-2/3 z-50' : 'hidden md:flex',
         !mobileSidebarOpen && 'border-l border-border',
         className
       )}
@@ -241,8 +242,7 @@ export default function MeasurementPanel({
                 )}
               </div>
 
-              <div className="viewer-panel-scrollbar relative flex-1 min-h-0 overflow-auto">
-                <div className="min-h-full px-2 py-2 space-y-2">
+              <PanelScrollArea contentClassName="min-h-full px-2 py-2 space-y-2">
                   {visible.length === 0 ? (
                     <div className="flex min-h-full flex-1 flex-col items-center justify-center text-center text-xs text-muted px-4 py-10 space-y-2">
                       <i className="fas fa-ruler text-3xl text-secondary-foreground" />
@@ -408,8 +408,7 @@ export default function MeasurementPanel({
                       });
                     })()
                   )}
-                </div>
-              </div>
+              </PanelScrollArea>
             </div>
           )}
         </div>

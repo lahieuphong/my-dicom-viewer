@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import type { Series } from '@/lib/pacs/services';
 import { Button } from '@/components/ui/button';
 import { cn, formatStudyDate } from '@/lib/utils';
+import PanelScrollArea from '@/components/Viewer/PanelScrollArea';
 
 interface SeriesSidebarProps {
   seriesMap: Record<string, { files: any[]; metadata: Series | undefined }>;
@@ -129,7 +130,7 @@ export default function SeriesSidebar({
     <aside
       className={cn(
         'bg-card text-foreground flex flex-col h-full min-h-0 transition-all duration-200',
-        mobileSidebarOpen ? 'absolute inset-y-0 left-0 w-2/3 z-50' : 'hidden md:block',
+        mobileSidebarOpen ? 'absolute inset-y-0 left-0 w-2/3 z-50' : 'hidden md:flex',
         !mobileSidebarOpen && 'border-r border-border',
         className
       )}
@@ -193,9 +194,7 @@ export default function SeriesSidebar({
           </div>
 
           {!listCollapsed && (
-            // Replaced custom ScrollArea with a plain div + overflow-auto
-            <div className="viewer-panel-scrollbar relative flex-1 min-h-0 overflow-auto">
-              <div className="min-h-full px-2 py-2 space-y-2">
+            <PanelScrollArea contentClassName="min-h-full px-2 py-2 space-y-2">
                 <div>
                   {Object.entries(seriesMap).map(([uid, data]) => {
                     if (!data || !data.metadata) return null;
@@ -275,8 +274,7 @@ export default function SeriesSidebar({
                     );
                   })
                 )}
-              </div>
-            </div>
+            </PanelScrollArea>
           )}
         </>
       )}

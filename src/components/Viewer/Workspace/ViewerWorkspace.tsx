@@ -204,7 +204,7 @@ export default function ViewerWorkspace({
       >
         {!loadingSeries && (
           <SeriesSidebar
-            className="hidden md:block"
+            className="hidden md:flex"
             seriesMap={seriesMap}
             selectedSeries={selectedSeries}
             onSelectSeries={onSelectSeries}
@@ -299,7 +299,7 @@ export default function ViewerWorkspace({
         {!loadingSeries && (
           <MeasurementPanel
             {...measurementPanelProps}
-            className="hidden md:block"
+            className="hidden md:flex"
           />
         )}
       </div>
