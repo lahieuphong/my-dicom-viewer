@@ -36,19 +36,19 @@ export default function StudyExpandedRow({
       {visible && (
         <motion.tr
           key={`expanded-${uid}`}
-          className="border-b bg-popover"
+          className="relative z-40 border-b bg-popover"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={expandTransition as any}
         >
-          <TableCell colSpan={9} className="p-0 bg-popover overflow-hidden">
+          <TableCell colSpan={9} className="relative z-40 p-0 bg-popover overflow-hidden">
             <motion.div
               initial={{ height: 0, opacity: 0, y: -8 }}
               animate={{ height: 'auto', opacity: 1, y: 0 }}
               exit={{ height: 0, opacity: 0, y: -6 }}
               transition={expandTransition as any}
-              className="overflow-hidden"
+              className="relative z-40 overflow-hidden bg-popover"
             >
               <motion.div
                 initial={{ opacity: 0, y: -4 }}

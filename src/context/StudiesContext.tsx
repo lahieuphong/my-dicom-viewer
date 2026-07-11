@@ -18,8 +18,8 @@ type StudiesCtx = {
 const StudiesContext = createContext<StudiesCtx | undefined>(undefined);
 
 export function StudiesProvider({ children }: React.PropsWithChildren) {
-  const [studies, setStudiesState] = useState<Study[]>(() => getCachedStudies() ?? []);
-  const [loading, setLoading] = useState(() => !getCachedStudies());
+  const [studies, setStudiesState] = useState<Study[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const setStudies = useCallback<React.Dispatch<React.SetStateAction<Study[]>>>((value) => {

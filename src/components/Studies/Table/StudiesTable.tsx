@@ -16,6 +16,7 @@ import {
 import StudiesFilterRow from './StudiesFilterRow';
 import StudyDataRow from './StudyDataRow';
 import StudyExpandedRow from './StudyExpandedRow';
+import { studyTableColumns, type StudyTableColumn, type StudyTableColumnId } from './columns';
 import { emptyStudyFilters } from './types';
 import type { SeriesWithInstances, StudiesTableProps } from './types';
 import {
@@ -25,11 +26,92 @@ import {
   getStudyUid,
   prefetchFirstImageForStudy,
 } from './utils';
+import { useResizableColumns } from './useResizableColumns';
+import { cn } from '@/lib/utils';
+
+function ResizableHeaderCell({
+  column,
+  highlightedColumnId,
+}: {
+  column: StudyTableColumn;
+  highlightedColumnId: StudyTableColumnId | null;
+}) {
+  return (
+    <TableHead
+      className={cn(
+        'relative select-none truncate',
+        column.className,
+        highlightedColumnId === column.id && 'studies-resizable-boundary-active'
+      )}
+      scope="col"
+    >
+      <span className="block truncate" title={column.label}>
+        {column.label}
+      </span>
+    </TableHead>
+  );
+}
+
+function ColumnResizeHandle({
+  column,
+  left,
+  active,
+  onResizeStart,
+  onResetWidth,
+  onResizeBy,
+  onHoverChange,
+}: {
+  column: StudyTableColumn;
+  left: number;
+  active: boolean;
+  onResizeStart: (column: StudyTableColumn, event: React.PointerEvent<HTMLElement>) => void;
+  onResetWidth: (column: StudyTableColumn) => void;
+  onResizeBy: (column: StudyTableColumn, delta: number) => void;
+  onHoverChange: (columnId: StudyTableColumnId | null) => void;
+}) {
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Đổi độ rộng cột ${column.label}`}
+      title="Kéo để đổi độ rộng cột. Nhấp đúp để đặt lại."
+      tabIndex={0}
+      data-active={active ? 'true' : undefined}
+      onPointerEnter={() => onHoverChange(column.id)}
+      onPointerLeave={() => onHoverChange(null)}
+      onFocus={() => onHoverChange(column.id)}
+      onBlur={() => onHoverChange(null)}
+      onPointerDown={(event) => onResizeStart(column, event)}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onResetWidth(column);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault();
+          onResizeBy(column, event.key === 'ArrowLeft' ? -12 : 12);
+        }
+
+        if (event.key === 'Enter' || event.key === 'Home') {
+          event.preventDefault();
+          onResetWidth(column);
+        }
+      }}
+      className={cn(
+        'studies-resize-handle pointer-events-auto absolute top-0 bottom-0 z-30 w-3 -translate-x-1/2 cursor-col-resize touch-none outline-none',
+        active && 'bg-transparent'
+      )}
+      style={{ left }}
+    />
+  );
+}
 
 export default function StudiesTable({ data: studies = [] }: StudiesTableProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState(emptyStudyFilters);
+  const [hoveredColumnId, setHoveredColumnId] = useState<StudyTableColumnId | null>(null);
   const [seriesByStudy, setSeriesByStudy] = useState<Partial<Record<string, SeriesWithInstances[]>>>({});
   const [seriesLoadingByStudy, setSeriesLoadingByStudy] = useState<Partial<Record<string, boolean>>>({});
   const seriesRequestsRef = useRef<Partial<Record<string, Promise<void>>>>({});
@@ -39,6 +121,23 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
   const expandTransition = shouldReduceMotion
     ? { duration: 0 }
     : { duration: 0.34, ease: [0.22, 1, 0.36, 1] as const };
+  const {
+    widths,
+    tableWidth,
+    activeColumnId,
+    startResize,
+    resetColumnWidth,
+    resizeColumnBy,
+  } = useResizableColumns(studyTableColumns);
+  const resizeBoundaries = useMemo(() => {
+    let left = 0;
+    return studyTableColumns.flatMap((column, index) => {
+      left += widths[column.id] ?? column.defaultWidth;
+      if (index >= studyTableColumns.length - 1) return [];
+      return [{ column, left }];
+    });
+  }, [widths]);
+  const highlightedColumnId = activeColumnId ?? hoveredColumnId;
 
   const filteredStudies = useMemo(
     () => filterStudies(studies || [], filters),
@@ -91,83 +190,117 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
       {loading && <Loading fullScreen message="Đang tải thông tin series..." />}
 
       <div className="overflow-x-auto">
-        <ShadTable
-          className="
-            min-w-max md:min-w-full
-            rounded-lg
-            border border-border
-            bg-card
-            table-fixed
-            text-sm
-          "
-        >
-          <TableHeader>
-            <TableRow className="bg-card hover:bg-card !border-b-0 cursor-default">
-              <TableHead className="w-10 text-center">#</TableHead>
-              <TableHead className="truncate">Tên bệnh nhân</TableHead>
-              <TableHead className="truncate">Mã bệnh nhân</TableHead>
-              <TableHead className="truncate">Ngày chụp</TableHead>
-              <TableHead className="truncate">Diễn giải</TableHead>
-              <TableHead className="truncate">Thiết bị</TableHead>
-              <TableHead className="truncate">Study UID</TableHead>
-              <TableHead className="truncate">Mã phiếu</TableHead>
-              <TableHead className="truncate w-20 text-center">Thể hiện</TableHead>
-            </TableRow>
+        <div className="studies-resizable-shell relative min-w-max" style={{ width: tableWidth }}>
+          <ShadTable
+            noContainer
+            className="
+              studies-resizable-table
+              min-w-max
+              rounded-lg
+              border border-border
+              bg-card
+              table-fixed
+              text-sm
+            "
+            style={{
+              width: tableWidth,
+            }}
+          >
+            <colgroup>
+              {studyTableColumns.map((column) => (
+                <col
+                  key={column.id}
+                  style={{ width: widths[column.id] ?? column.defaultWidth }}
+                />
+              ))}
+            </colgroup>
 
-            <StudiesFilterRow filters={filters} setFilters={setFilters} />
-          </TableHeader>
-
-          <TableBody>
-            {filteredStudies.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} className="p-6 text-center text-foreground">
-                  Không tìm thấy study phù hợp
-                </TableCell>
+            <TableHeader className="studies-resizable-head">
+              <TableRow className="studies-resizable-row bg-card hover:bg-card !border-b-0 cursor-default">
+                {studyTableColumns.map((column) => (
+                  <ResizableHeaderCell
+                    key={column.id}
+                    column={column}
+                    highlightedColumnId={highlightedColumnId}
+                  />
+                ))}
               </TableRow>
-            ) : null}
 
-            {filteredStudies.map((study, index) => {
-              const uid = getStudyUid(study, index);
-              const seriesList = seriesByStudy[uid] ?? getStudySeries(study);
-              const totalInstances = getStudyInstanceTotal(study, seriesList);
-              const isExpanded = Boolean(expanded[uid]);
+              <StudiesFilterRow
+                filters={filters}
+                highlightedColumnId={highlightedColumnId}
+                setFilters={setFilters}
+              />
+            </TableHeader>
 
-              return (
-                <React.Fragment key={`study-${uid}-${index}`}>
-                  <StudyDataRow
-                    study={study}
-                    index={index}
-                    totalInstances={totalInstances}
-                    onToggle={() => {
-                      setExpanded((current) => ({
-                        ...current,
-                        [uid]: !current[uid],
-                      }));
-                      if (!isExpanded) {
-                        ensureSeriesLoaded(study, uid);
-                      }
-                    }}
-                  />
+            <TableBody>
+              {filteredStudies.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="p-6 text-center text-foreground">
+                    Không tìm thấy study phù hợp
+                  </TableCell>
+                </TableRow>
+              ) : null}
 
-                  <StudyExpandedRow
-                    visible={isExpanded}
-                    uid={uid}
-                    study={study}
-                    seriesList={seriesList}
-                    seriesLoading={Boolean(seriesLoadingByStudy[uid])}
-                    loading={loading}
-                    expandTransition={expandTransition}
-                    shouldReduceMotion={Boolean(shouldReduceMotion)}
-                    onOpenViewer={handleOpenViewer}
-                    onPrefetchStudy={(targetStudy) => {
-                      void prefetchFirstImageForStudy(targetStudy);
-                    }}
-                  />
-                </React.Fragment>
-              );
-            })}
-          </TableBody>
-        </ShadTable>
+              {filteredStudies.map((study, index) => {
+                const uid = getStudyUid(study, index);
+                const seriesList = seriesByStudy[uid] ?? getStudySeries(study);
+                const totalInstances = getStudyInstanceTotal(study, seriesList);
+                const isExpanded = Boolean(expanded[uid]);
+
+                return (
+                  <React.Fragment key={`study-${uid}-${index}`}>
+                    <StudyDataRow
+                      study={study}
+                      index={index}
+                      highlightedColumnId={highlightedColumnId}
+                      totalInstances={totalInstances}
+                      onToggle={() => {
+                        setExpanded((current) => ({
+                          ...current,
+                          [uid]: !current[uid],
+                        }));
+                        if (!isExpanded) {
+                          ensureSeriesLoaded(study, uid);
+                        }
+                      }}
+                    />
+
+                    <StudyExpandedRow
+                      visible={isExpanded}
+                      uid={uid}
+                      study={study}
+                      seriesList={seriesList}
+                      seriesLoading={Boolean(seriesLoadingByStudy[uid])}
+                      loading={loading}
+                      expandTransition={expandTransition}
+                      shouldReduceMotion={Boolean(shouldReduceMotion)}
+                      onOpenViewer={handleOpenViewer}
+                      onPrefetchStudy={(targetStudy) => {
+                        void prefetchFirstImageForStudy(targetStudy);
+                      }}
+                    />
+                  </React.Fragment>
+                );
+              })}
+            </TableBody>
+          </ShadTable>
+
+          <div className="pointer-events-none absolute inset-y-0 left-0" style={{ width: tableWidth }}>
+            {resizeBoundaries.map(({ column, left }) => (
+              <ColumnResizeHandle
+                key={column.id}
+                column={column}
+                left={left}
+                active={activeColumnId === column.id}
+                onResizeStart={startResize}
+                onResetWidth={resetColumnWidth}
+                onResizeBy={resizeColumnBy}
+                onHoverChange={setHoveredColumnId}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
