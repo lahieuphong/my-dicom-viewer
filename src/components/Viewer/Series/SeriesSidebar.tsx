@@ -170,7 +170,7 @@ export default function SeriesSidebar({
 
       {!collapsed && (
         <>
-          <div className="min-h-[64px] pl-4 pr-2 py-2 border-b border-border flex items-center justify-between gap-3">
+          <div className="h-[52px] min-h-[52px] pl-4 pr-2 py-0 border-b border-border flex items-center justify-between gap-3">
             <div className="flex flex-col justify-center min-w-0">
               <div className="text-sm font-semibold truncate" title={formattedDate}>
                 {formattedDate}
