@@ -3,7 +3,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useReducedMotion } from 'framer-motion';
-import { fetchSeries, type Study } from '@/lib/pacs/services';
+import {
+  fetchSeries,
+  getViewerPath,
+  prefetchStudyViewerData,
+  type Study,
+} from '@/lib/pacs/services';
 import { Loading } from '@/components/ui/loading';
 import {
   Table as ShadTable,
@@ -175,7 +180,7 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
       const target = String(study.studyInstanceUID ?? uid);
       setSeriesLoadingByStudy((current) => ({ ...current, [uid]: true }));
 
-      const request = fetchSeries(target)
+      const request = fetchSeries(target, { includeInstances: false })
         .then((series) => {
           setSeriesByStudy((current) => ({
             ...current,
@@ -195,11 +200,24 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
     [seriesByStudy]
   );
 
+  const prefetchViewerForStudy = useCallback((study: Study, uid: string) => {
+    const target = String(study.studyInstanceUID ?? uid);
+    const url = getViewerPath(target);
+
+    try {
+      router.prefetch(url);
+    } catch {}
+
+    prefetchStudyViewerData(target);
+    void prefetchFirstImageForStudy(study);
+  }, [router]);
+
   const handleOpenViewer = (study: Study, uid: string) => {
     setLoading(true);
     const target = String(study.studyInstanceUID ?? uid);
+    prefetchViewerForStudy(study, uid);
 
-    const url = `/viewer/${encodeURIComponent(target)}`;
+    const url = getViewerPath(target);
     try {
       router.push(url);
     } catch {
@@ -301,7 +319,7 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
                       shouldReduceMotion={Boolean(shouldReduceMotion)}
                       onOpenViewer={handleOpenViewer}
                       onPrefetchStudy={(targetStudy) => {
-                        void prefetchFirstImageForStudy(targetStudy);
+                        prefetchViewerForStudy(targetStudy, uid);
                       }}
                     />
                   </React.Fragment>

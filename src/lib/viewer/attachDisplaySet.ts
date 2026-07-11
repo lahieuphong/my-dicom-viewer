@@ -3,7 +3,7 @@
 
 import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
 import { ensureStackOnViewport } from './stack';
-import { preloadImagesWithTimeout } from './preload';
+import { getPreloadWindow, preloadImagesWithTimeout } from './preload';
 import type { DisplaySet } from './displaySet';
 import type { EngineRef } from './stack';
 import { VIEWPORT_ID } from '@/constants/viewport';
@@ -269,10 +269,16 @@ export async function attachDisplaySetToViewport(opts: {
 
       // WARM PRELOAD: call preloadWrapper (best-effort). Use a small limit to warm.
       try {
-        await preloadWrapper(imageIds, {
+        const warmIds = getPreloadWindow(imageIds, desiredIndex, {
+          backward: 3,
+          forward: 12,
+          max: 16,
+        });
+
+        await preloadWrapper(warmIds, {
           concurrency: 3,
           perLoadTimeoutMs: 7000,
-          limit: Math.min(24, imageIds.length),
+          limit: warmIds.length,
         }).catch(() => {});
       } catch (e) {
         // swallow warm preload errors but log
@@ -327,12 +333,18 @@ export async function attachDisplaySetToViewport(opts: {
         }
 
         const bgPreloadFn = preloadImagesWithTimeoutFn ?? preloadImagesWithTimeout;
+        const bgIds = getPreloadWindow(imageIds, desiredIndex, {
+          backward: 8,
+          forward: 32,
+          max: 48,
+        });
+
         window.setTimeout(() => {
           try {
-            bgPreloadFn(imageIds, {
+            bgPreloadFn(bgIds, {
               concurrency: 2,
               perLoadTimeoutMs: 10000,
-              limit: imageIds.length,
+              limit: bgIds.length,
               signal: bgController?.signal,
             }).catch(() => {});
           } catch {}

@@ -13,7 +13,10 @@ import {
 import { wait } from '@/lib/utils/wait';
 
 // <- reuse centralized preload helper when caller doesn't provide one
-import { preloadImagesWithTimeout as sharedPreloadImagesWithTimeout } from '@/lib/viewer/preload';
+import {
+  getPreloadWindow,
+  preloadImagesWithTimeout as sharedPreloadImagesWithTimeout,
+} from '@/lib/viewer/preload';
 
 /* ----------------------------- Types / Helpers ----------------------------- */
 
@@ -412,7 +415,12 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
     /* ----------------------- Preload a few images (best-effort) ----------------------- */
     try {
       if (typeof preloadFn === 'function') {
-        await preloadFn(imageIds, { concurrency: 3, perLoadTimeoutMs: 6000, limit: 4 }).catch(() => {});
+        const warmIds = getPreloadWindow(imageIds, desiredIndex, {
+          backward: 2,
+          forward: 6,
+          max: 9,
+        });
+        await preloadFn(warmIds, { concurrency: 3, perLoadTimeoutMs: 6000, limit: warmIds.length }).catch(() => {});
       } else {
         const tgt = imageIds[Math.max(0, Math.min(desiredIndex, imageIds.length - 1))];
         await loadImageSafe(tgt).catch(() => {});

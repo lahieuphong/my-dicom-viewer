@@ -116,7 +116,7 @@ export default function MeasurementPanel({
   return (
     <aside
       className={cn(
-        'bg-card text-foreground flex flex-col h-full transition-all duration-200',
+        'bg-card text-foreground flex flex-col h-full min-h-0 transition-all duration-200',
         mobileSidebarOpen ? 'absolute inset-y-0 right-0 w-2/3 z-50' : 'hidden md:block',
         !mobileSidebarOpen && 'border-l border-border',
         className
@@ -155,7 +155,7 @@ export default function MeasurementPanel({
       </div>
 
       {!collapsed && (
-        <>
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className="px-4 pt-2">
             <div className="text-sm font-semibold truncate">{formattedDate}</div>
           </div>
@@ -224,7 +224,7 @@ export default function MeasurementPanel({
           </div>
 
           {!listCollapsed && (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="flex items-center justify-center px-4 py-2 border-b border-border">
                 {(onExportJSON || onExportDICOMSR) && (
                   <DropdownMenu>
@@ -241,10 +241,10 @@ export default function MeasurementPanel({
                 )}
               </div>
 
-              <div className="relative flex-1 overflow-auto">
-                <div className="px-2 py-2 space-y-2" style={{ minHeight: 'calc(100vh - 250px)' }}>
+              <div className="viewer-panel-scrollbar relative flex-1 min-h-0 overflow-auto">
+                <div className="min-h-full px-2 py-2 space-y-2">
                   {visible.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center text-center text-xs text-muted py-10 space-y-2">
+                    <div className="flex min-h-full flex-1 flex-col items-center justify-center text-center text-xs text-muted px-4 py-10 space-y-2">
                       <i className="fas fa-ruler text-3xl text-secondary-foreground" />
                       <div className="font-semibold text-base text-secondary-foreground">No Measurements</div>
                       <div className="text-secondary-foreground">Use annotation tools to add measurements.</div>
@@ -410,9 +410,9 @@ export default function MeasurementPanel({
                   )}
                 </div>
               </div>
-            </>
+            </div>
           )}
-        </>
+        </div>
       )}
 
       {editingLabel && (

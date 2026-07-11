@@ -1,6 +1,6 @@
 'use client';
 
-import type { ComponentProps, Dispatch, RefObject, SetStateAction } from 'react';
+import type { ComponentProps, CSSProperties, Dispatch, RefObject, SetStateAction } from 'react';
 
 import { Loading } from '@/components/ui/loading';
 import { Button } from '@/components/ui/button';
@@ -197,11 +197,10 @@ export default function ViewerWorkspace({
       )}
 
       <div
-        className="h-full items-stretch min-h-0"
+        className="viewer-workspace-grid h-full items-stretch min-h-0"
         style={{
-          display: 'grid',
-          gridTemplateColumns: gridCols,
-        }}
+          '--viewer-grid-columns': gridCols,
+        } as CSSProperties}
       >
         {!loadingSeries && (
           <SeriesSidebar

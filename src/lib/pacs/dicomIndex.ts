@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import dcmjs from 'dcmjs';
 
 type DicomInstance = {
   sopInstanceUID?: string;
@@ -32,12 +31,20 @@ type DicomStudy = {
   series: DicomSeries[];
 };
 
-const dicomDir = path.join(process.cwd(), 'public', 'dicoms');
 const manifestPath = path.join(process.cwd(), 'public', 'dicom-manifest.json');
-const FALLBACK_CACHE_TTL_MS = 30 * 1000;
 
 let manifestCache: { mtimeMs: number; studies: DicomStudy[] } | null = null;
-let fallbackCache: { createdAt: number; studies: DicomStudy[] } | null = null;
+
+/**
+ * Static sample data source.
+ *
+ * Runtime requests intentionally read only the pre-generated manifest. This keeps
+ * /api/studies cheap and predictable for large demo folders, and mirrors the
+ * production shape where a PACS/backend has already indexed metadata.
+ *
+ * For local sample DICOMs, regenerate with:
+ *   yarn dicom:manifest
+ */
 
 function safeString(val: unknown, fallback = '-'): string {
   if (val == null) return fallback;
@@ -50,35 +57,6 @@ function safeString(val: unknown, fallback = '-'): string {
   } catch {
     return fallback;
   }
-}
-
-function formatPersonName(pn: any): string {
-  if (!pn) return '-';
-  if (typeof pn === 'string') return pn;
-  if (typeof pn === 'object') {
-    if ('Alphabetic' in pn || 'Ideographic' in pn || 'Phonetic' in pn) {
-      const parts = [pn.Alphabetic, pn.Ideographic, pn.Phonetic].filter(Boolean).map(String);
-      return parts.length ? parts.join('\\') : '-';
-    }
-    if (Array.isArray(pn)) {
-      return pn.map(formatPersonName).filter(Boolean).join('\\') || '-';
-    }
-    if ('Value' in pn && Array.isArray(pn.Value)) {
-      return formatPersonName(pn.Value[0]);
-    }
-    const vals = Object.values(pn).filter((v) => typeof v === 'string' || typeof v === 'number');
-    if (vals.length) return vals.join('\\');
-  }
-  return '-';
-}
-
-function addModalities(set: Set<string>, modality: string | undefined) {
-  if (!modality) return;
-  String(modality)
-    .split(/\\|,/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .forEach((part) => set.add(part));
 }
 
 function normalizeStudies(raw: unknown): DicomStudy[] {
@@ -142,147 +120,9 @@ function readManifest(): DicomStudy[] | null {
   }
 }
 
-function parseDicomDirectory(): DicomStudy[] {
-  if (!fs.existsSync(dicomDir)) return [];
-
-  const fileNames = fs.readdirSync(dicomDir).filter((file) => /\.dcm$/i.test(file));
-  const studiesMap: Map<string, any> = new Map();
-
-  for (const filename of fileNames) {
-    const filePath = path.join(dicomDir, filename);
-    let dataset: any = {};
-
-    try {
-      const buffer = fs.readFileSync(filePath);
-      const uint8 = new Uint8Array(buffer);
-      const dicomMessage = dcmjs.data.DicomMessage.readFile(uint8);
-      dataset = dcmjs.data.DicomMetaDictionary.naturalizeDataset(dicomMessage.dict || {});
-    } catch {
-      dataset = {};
-    }
-
-    const studyInstanceUID = dataset.StudyInstanceUID || `no-study-${filename}`;
-    const seriesInstanceUID = dataset.SeriesInstanceUID || `no-series-${filename}`;
-    const sopInstanceUID = dataset.SOPInstanceUID || filename;
-    const instanceNumber = dataset.InstanceNumber ?? null;
-    const patientName = formatPersonName(dataset.PatientName);
-    const patientId = safeString(dataset.PatientID, '-');
-    const studyDate = safeString(dataset.StudyDate, '-');
-    const studyTime = safeString(dataset.StudyTime, '');
-    const studyDescription = safeString(dataset.StudyDescription, '-');
-    const accessionNumber = safeString(dataset.AccessionNumber, '-');
-    const seriesDescription = safeString(dataset.SeriesDescription, '-');
-    const seriesNumber = safeString(dataset.SeriesNumber, '');
-    const modality = safeString(dataset.Modality, '');
-    const instanceFilename = `/dicoms/${filename}`;
-
-    if (!studiesMap.has(studyInstanceUID)) {
-      studiesMap.set(studyInstanceUID, {
-        studyInstanceUID,
-        patientName,
-        patientId,
-        studyDate,
-        studyTime,
-        studyDescription,
-        accessionNumber,
-        modalitiesInStudySet: new Set<string>(),
-        series: new Map<string, any>(),
-      });
-    }
-
-    const studyObj = studiesMap.get(studyInstanceUID);
-    if ((!studyObj.patientName || studyObj.patientName === '-') && patientName && patientName !== '-') {
-      studyObj.patientName = patientName;
-    }
-    if ((!studyObj.patientId || studyObj.patientId === '-') && patientId && patientId !== '-') {
-      studyObj.patientId = patientId;
-    }
-    if ((!studyObj.studyDescription || studyObj.studyDescription === '-') && studyDescription && studyDescription !== '-') {
-      studyObj.studyDescription = studyDescription;
-    }
-    if ((!studyObj.accessionNumber || studyObj.accessionNumber === '-') && accessionNumber && accessionNumber !== '-') {
-      studyObj.accessionNumber = accessionNumber;
-    }
-    if ((!studyObj.studyDate || studyObj.studyDate === '-') && studyDate && studyDate !== '-') {
-      studyObj.studyDate = studyDate;
-    }
-
-    addModalities(studyObj.modalitiesInStudySet, modality);
-
-    if (!studyObj.series.has(seriesInstanceUID)) {
-      studyObj.series.set(seriesInstanceUID, {
-        seriesInstanceUID,
-        seriesDescription,
-        seriesNumber,
-        modality,
-        instances: [] as DicomInstance[],
-      });
-    }
-
-    const seriesObj = studyObj.series.get(seriesInstanceUID);
-    seriesObj.instances.push({
-      sopInstanceUID,
-      instanceNumber: instanceNumber == null ? null : Number(instanceNumber),
-      url: instanceFilename,
-      filename,
-    });
-  }
-
-  const studies: DicomStudy[] = [];
-  for (const study of studiesMap.values()) {
-    const seriesArr = Array.from(study.series.values()).map((series: any) => {
-      series.instances.sort((a: DicomInstance, b: DicomInstance) => {
-        const na = Number.isFinite(a.instanceNumber) ? Number(a.instanceNumber) : Infinity;
-        const nb = Number.isFinite(b.instanceNumber) ? Number(b.instanceNumber) : Infinity;
-        return na - nb;
-      });
-
-      return {
-        seriesInstanceUID: series.seriesInstanceUID,
-        seriesDescription: series.seriesDescription,
-        seriesNumber: series.seriesNumber,
-        seriesModality: series.modality,
-        seriesRelatedInstanceCount: String(series.instances.length),
-        instances: series.instances,
-      };
-    });
-
-    const modalities = Array.from(study.modalitiesInStudySet);
-    const imageCount = seriesArr.reduce(
-      (acc: number, item: DicomSeries) => acc + (Number(item.seriesRelatedInstanceCount) || 0),
-      0
-    );
-
-    studies.push({
-      studyInstanceUID: study.studyInstanceUID,
-      patientName: study.patientName || '-',
-      patientId: study.patientId || '-',
-      studyDate: study.studyDate || '-',
-      studyTime: study.studyTime || '',
-      studyDescription: study.studyDescription || '-',
-      accessionNumber: study.accessionNumber || '-',
-      modalitiesInStudy: modalities.length ? modalities.join('\\') : '-',
-      seriesCount: seriesArr.length,
-      imageCount,
-      series: seriesArr,
-    });
-  }
-
-  return studies;
-}
-
 export function getDicomIndex(): DicomStudy[] {
   const manifest = readManifest();
-  if (manifest) return manifest;
-
-  const now = Date.now();
-  if (fallbackCache && now - fallbackCache.createdAt < FALLBACK_CACHE_TTL_MS) {
-    return fallbackCache.studies;
-  }
-
-  const studies = parseDicomDirectory();
-  fallbackCache = { createdAt: now, studies };
-  return studies;
+  return manifest ?? [];
 }
 
 export function getStudySummaries(): DicomStudy[] {
@@ -298,7 +138,15 @@ export function getStudySummary(studyUID: string): DicomStudy | null {
   return study ? { ...study, series: [] } : null;
 }
 
-export function getSeriesForStudy(studyUID: string): DicomSeries[] {
+function withoutInstances(series: DicomSeries[]): DicomSeries[] {
+  return series.map((item) => ({
+    ...item,
+    instances: undefined,
+  }));
+}
+
+export function getSeriesForStudy(studyUID: string, options: { includeInstances?: boolean } = {}): DicomSeries[] {
   const decodedUID = decodeURIComponent(studyUID);
-  return getDicomIndex().find((study) => study.studyInstanceUID === decodedUID)?.series ?? [];
+  const series = getDicomIndex().find((study) => study.studyInstanceUID === decodedUID)?.series ?? [];
+  return options.includeInstances === false ? withoutInstances(series) : series;
 }

@@ -1,4 +1,6 @@
 // src/lib/pacs/services.ts
+import { PACS_API_BASE } from './config';
+
 export interface Instance {
   sopInstanceUID?: string;
   instanceNumber?: number | null;
@@ -34,6 +36,27 @@ const studyMetaCache = new Map<string, Study | null>();
 const studyMetaRequests = new Map<string, Promise<Study | null>>();
 const seriesCache = new Map<string, Series[]>();
 const seriesRequests = new Map<string, Promise<Series[]>>();
+const seriesSummaryCache = new Map<string, Series[]>();
+const seriesSummaryRequests = new Map<string, Promise<Series[]>>();
+
+type FetchSeriesOptions = {
+  includeInstances?: boolean;
+};
+
+function buildPacsApiUrl(pathname: string) {
+  if (/^https?:\/\//i.test(pathname)) return pathname;
+  if (!PACS_API_BASE) return pathname;
+
+  const base = PACS_API_BASE.replace(/\/+$/, '');
+  const remotePath = pathname.replace(/^\/api(?=\/)/, '');
+  const normalizedPath = remotePath.startsWith('/') ? remotePath : `/${remotePath}`;
+
+  return `${base}${normalizedPath}`;
+}
+
+export function getViewerPath(studyInstanceUID: string) {
+  return `/viewer/${encodeURIComponent(studyInstanceUID)}`;
+}
 
 export function getCachedStudies() {
   return studiesCache;
@@ -47,7 +70,7 @@ export async function fetchStudiesWithMeta(): Promise<Study[]> {
   if (studiesCache) return studiesCache;
 
   if (!studiesRequest) {
-    studiesRequest = fetch('/api/studies')
+    studiesRequest = fetch(buildPacsApiUrl('/api/studies'))
       .then(async (res) => {
         if (!res.ok) {
           throw new Error(`Failed to load /api/studies: ${res.status}`);
@@ -70,7 +93,7 @@ export async function fetchStudyMeta(studyInstanceUID: string): Promise<Study | 
   }
 
   if (!studyMetaRequests.has(studyInstanceUID)) {
-    const request = fetch(`/api/studies/${encodeURIComponent(studyInstanceUID)}`)
+    const request = fetch(buildPacsApiUrl(`/api/studies/${encodeURIComponent(studyInstanceUID)}`))
       .then(async (res) => {
         if (res.status === 404) {
           studyMetaCache.set(studyInstanceUID, null);
@@ -93,28 +116,35 @@ export async function fetchStudyMeta(studyInstanceUID: string): Promise<Study | 
   return studyMetaRequests.get(studyInstanceUID)!;
 }
 
-export async function fetchSeries(studyInstanceUID: string): Promise<Series[]> {
-  const cached = seriesCache.get(studyInstanceUID);
+export async function fetchSeries(
+  studyInstanceUID: string,
+  options: FetchSeriesOptions = {}
+): Promise<Series[]> {
+  const includeInstances = options.includeInstances !== false;
+  const cache = includeInstances ? seriesCache : seriesSummaryCache;
+  const requests = includeInstances ? seriesRequests : seriesSummaryRequests;
+  const cached = cache.get(studyInstanceUID);
   if (cached) return cached;
 
-  if (!seriesRequests.has(studyInstanceUID)) {
-    const request = fetch(`/api/studies/${encodeURIComponent(studyInstanceUID)}/series`)
+  if (!requests.has(studyInstanceUID)) {
+    const query = includeInstances ? '' : '?includeInstances=false';
+    const request = fetch(buildPacsApiUrl(`/api/studies/${encodeURIComponent(studyInstanceUID)}/series${query}`))
       .then(async (res) => {
         if (!res.ok) {
           throw new Error(`Failed to load study series: ${res.status}`);
         }
         const data = (await res.json()) as Series[];
-        seriesCache.set(studyInstanceUID, data);
+        cache.set(studyInstanceUID, data);
         return data;
       })
       .finally(() => {
-        seriesRequests.delete(studyInstanceUID);
+        requests.delete(studyInstanceUID);
       });
 
-    seriesRequests.set(studyInstanceUID, request);
+    requests.set(studyInstanceUID, request);
   }
 
-  return seriesRequests.get(studyInstanceUID)!;
+  return requests.get(studyInstanceUID)!;
 }
 
 export async function fetchInstances(studyInstanceUID: string, seriesInstanceUID: string) {
@@ -125,4 +155,9 @@ export async function fetchInstances(studyInstanceUID: string, seriesInstanceUID
     uid: (typeof inst === 'string') ? inst : inst.url ?? inst.filename ?? `/dicoms/unknown-${idx}`,
     number: idx + 1,
   }));
+}
+
+export function prefetchStudyViewerData(studyInstanceUID: string) {
+  void fetchStudyMeta(studyInstanceUID).catch(() => null);
+  void fetchSeries(studyInstanceUID, { includeInstances: false }).catch(() => []);
 }

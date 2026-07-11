@@ -163,6 +163,43 @@
     background: #60a5fa;
     box-shadow: 0 0 14px rgba(96, 165, 250, 0.88);
   }
+
+  .viewer-panel-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted-foreground) 45%, transparent) transparent;
+  }
+
+  .viewer-panel-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .viewer-panel-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .viewer-panel-scrollbar::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted-foreground) 36%, transparent);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  .viewer-panel-scrollbar:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted-foreground) 58%, transparent);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .viewer-workspace-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  @media (min-width: 768px) {
+    .viewer-workspace-grid {
+      grid-template-columns: var(--viewer-grid-columns, 250px minmax(0, 1fr) 250px);
+    }
+  }
 }
 
 

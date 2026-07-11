@@ -1,6 +1,24 @@
 // src/lib/viewer/preload.ts
 'use client';
 
+export function getPreloadWindow(
+  imageIds: string[],
+  centerIndex = 0,
+  options: { backward?: number; forward?: number; max?: number } = {}
+) {
+  if (!Array.isArray(imageIds) || imageIds.length === 0) return [];
+
+  const backward = Math.max(0, options.backward ?? 4);
+  const forward = Math.max(0, options.forward ?? 16);
+  const max = Math.max(1, options.max ?? backward + forward + 1);
+  const center = Math.max(0, Math.min(Math.floor(Number(centerIndex) || 0), imageIds.length - 1));
+  const start = Math.max(0, center - backward);
+  const end = Math.min(imageIds.length, center + forward + 1);
+  const windowed = imageIds.slice(start, end);
+
+  return windowed.length > max ? windowed.slice(0, max) : windowed;
+}
+
 export async function loadAndCacheImageWithTimeout(
   imageId?: string | null,
   perLoadTimeoutMs = 8000,

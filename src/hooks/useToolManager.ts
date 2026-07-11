@@ -342,7 +342,7 @@ export function useToolManager() {
         tg.setToolConfiguration?.(toolName, {
           invert: false,
           loop: true,
-          prefetch: { enabled: true, forward: 100, backward: 50 },
+          prefetch: { enabled: true, forward: 24, backward: 8 },
           renderSynchronously: false,
           stackScrollSpeed: 1,
           wheelSensitivity: 1,

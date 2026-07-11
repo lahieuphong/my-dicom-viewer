@@ -128,7 +128,7 @@ export default function SeriesSidebar({
   return (
     <aside
       className={cn(
-        'bg-card text-foreground flex flex-col h-full transition-all duration-200',
+        'bg-card text-foreground flex flex-col h-full min-h-0 transition-all duration-200',
         mobileSidebarOpen ? 'absolute inset-y-0 left-0 w-2/3 z-50' : 'hidden md:block',
         !mobileSidebarOpen && 'border-r border-border',
         className
@@ -194,8 +194,8 @@ export default function SeriesSidebar({
 
           {!listCollapsed && (
             // Replaced custom ScrollArea with a plain div + overflow-auto
-            <div className="relative flex-1 overflow-auto">
-              <div className="px-2 py-2 space-y-2" style={{ minHeight: 'calc(100vh - 200px)' }}>
+            <div className="viewer-panel-scrollbar relative flex-1 min-h-0 overflow-auto">
+              <div className="min-h-full px-2 py-2 space-y-2">
                 <div>
                   {Object.entries(seriesMap).map(([uid, data]) => {
                     if (!data || !data.metadata) return null;

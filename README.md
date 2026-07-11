@@ -34,6 +34,29 @@ Place local `.dcm` files in `public/dicoms/`.
 
 This folder is ignored by Git to avoid committing medical image data.
 
+For local sample data, generate the static metadata manifest before running the
+viewer:
+
+```bash
+yarn dicom:manifest
+```
+
+Runtime API routes read `public/dicom-manifest.json` only; they do not parse DICOM
+files on each request. For real data, keep the frontend DTO shape and point the
+client at your PACS/backend with:
+
+```bash
+NEXT_PUBLIC_PACS_API_BASE=https://your-backend.example/api
+```
+
+Expected remote endpoints:
+
+```txt
+GET /studies
+GET /studies/:studyUID
+GET /studies/:studyUID/series
+```
+
 ## Optional Environment
 
 Login proxy support requires:

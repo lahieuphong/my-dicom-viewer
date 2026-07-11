@@ -114,6 +114,7 @@ export default function StudyExpandedRow({
                     disabled={loading}
                     onClick={() => onOpenViewer(study, uid)}
                     onMouseEnter={() => onPrefetchStudy(study)}
+                    onFocus={() => onPrefetchStudy(study)}
                     className="bg-primary text-primary-foreground"
                   >
                     <i className="fas fa-arrow-right mr-2" />

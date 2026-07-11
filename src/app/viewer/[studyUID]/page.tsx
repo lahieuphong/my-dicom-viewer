@@ -28,7 +28,7 @@ export default function ViewerPage() {
       />
 
       {/* Viewer lấp toàn bộ phần còn lại, không scroll */}
-      <div className="flex-1">
+      <div className="flex-1 min-h-0">
         {/* KEY: force full remount of Viewer when studyUID changes to avoid stale engine/dom races */}
         <Viewer key={studyUID} studyUID={studyUID} />
       </div>
