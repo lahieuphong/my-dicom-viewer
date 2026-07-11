@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useReducedMotion } from 'framer-motion';
 import { fetchSeries, type Study } from '@/lib/pacs/services';
@@ -112,9 +112,11 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState(emptyStudyFilters);
   const [hoveredColumnId, setHoveredColumnId] = useState<StudyTableColumnId | null>(null);
+  const [availableTableWidth, setAvailableTableWidth] = useState(0);
   const [seriesByStudy, setSeriesByStudy] = useState<Partial<Record<string, SeriesWithInstances[]>>>({});
   const [seriesLoadingByStudy, setSeriesLoadingByStudy] = useState<Partial<Record<string, boolean>>>({});
   const seriesRequestsRef = useRef<Partial<Record<string, Promise<void>>>>({});
+  const tableViewportRef = useRef<HTMLDivElement>(null);
 
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
@@ -128,7 +130,7 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
     startResize,
     resetColumnWidth,
     resizeColumnBy,
-  } = useResizableColumns(studyTableColumns);
+  } = useResizableColumns(studyTableColumns, availableTableWidth);
   const resizeBoundaries = useMemo(() => {
     let left = 0;
     return studyTableColumns.flatMap((column, index) => {
@@ -143,6 +145,28 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
     () => filterStudies(studies || [], filters),
     [studies, filters]
   );
+
+  useEffect(() => {
+    const element = tableViewportRef.current;
+    if (!element) return;
+
+    const updateWidth = () => {
+      const nextWidth = Math.floor(element.clientWidth);
+      setAvailableTableWidth((current) => (current === nextWidth ? current : nextWidth));
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateWidth);
+      return () => window.removeEventListener('resize', updateWidth);
+    }
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
 
   const ensureSeriesLoaded = useCallback(
     (study: Study, uid: string) => {
@@ -189,13 +213,13 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
     <div className="space-y-2">
       {loading && <Loading fullScreen message="Đang tải thông tin series..." />}
 
-      <div className="overflow-x-auto">
-        <div className="studies-resizable-shell relative min-w-max" style={{ width: tableWidth }}>
+      <div ref={tableViewportRef} className="overflow-x-auto">
+        <div className="studies-resizable-shell relative min-w-full" style={{ width: tableWidth }}>
           <ShadTable
             noContainer
             className="
               studies-resizable-table
-              min-w-max
+              w-full
               rounded-lg
               border border-border
               bg-card

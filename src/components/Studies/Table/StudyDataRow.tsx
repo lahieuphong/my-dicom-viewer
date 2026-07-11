@@ -12,6 +12,14 @@ type StudyDataRowProps = {
   onToggle: () => void;
 };
 
+function TruncatedCellText({ value }: { value: string }) {
+  return (
+    <span className="block max-w-full truncate" title={value}>
+      {value}
+    </span>
+  );
+}
+
 export default function StudyDataRow({
   study,
   index,
@@ -34,32 +42,32 @@ export default function StudyDataRow({
     <TableRow onClick={onToggle} className="studies-resizable-row studies-resizable-data-row cursor-pointer bg-background hover:bg-muted">
       <TableCell className={cn('text-center', boundaryClass('index'))}>{index + 1}</TableCell>
 
-      <TableCell className={cn('truncate', boundaryClass('patientName'))} title={patientName}>
-        {patientName}
+      <TableCell className={cn('min-w-0', boundaryClass('patientName'))}>
+        <TruncatedCellText value={patientName} />
       </TableCell>
 
-      <TableCell className={cn('truncate', boundaryClass('patientId'))} title={patientId}>
-        {patientId}
+      <TableCell className={cn('min-w-0', boundaryClass('patientId'))}>
+        <TruncatedCellText value={patientId} />
       </TableCell>
 
-      <TableCell className={cn('truncate', boundaryClass('studyDate'))} title={studyDate}>
-        {studyDate}
+      <TableCell className={cn('min-w-0', boundaryClass('studyDate'))}>
+        <TruncatedCellText value={studyDate} />
       </TableCell>
 
-      <TableCell className={cn('truncate', boundaryClass('studyDescription'))} title={studyDescription}>
-        {studyDescription}
+      <TableCell className={cn('min-w-0', boundaryClass('studyDescription'))}>
+        <TruncatedCellText value={studyDescription} />
       </TableCell>
 
-      <TableCell className={cn('truncate', boundaryClass('modalitiesInStudy'))} title={modality}>
-        {modality}
+      <TableCell className={cn('min-w-0', boundaryClass('modalitiesInStudy'))}>
+        <TruncatedCellText value={modality} />
       </TableCell>
 
-      <TableCell className={cn('truncate', boundaryClass('studyInstanceUID'))} title={studyInstanceUID}>
-        {studyInstanceUID}
+      <TableCell className={cn('min-w-0', boundaryClass('studyInstanceUID'))}>
+        <TruncatedCellText value={studyInstanceUID} />
       </TableCell>
 
-      <TableCell className={cn('truncate', boundaryClass('accessionNumber'))} title={accessionNumber}>
-        {accessionNumber}
+      <TableCell className={cn('min-w-0', boundaryClass('accessionNumber'))}>
+        <TruncatedCellText value={accessionNumber} />
       </TableCell>
 
       <TableCell className={cn('text-center', boundaryClass('instanceCount'))}>
