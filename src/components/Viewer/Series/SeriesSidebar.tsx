@@ -194,7 +194,10 @@ export default function SeriesSidebar({
           </div>
 
           {!listCollapsed && (
-            <PanelScrollArea contentClassName="min-h-full px-2 py-2 space-y-2">
+            <PanelScrollArea
+              scrollbarVisibility="always"
+              contentClassName="min-h-full px-2 py-2 space-y-2"
+            >
                 <div>
                   {Object.entries(seriesMap).map(([uid, data]) => {
                     if (!data || !data.metadata) return null;

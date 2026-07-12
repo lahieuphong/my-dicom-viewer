@@ -8,6 +8,7 @@ type PanelScrollAreaProps = {
   children: React.ReactNode;
   className?: string;
   contentClassName?: string;
+  scrollbarVisibility?: 'auto' | 'always';
 };
 
 type ScrollMetrics = {
@@ -23,6 +24,7 @@ export default function PanelScrollArea({
   children,
   className,
   contentClassName,
+  scrollbarVisibility = 'auto',
 }: PanelScrollAreaProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -250,7 +252,7 @@ export default function PanelScrollArea({
         </div>
       </div>
 
-      {metrics.canScroll && (
+      {(metrics.canScroll || scrollbarVisibility === 'always') && (
         <div
           ref={trackRef}
           className="absolute right-1 top-2 bottom-2 z-20 w-2 rounded-full bg-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
@@ -258,10 +260,15 @@ export default function PanelScrollArea({
           aria-hidden="true"
         >
           <div
-            className="absolute left-0 right-0 cursor-grab rounded-full bg-slate-300/80 shadow-[0_0_10px_rgba(147,197,253,0.28)] transition-colors active:cursor-grabbing active:bg-blue-200"
+            className={cn(
+              'absolute left-0 right-0 rounded-full bg-slate-300/80 shadow-[0_0_10px_rgba(147,197,253,0.28)] transition-colors',
+              metrics.canScroll
+                ? 'cursor-grab active:cursor-grabbing active:bg-blue-200'
+                : 'cursor-default opacity-55'
+            )}
             style={{
-              height: `${metrics.thumbHeight}px`,
-              transform: `translateY(${metrics.thumbTop}px)`,
+              height: metrics.canScroll ? `${metrics.thumbHeight}px` : '100%',
+              transform: metrics.canScroll ? `translateY(${metrics.thumbTop}px)` : 'translateY(0)',
             }}
             onPointerDown={handleThumbPointerDown}
             onPointerMove={handleThumbPointerMove}
