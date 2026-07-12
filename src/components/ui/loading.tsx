@@ -96,12 +96,10 @@ export default function Loading({
           ? 'fixed inset-0 z-[2147483647] flex h-screen min-h-[100dvh] w-screen items-center justify-center overflow-hidden bg-background text-foreground'
           : 'flex min-h-[220px] items-center justify-center bg-background text-foreground'
       )}
-      style={fullScreen ? { height: '100dvh', width: '100vw' } : undefined}
+      style={fullScreen ? { height: '100dvh', width: '100vw', touchAction: 'none' } : undefined}
       aria-busy="true"
       aria-live="polite"
       role="status"
-      onWheel={fullScreen ? (event) => event.preventDefault() : undefined}
-      onTouchMove={fullScreen ? (event) => event.preventDefault() : undefined}
     >
       <BrandLoadingSpinner />
       <span className="sr-only">{message ?? 'Đang tải'}</span>
