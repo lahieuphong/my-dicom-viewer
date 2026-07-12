@@ -160,7 +160,6 @@ export function useRenderingEngine({
   const [viewportInstance, setViewportInstance] = useState<StackViewport | null>(null);
   const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null);
 
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const stackEventHandlerRef = useRef<((e: any) => void) | null>(null);
   const watchdogTimerRef = useRef<number | null>(null);
 
@@ -439,26 +438,6 @@ export function useRenderingEngine({
         }
       } catch {}
 
-      // observe resize changes
-      try {
-        if (typeof ResizeObserver !== 'undefined' && mountEl) {
-          try { resizeObserverRef.current?.disconnect(); } catch {}
-          resizeObserverRef.current = new ResizeObserver(() => {
-            try {
-              if (!renderingEngineRef.current) return;
-              try {
-                const eng = engine ?? renderingEngineRef.current;
-                eng?.resize?.();
-              } catch (e) {
-              }
-              try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-              try { normalizeCanvasAndContext(mountEl); } catch {}
-            } catch {}
-          });
-          try { resizeObserverRef.current.observe(mountEl); } catch {}
-        }
-      } catch {}
-
       const imageIds = mergedSeriesMap[selectedSeriesId]?.files ?? [];
       const initialIndex = 0;
 
@@ -670,19 +649,29 @@ export function useRenderingEngine({
                   let enabled: any = null;
                   try { if (csCore?.getEnabledElementByViewportId) enabled = csCore.getEnabledElementByViewportId(VIEWPORT_ID); else if (csCore?.getEnabledElement) enabled = csCore.getEnabledElement(elToCheck); else enabled = (typeof getEnabledElementSafeLocal === 'function') ? getEnabledElementSafeLocal(elToCheck) : null; } catch (e) { enabled = null; }
 
-                  const imageExists = !!(enabled && (enabled as any).image);
+                  const activeViewport =
+                    (enabled as any)?.viewport ??
+                    vp ??
+                    renderingEngineRef.current?.getViewport?.(VIEWPORT_ID) ??
+                    null;
+                  let imageExists = Boolean((enabled as any)?.image);
+                  try {
+                    imageExists = imageExists || Boolean(activeViewport?.getCurrentImageId?.());
+                  } catch {}
+                  try {
+                    imageExists = imageExists || Boolean(activeViewport?.getCornerstoneImage?.());
+                  } catch {}
+                  try {
+                    imageExists = imageExists || Boolean(activeViewport?.getImageData?.());
+                  } catch {}
+                  try {
+                    imageExists =
+                      imageExists ||
+                      String(activeViewport?.viewportStatus ?? '').toLowerCase() === 'rendered';
+                  } catch {}
                   if (imageExists) { missCount = 0; return; }
 
                   missCount += 1;
-
-                  try {
-                    try { normalizeCanvasAndContext(elToCheck); } catch {}
-                    try { renderingEngineRef.current?.resize?.(); } catch {}
-                    try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-                    if (vp && typeof vp.render === 'function' && (vp.element as HTMLElement).isConnected) {
-                      try { vp.render(); } catch {}
-                    }
-                  } catch (e) {}
 
                   const now = Date.now();
                   if (now - lastReattachTs < cooldownMs) { return; }
@@ -833,9 +822,6 @@ export function useRenderingEngine({
             } catch (e) {}
 
             try { const tg = ToolGroupManager.getToolGroup(TOOL_GROUP); if (tg && typeof (tg as any).removeViewports === 'function') { try { (tg as any).removeViewports?.([VIEWPORT_ID]); } catch (e) {} } else if (tg && typeof (tg as any).removeViewport === 'function') { try { (tg as any).removeViewport?.(VIEWPORT_ID); } catch (e) {} } } catch (e) {}
-
-            try { resizeObserverRef.current?.disconnect(); } catch (e) {}
-            resizeObserverRef.current = null;
 
             try {
               tryDetachViewportSafely(renderingEngineRef.current);

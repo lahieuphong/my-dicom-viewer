@@ -48,6 +48,7 @@ import useImageReadiness from '@/hooks/useImageReadiness';
 import { enableElement } from '@/lib/cornerstone/element';
 
 import { useForceZoomOne } from '@/hooks/useForceZoomOne';
+import { useViewportAutoFitOnResize } from '@/hooks/useViewportAutoFitOnResize';
 
 
 import { normalizeId, getEnabledElementSafeLocal } from '@/lib/viewer/dom';
@@ -335,7 +336,6 @@ const Viewer = ({ studyUID }: { studyUID: string }) => {
 
   const imageAvailable = Boolean(hookImageReady) || Boolean(enabledHasImage) || Boolean(runtimeHasImage) || Boolean(viewportRenderedSignal);
 
-
   // When any indicates ready, hide loading overlay
   useEffect(() => {
     if (imageAvailable) {
@@ -367,6 +367,15 @@ const Viewer = ({ studyUID }: { studyUID: string }) => {
     measurementCollapsed,
     setMeasurementCollapsed
   } = useViewerLayout();
+
+  useViewportAutoFitOnResize({
+    viewportEl,
+    viewportInstance,
+    renderingEngineRef,
+    viewportId,
+    enabled: imageAvailable,
+    resizeSignal: `${leftPanelWidth}:${rightPanelWidth}:${sidebarCollapsed}:${measurementCollapsed}`,
+  });
 
   const attachCounterRef = useRef(0);
   // Remember last successful attach to avoid duplicate re-attaches
