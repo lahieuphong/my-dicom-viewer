@@ -165,31 +165,12 @@
   }
 
   .viewer-panel-scrollbar {
-    scrollbar-gutter: stable;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(148, 163, 184, 0.72) rgba(255, 255, 255, 0.06);
+    scrollbar-width: none;
   }
 
   .viewer-panel-scrollbar::-webkit-scrollbar {
-    width: 12px;
-  }
-
-  .viewer-panel-scrollbar::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.06);
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .viewer-panel-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.72);
-    border: 3px solid rgba(18, 18, 18, 0.96);
-    border-radius: 999px;
-    background-clip: padding-box;
-  }
-
-  .viewer-panel-scrollbar:hover::-webkit-scrollbar-thumb {
-    background: rgba(191, 219, 254, 0.88);
-    border: 3px solid rgba(18, 18, 18, 0.96);
-    background-clip: padding-box;
+    width: 0;
+    height: 0;
   }
 
   .viewer-workspace-grid {

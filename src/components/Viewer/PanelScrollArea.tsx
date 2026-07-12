@@ -205,17 +205,6 @@ export default function PanelScrollArea({
     event.currentTarget.releasePointerCapture(event.pointerId);
   }, []);
 
-  const handleWheelCapture = useCallback(
-    (event: React.WheelEvent<HTMLDivElement>) => {
-      const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
-      if (!scrollByDelta(delta)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-    },
-    [scrollByDelta]
-  );
-
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       const el = scrollRef.current;
@@ -254,7 +243,6 @@ export default function PanelScrollArea({
         ref={scrollRef}
         className="viewer-panel-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pr-4 focus:outline-none"
         tabIndex={0}
-        onWheelCapture={handleWheelCapture}
         onKeyDown={handleKeyDown}
       >
         <div ref={contentRef} className={contentClassName}>
