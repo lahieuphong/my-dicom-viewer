@@ -178,6 +178,8 @@ export default function ViewerWorkspace({
 
   const {
     gridRef,
+    renderedSidebarCollapsed,
+    renderedMeasurementCollapsed,
     beginResize,
     handleResizeMove,
     handleResizeEnd,
@@ -185,7 +187,9 @@ export default function ViewerWorkspace({
   } = useViewerPanelResize({
     disabled: loadingSeries,
     sidebarCollapsed,
+    setSidebarCollapsed,
     measurementCollapsed,
+    setMeasurementCollapsed,
     leftPanelWidth,
     setLeftPanelWidth,
     rightPanelWidth,
@@ -247,7 +251,7 @@ export default function ViewerWorkspace({
             onSelectSeries={onSelectSeries}
             studyDate={studyDate}
             studyDescription={studyDescription}
-            collapsed={sidebarCollapsed}
+            collapsed={renderedSidebarCollapsed}
             setCollapsed={setSidebarCollapsed}
             loadedSrList={loadedSrList}
             activeSrId={activeSrId}
@@ -336,14 +340,15 @@ export default function ViewerWorkspace({
         {!loadingSeries && (
           <MeasurementPanel
             {...measurementPanelProps}
+            collapsed={renderedMeasurementCollapsed}
             className="hidden md:flex"
           />
         )}
 
-        {!loadingSeries && !sidebarCollapsed && (
+        {!loadingSeries && (
           <PanelResizeHandle
             side="left"
-            label="Resize Studies panel"
+            label="Resize or collapse Studies panel"
             onResizeStart={beginResize}
             onResizeMove={handleResizeMove}
             onResizeEnd={handleResizeEnd}
@@ -351,10 +356,10 @@ export default function ViewerWorkspace({
           />
         )}
 
-        {!loadingSeries && !measurementCollapsed && (
+        {!loadingSeries && (
           <PanelResizeHandle
             side="right"
-            label="Resize Measurement panel"
+            label="Resize or collapse Measurement panel"
             onResizeStart={beginResize}
             onResizeMove={handleResizeMove}
             onResizeEnd={handleResizeEnd}

@@ -150,7 +150,7 @@ export default function MeasurementPanel({
   return (
     <aside
       className={cn(
-        'bg-card text-foreground flex flex-col h-full min-h-0 transition-all duration-200',
+        'bg-card text-foreground flex h-full min-h-0 min-w-0 flex-col overflow-hidden transition-[background-color,border-color] duration-200',
         mobileSidebarOpen ? 'absolute inset-y-0 right-0 w-2/3 z-50' : 'hidden md:flex',
         !mobileSidebarOpen && 'border-l border-border',
         className
@@ -177,14 +177,20 @@ export default function MeasurementPanel({
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => setCollapsed((current) => !current)}
           aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
+          aria-expanded={!collapsed}
           className={cn(
-            'hidden border border-border md:inline-flex',
+            'hidden border border-border transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out active:scale-95 md:inline-flex',
             collapsed && 'mx-auto'
           )}
         >
-          <i className={`fas ${collapsed ? 'fa-chevron-left' : 'fa-chevron-right'}`} />
+          <i
+            className={cn(
+              'fas fa-chevron-right transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+              collapsed && 'rotate-180'
+            )}
+          />
         </Button>
 
         {!collapsed && (

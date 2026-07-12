@@ -130,7 +130,7 @@ export default function SeriesSidebar({
   return (
     <aside
       className={cn(
-        'bg-card text-foreground flex flex-col h-full min-h-0 transition-all duration-200',
+        'bg-card text-foreground flex h-full min-h-0 min-w-0 flex-col overflow-hidden transition-[background-color,border-color] duration-200',
         mobileSidebarOpen ? 'absolute inset-y-0 left-0 w-2/3 z-50' : 'hidden md:flex',
         !mobileSidebarOpen && 'border-r border-border',
         className
@@ -163,13 +163,19 @@ export default function SeriesSidebar({
           variant="ghost"
           size="icon"
           className={cn(
-            'hidden h-9 w-9 border border-border md:inline-flex',
+            'hidden h-9 w-9 border border-border transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out active:scale-95 md:inline-flex',
             collapsed ? 'mx-auto' : 'ml-auto'
           )}
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => setCollapsed((current) => !current)}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
         >
-          <i className={`fas ${collapsed ? 'fa-chevron-right' : 'fa-chevron-left'}`} />
+          <i
+            className={cn(
+              'fas fa-chevron-left transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+              collapsed && 'rotate-180'
+            )}
+          />
         </Button>
       </div>
 
