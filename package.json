@@ -1,4 +1,5 @@
 {
+  "$schema": "./schemas/package.schema.json",
   "name": "dicom-viewer",
   "version": "0.1.0",
   "private": true,

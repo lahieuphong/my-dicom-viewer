@@ -1,0 +1,49 @@
+{
+  "title": "Local package.json schema",
+  "description": "A local, permissive schema for this project's package.json to avoid external SchemaStore trust warnings in editors.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "private": {
+      "type": "boolean"
+    },
+    "packageManager": {
+      "type": "string"
+    },
+    "scripts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "dependencies": {
+      "$ref": "#/definitions/dependencyMap"
+    },
+    "devDependencies": {
+      "$ref": "#/definitions/dependencyMap"
+    },
+    "peerDependencies": {
+      "$ref": "#/definitions/dependencyMap"
+    },
+    "optionalDependencies": {
+      "$ref": "#/definitions/dependencyMap"
+    }
+  },
+  "definitions": {
+    "dependencyMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}
