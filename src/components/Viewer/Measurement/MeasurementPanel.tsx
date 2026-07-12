@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { ChevronUp } from 'lucide-react';
 import { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import type { Series } from '@/lib/pacs/services';
 import { cn, formatStudyDate } from '@/lib/utils';
@@ -150,7 +151,7 @@ export default function MeasurementPanel({
   return (
     <aside
       className={cn(
-        'bg-card text-foreground flex h-full min-h-0 min-w-0 flex-col overflow-hidden transition-[background-color,border-color] duration-200',
+        'relative bg-card text-foreground flex h-full min-h-0 min-w-0 flex-col overflow-hidden transition-[background-color,border-color] duration-200',
         mobileSidebarOpen ? 'absolute inset-y-0 right-0 w-2/3 z-50' : 'hidden md:flex',
         !mobileSidebarOpen && 'border-l border-border',
         className
@@ -170,8 +171,8 @@ export default function MeasurementPanel({
 
       <div
         className={cn(
-          'relative flex h-[52px] min-h-[52px] items-center py-0',
-          collapsed ? 'px-0' : 'border-b border-border px-2'
+          'relative flex h-[52px] min-h-[52px] items-center border-b px-2 py-0 transition-colors duration-200',
+          collapsed ? 'border-transparent' : 'border-border'
         )}
       >
         <Button
@@ -181,13 +182,12 @@ export default function MeasurementPanel({
           aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
           aria-expanded={!collapsed}
           className={cn(
-            'hidden border border-border transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out active:scale-95 md:inline-flex',
-            collapsed && 'mx-auto'
+            'viewer-panel-toggle viewer-panel-toggle-right absolute left-[5px] top-1/2 hidden h-9 w-9 shrink-0 -translate-y-1/2 transform-gpu border border-border transition-[background-color,border-color,box-shadow,transform] duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.04] active:scale-95 motion-reduce:transition-none md:inline-flex'
           )}
         >
           <i
             className={cn(
-              'fas fa-chevron-right transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+              'fas fa-chevron-right w-3 transform-gpu text-center transition-transform duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
               collapsed && 'rotate-180'
             )}
           />
@@ -306,17 +306,29 @@ export default function MeasurementPanel({
               <Button
                 variant="ghost"
                 size="icon"
-                className="p-1 border border-border"
+                className="transform-gpu border border-border p-1 transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.04] active:scale-95 motion-reduce:transition-none"
                 onClick={() => setListCollapsed((prev) => !prev)}
                 aria-label={listCollapsed ? 'Expand list' : 'Collapse list'}
+                aria-expanded={!listCollapsed}
               >
-                <i className={`fas fa-chevron-${listCollapsed ? 'down' : 'up'}`} />
+                <ChevronUp
+                  aria-hidden="true"
+                  className={cn(
+                    'size-5 shrink-0 transform-gpu transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+                    listCollapsed && 'rotate-180'
+                  )}
+                  strokeWidth={2.5}
+                />
               </Button>
             </div>
           </div>
 
-          {!listCollapsed && (
-            <div className="flex min-h-0 flex-1 flex-col">
+          <div
+            className="viewer-panel-collapsible"
+            data-collapsed={listCollapsed}
+            aria-hidden={listCollapsed}
+          >
+            <div className="viewer-panel-collapsible-content">
               <div className="flex items-center justify-center px-4 py-2 border-b border-border">
                 {(onExportJSON || onExportDICOMSR) && (
                   <DropdownMenu>
@@ -501,7 +513,7 @@ export default function MeasurementPanel({
                   )}
               </PanelScrollArea>
             </div>
-          )}
+          </div>
         </div>
       )}
 

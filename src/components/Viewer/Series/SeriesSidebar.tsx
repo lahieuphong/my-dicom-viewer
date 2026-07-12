@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Copy } from 'lucide-react';
+import { ChevronUp, Copy } from 'lucide-react';
 import type { Series } from '@/lib/pacs/services';
 import { Button } from '@/components/ui/button';
 import { cn, formatStudyDate } from '@/lib/utils';
@@ -130,7 +130,7 @@ export default function SeriesSidebar({
   return (
     <aside
       className={cn(
-        'bg-card text-foreground flex h-full min-h-0 min-w-0 flex-col overflow-hidden transition-[background-color,border-color] duration-200',
+        'relative bg-card text-foreground flex h-full min-h-0 min-w-0 flex-col overflow-hidden transition-[background-color,border-color] duration-200',
         mobileSidebarOpen ? 'absolute inset-y-0 left-0 w-2/3 z-50' : 'hidden md:flex',
         !mobileSidebarOpen && 'border-r border-border',
         className
@@ -150,8 +150,8 @@ export default function SeriesSidebar({
 
       <div
         className={cn(
-          'relative flex h-[52px] min-h-[52px] items-center py-0',
-          collapsed ? 'px-0' : 'border-b border-border px-2'
+          'relative flex h-[52px] min-h-[52px] items-center border-b px-2 py-0 transition-colors duration-200',
+          collapsed ? 'border-transparent' : 'border-border'
         )}
       >
         {!collapsed && (
@@ -163,8 +163,7 @@ export default function SeriesSidebar({
           variant="ghost"
           size="icon"
           className={cn(
-            'hidden h-9 w-9 border border-border transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out active:scale-95 md:inline-flex',
-            collapsed ? 'mx-auto' : 'ml-auto'
+            'viewer-panel-toggle viewer-panel-toggle-left absolute right-[5px] top-1/2 hidden h-9 w-9 shrink-0 -translate-y-1/2 transform-gpu border border-border transition-[background-color,border-color,box-shadow,transform] duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.04] active:scale-95 motion-reduce:transition-none md:inline-flex'
           )}
           onClick={() => setCollapsed((current) => !current)}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -172,7 +171,7 @@ export default function SeriesSidebar({
         >
           <i
             className={cn(
-              'fas fa-chevron-left transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+              'fas fa-chevron-left w-3 transform-gpu text-center transition-transform duration-[340ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
               collapsed && 'rotate-180'
             )}
           />
@@ -192,7 +191,7 @@ export default function SeriesSidebar({
 
       {!collapsed && (
         <>
-          <div className="h-[52px] min-h-[52px] pl-4 pr-2 py-0 border-b border-border flex items-center justify-between gap-3">
+          <div className="h-[52px] min-h-[52px] pl-4 pr-[5px] py-0 border-b border-border flex items-center justify-between gap-3">
             <div className="flex flex-col justify-center min-w-0">
               <div className="text-sm font-semibold truncate" title={formattedDate}>
                 {formattedDate}
@@ -206,19 +205,32 @@ export default function SeriesSidebar({
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 shrink-0 border border-border"
+              className="h-9 w-9 shrink-0 transform-gpu border border-border transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:scale-[1.04] active:scale-95 motion-reduce:transition-none"
               onClick={() => setListCollapsed((prev) => !prev)}
               aria-label={listCollapsed ? 'Open list' : 'Close list'}
+              aria-expanded={!listCollapsed}
             >
-              <i className={`fas fa-chevron-${listCollapsed ? 'down' : 'up'}`} />
+              <ChevronUp
+                aria-hidden="true"
+                className={cn(
+                  'size-5 shrink-0 transform-gpu transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+                  listCollapsed && 'rotate-180'
+                )}
+                strokeWidth={2.5}
+              />
             </Button>
           </div>
 
-          {!listCollapsed && (
-            <PanelScrollArea
-              scrollbarVisibility="always"
-              contentClassName="min-h-full px-2 py-2 space-y-2"
-            >
+          <div
+            className="viewer-panel-collapsible"
+            data-collapsed={listCollapsed}
+            aria-hidden={listCollapsed}
+          >
+            <div className="viewer-panel-collapsible-content">
+              <PanelScrollArea
+                scrollbarVisibility="always"
+                contentClassName="min-h-full px-2 py-2 space-y-2"
+              >
                 <div>
                   {Object.entries(seriesMap).map(([uid, data]) => {
                     if (!data || !data.metadata) return null;
@@ -298,8 +310,9 @@ export default function SeriesSidebar({
                     );
                   })
                 )}
-            </PanelScrollArea>
-          )}
+              </PanelScrollArea>
+            </div>
+          </div>
         </>
       )}
     </aside>

@@ -173,6 +173,54 @@
     height: 0;
   }
 
+  .viewer-panel-collapsible {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    flex: 1 1 0%;
+    min-height: 0;
+    overflow: hidden;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      grid-template-rows 320ms cubic-bezier(0.22, 1, 0.36, 1),
+      flex-grow 320ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 180ms ease 60ms,
+      visibility 0s linear;
+  }
+
+  .viewer-panel-collapsible-content {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 1;
+    transform: translateY(0);
+    transform-origin: top;
+    transition:
+      opacity 200ms ease 70ms,
+      transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .viewer-panel-collapsible[data-collapsed='true'] {
+    grid-template-rows: minmax(0, 0fr);
+    flex-grow: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      grid-template-rows 320ms cubic-bezier(0.22, 1, 0.36, 1),
+      flex-grow 320ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 140ms ease,
+      visibility 0s linear 320ms;
+  }
+
+  .viewer-panel-collapsible[data-collapsed='true'] .viewer-panel-collapsible-content {
+    opacity: 0;
+    transform: translateY(-8px);
+    transition:
+      opacity 140ms ease,
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
   .viewer-workspace-grid {
     display: grid;
     position: relative;
@@ -228,13 +276,14 @@
   @media (min-width: 768px) {
     .viewer-workspace-grid {
       grid-template-columns: var(--viewer-grid-columns, 250px minmax(0, 1fr) 250px);
-      transition: grid-template-columns 280ms cubic-bezier(0.22, 1, 0.36, 1);
+      transition: grid-template-columns 340ms cubic-bezier(0.22, 1, 0.36, 1);
+      will-change: grid-template-columns;
     }
 
     .viewer-panel-resize-handle {
       transition:
-        left 280ms cubic-bezier(0.22, 1, 0.36, 1),
-        right 280ms cubic-bezier(0.22, 1, 0.36, 1);
+        left 340ms cubic-bezier(0.22, 1, 0.36, 1),
+        right 340ms cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     .viewer-workspace-grid[data-panel-resizing='true'],
@@ -245,7 +294,9 @@
 
   @media (prefers-reduced-motion: reduce) {
     .viewer-workspace-grid,
-    .viewer-panel-resize-handle {
+    .viewer-panel-resize-handle,
+    .viewer-panel-collapsible,
+    .viewer-panel-collapsible-content {
       transition: none;
     }
   }
