@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { Copy } from 'lucide-react';
 import type { Series } from '@/lib/pacs/services';
 import { Button } from '@/components/ui/button';
 import { cn, formatStudyDate } from '@/lib/utils';
@@ -149,8 +150,8 @@ export default function SeriesSidebar({
 
       <div
         className={cn(
-          'relative flex h-[52px] min-h-[52px] items-center px-2 py-0',
-          !collapsed && 'border-b border-border'
+          'relative flex h-[52px] min-h-[52px] items-center py-0',
+          collapsed ? 'px-0' : 'border-b border-border px-2'
         )}
       >
         {!collapsed && (
@@ -161,13 +162,27 @@ export default function SeriesSidebar({
         <Button
           variant="ghost"
           size="icon"
-          className="ml-auto hidden h-9 w-9 md:inline-flex border border-border"
+          className={cn(
+            'hidden h-9 w-9 border border-border md:inline-flex',
+            collapsed ? 'mx-auto' : 'ml-auto'
+          )}
           onClick={() => setCollapsed(!collapsed)}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           <i className={`fas ${collapsed ? 'fa-chevron-right' : 'fa-chevron-left'}`} />
         </Button>
       </div>
+
+      {collapsed && !mobileSidebarOpen && (
+        <div className="hidden justify-center pt-2 md:flex">
+          <div
+            aria-hidden="true"
+            className="flex h-8 w-8 items-center justify-center text-white"
+          >
+            <Copy className="h-6 w-6 stroke-[2.25]" />
+          </div>
+        </div>
+      )}
 
       {!collapsed && (
         <>
