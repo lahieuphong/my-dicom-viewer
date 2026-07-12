@@ -1,0 +1,11 @@
+export const VIEWER_LEFT_PANEL_EXPANDED = 250;
+export const VIEWER_LEFT_PANEL_COLLAPSED = 48;
+export const VIEWER_LEFT_PANEL_MIN = 180;
+export const VIEWER_LEFT_PANEL_MAX = 520;
+
+export const VIEWER_RIGHT_PANEL_EXPANDED = 250;
+export const VIEWER_RIGHT_PANEL_COLLAPSED = 48;
+export const VIEWER_RIGHT_PANEL_MIN = 220;
+export const VIEWER_RIGHT_PANEL_MAX = 560;
+
+export const VIEWER_MAIN_MIN = 420;

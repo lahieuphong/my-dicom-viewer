@@ -175,7 +175,54 @@
 
   .viewer-workspace-grid {
     display: grid;
+    position: relative;
     grid-template-columns: 1fr;
+  }
+
+  .viewer-panel-resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 45;
+    width: 14px;
+    cursor: col-resize;
+    touch-action: none;
+    user-select: none;
+    outline: none;
+  }
+
+  .viewer-panel-resize-handle-left {
+    left: var(--viewer-left-panel-width, 250px);
+  }
+
+  .viewer-panel-resize-handle-right {
+    right: var(--viewer-right-panel-width, 250px);
+  }
+
+  .viewer-panel-resize-handle::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    transform: translateX(-50%);
+    background: color-mix(in srgb, var(--border) 88%, var(--foreground) 12%);
+    transition: width 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .viewer-panel-resize-handle-right::before {
+    right: 0;
+    left: auto;
+    transform: translateX(50%);
+  }
+
+  .viewer-panel-resize-handle:hover::before,
+  .viewer-panel-resize-handle:focus-visible::before,
+  .viewer-panel-resize-handle:active::before {
+    width: 3px;
+    background: #60a5fa;
+    box-shadow: 0 0 14px rgba(96, 165, 250, 0.88);
   }
 
   @media (min-width: 768px) {

@@ -5,13 +5,19 @@ import type { ComponentProps, CSSProperties, Dispatch, RefObject, SetStateAction
 import { Loading } from '@/components/ui/loading';
 import { Button } from '@/components/ui/button';
 import { VIEWPORT_ID } from '@/constants/viewport';
+import {
+  VIEWER_LEFT_PANEL_COLLAPSED,
+  VIEWER_RIGHT_PANEL_COLLAPSED,
+} from '@/constants/viewerLayout';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import type { ToolID } from '@/hooks/useToolManager';
+import { useViewerPanelResize } from '@/hooks/useViewerPanelResize';
 
 import { MeasurementPanel } from '@/components/Viewer/Measurement';
 import { SeriesSidebar } from '@/components/Viewer/Series';
 import { SrNameDialog } from '@/components/Viewer/SR';
 import { Toolbar } from '@/components/Viewer/Toolbar';
+import PanelResizeHandle from './PanelResizeHandle';
 import {
   DicomViewport,
   ViewportLoadingOverlay,
@@ -24,6 +30,10 @@ type MeasurementPanelProps = ComponentProps<typeof MeasurementPanel>;
 type ViewerWorkspaceProps = {
   loadingSeries: boolean;
   gridCols: string;
+  leftPanelWidth: number;
+  setLeftPanelWidth: Dispatch<SetStateAction<number>>;
+  rightPanelWidth: number;
+  setRightPanelWidth: Dispatch<SetStateAction<number>>;
   isSR: boolean;
   studyUID: string;
   studyDate: string;
@@ -81,6 +91,10 @@ type ViewerWorkspaceProps = {
 export default function ViewerWorkspace({
   loadingSeries,
   gridCols,
+  leftPanelWidth,
+  setLeftPanelWidth,
+  rightPanelWidth,
+  setRightPanelWidth,
   isSR,
   studyUID,
   studyDate,
@@ -162,6 +176,22 @@ export default function ViewerWorkspace({
     onSelectSr,
   } satisfies Omit<MeasurementPanelProps, 'className' | 'mobileSidebarOpen' | 'onCloseMobile'>;
 
+  const {
+    gridRef,
+    beginResize,
+    handleResizeMove,
+    handleResizeEnd,
+    handleResizeKeyDown,
+  } = useViewerPanelResize({
+    disabled: loadingSeries,
+    sidebarCollapsed,
+    measurementCollapsed,
+    leftPanelWidth,
+    setLeftPanelWidth,
+    rightPanelWidth,
+    setRightPanelWidth,
+  });
+
   return (
     <>
       {loadingSeries && <Loading fullScreen message="Đang tải thông tin series..." />}
@@ -197,9 +227,16 @@ export default function ViewerWorkspace({
       )}
 
       <div
+        ref={gridRef}
         className="viewer-workspace-grid h-full items-stretch min-h-0"
         style={{
           '--viewer-grid-columns': gridCols,
+          '--viewer-left-panel-width': `${
+            sidebarCollapsed ? VIEWER_LEFT_PANEL_COLLAPSED : leftPanelWidth
+          }px`,
+          '--viewer-right-panel-width': `${
+            measurementCollapsed ? VIEWER_RIGHT_PANEL_COLLAPSED : rightPanelWidth
+          }px`,
         } as CSSProperties}
       >
         {!loadingSeries && (
@@ -300,6 +337,28 @@ export default function ViewerWorkspace({
           <MeasurementPanel
             {...measurementPanelProps}
             className="hidden md:flex"
+          />
+        )}
+
+        {!loadingSeries && !sidebarCollapsed && (
+          <PanelResizeHandle
+            side="left"
+            label="Resize Studies panel"
+            onResizeStart={beginResize}
+            onResizeMove={handleResizeMove}
+            onResizeEnd={handleResizeEnd}
+            onResizeKeyDown={handleResizeKeyDown}
+          />
+        )}
+
+        {!loadingSeries && !measurementCollapsed && (
+          <PanelResizeHandle
+            side="right"
+            label="Resize Measurement panel"
+            onResizeStart={beginResize}
+            onResizeMove={handleResizeMove}
+            onResizeEnd={handleResizeEnd}
+            onResizeKeyDown={handleResizeKeyDown}
           />
         )}
       </div>

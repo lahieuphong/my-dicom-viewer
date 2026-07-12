@@ -358,6 +358,10 @@ const Viewer = ({ studyUID }: { studyUID: string }) => {
   // useViewerLayout: quản lý grid + collapsed state cho sidebar & measurement panel
   const {
     gridCols,
+    leftPanelWidth,
+    setLeftPanelWidth,
+    rightPanelWidth,
+    setRightPanelWidth,
     sidebarCollapsed,
     setSidebarCollapsed,
     measurementCollapsed,
@@ -1632,6 +1636,10 @@ const Viewer = ({ studyUID }: { studyUID: string }) => {
     <ViewerWorkspace
       loadingSeries={loadingSeries}
       gridCols={gridCols}
+      leftPanelWidth={leftPanelWidth}
+      setLeftPanelWidth={setLeftPanelWidth}
+      rightPanelWidth={rightPanelWidth}
+      setRightPanelWidth={setRightPanelWidth}
       isSR={isSR}
       studyUID={studyUID}
       studyDate={studyMeta.studyDate}
