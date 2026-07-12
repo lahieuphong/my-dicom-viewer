@@ -7,6 +7,8 @@ import type { Series } from '@/lib/pacs/services';
 import { Button } from '@/components/ui/button';
 import { cn, formatStudyDate } from '@/lib/utils';
 import PanelScrollArea from '@/components/Viewer/PanelScrollArea';
+import DicomSeriesThumbnail from './DicomSeriesThumbnail';
+import SeriesViewToggle, { type SeriesViewMode } from './SeriesViewToggle';
 
 interface SeriesSidebarProps {
   seriesMap: Record<string, { files: any[]; metadata: Series | undefined }>;
@@ -125,6 +127,7 @@ export default function SeriesSidebar({
   srGroups,
 }: SeriesSidebarProps) {
   const [listCollapsed, setListCollapsed] = useState(false);
+  const [viewMode, setViewMode] = useState<SeriesViewMode>('list');
   const formattedDate = formatStudyDate(studyDate);
 
   return (
@@ -227,46 +230,121 @@ export default function SeriesSidebar({
             aria-hidden={listCollapsed}
           >
             <div className="viewer-panel-collapsible-content">
+              <div className="flex h-12 min-h-12 items-center justify-end border-b border-border px-2">
+                <SeriesViewToggle value={viewMode} onValueChange={setViewMode} />
+              </div>
+
               <PanelScrollArea
                 scrollbarVisibility="always"
                 contentClassName="min-h-full px-2 py-2 space-y-2"
               >
-                <div>
-                  {Object.entries(seriesMap).map(([uid, data]) => {
-                    if (!data || !data.metadata) return null;
-                    const metadata = data.metadata;
-                    const isSelected = uid === selectedSeries && activeSrId == null;
+                {viewMode === 'list' ? (
+                  <div className="space-y-2">
+                    {Object.entries(seriesMap).map(([uid, data], index) => {
+                      if (!data || !data.metadata) return null;
+                      const metadata = data.metadata;
+                      const isSelected = uid === selectedSeries && activeSrId == null;
+                      const label = `${metadata.seriesModality} ${metadata.seriesNumber} - ${
+                        metadata.seriesDescription || 'Unnamed Series'
+                      }`;
+                      const instanceCount =
+                        metadata.seriesRelatedInstanceCount || String(data.files.length);
 
-                    return (
-                      <button
-                        key={uid}
-                        onClick={() => {
-                          onSelectSr?.(null);
-                          onSelectSeries(uid);
-                        }}
-                        className={cn(
-                          'flex flex-col w-full text-left px-3 py-2 rounded-md transition-shadow duration-150 overflow-hidden',
-                          isSelected
-                            ? 'bg-muted border-l-4 border-primary shadow-lg text-foreground'
-                            : 'bg-background hover:bg-muted text-foreground'
-                        )}
-                      >
-                        <div className="text-sm font-sans mb-1 flex items-center gap-2">
+                      return (
+                        <button
+                          key={uid}
+                          type="button"
+                          onClick={() => {
+                            onSelectSr?.(null);
+                            onSelectSeries(uid);
+                          }}
+                          className={cn(
+                            'relative flex min-h-12 w-full flex-col justify-center overflow-hidden rounded-md border py-1.5 pl-5 pr-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-200 hover:bg-muted active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
+                            isSelected
+                              ? 'border-primary/20 bg-primary/10 text-foreground shadow-sm'
+                              : 'border-border/70 bg-background text-foreground'
+                          )}
+                          aria-label={label}
+                          aria-pressed={isSelected}
+                        >
                           <span
-                            className="flex-1 min-w-0 truncate"
-                            title={`${metadata.seriesModality} ${metadata.seriesDescription || 'Unnamed Series'}`}
-                          >
-                            {truncateText(`${metadata.seriesModality} ${metadata.seriesDescription || 'Unnamed Series'}`, 9)}
-                          </span>
-                        </div>
-                        <div className="flex items-center text-xs opacity-80 gap-4">
-                          <span>#{metadata.seriesNumber}</span>
-                          <span>{metadata.seriesRelatedInstanceCount} item(s)</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                            aria-hidden="true"
+                            className={cn(
+                              'absolute bottom-2 left-2 top-2 w-1 rounded-full bg-primary transition-opacity duration-200',
+                              isSelected ? 'opacity-100' : 'opacity-0'
+                            )}
+                          />
+
+                          <div className="truncate text-sm font-semibold leading-5" title={label}>
+                            {metadata.seriesModality}
+                          </div>
+
+                          <div className="mt-0.5 flex items-center gap-3 text-xs font-medium leading-none text-primary tabular-nums">
+                            <span className="inline-flex h-4 items-center">S:{index}</span>
+                            <span className="inline-flex h-4 items-center gap-1">
+                              <Copy aria-hidden="true" className="size-3 shrink-0" strokeWidth={2} />
+                              {instanceCount}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(seriesMap).map(([uid, data], index) => {
+                      if (!data || !data.metadata) return null;
+                      const metadata = data.metadata;
+                      const isSelected = uid === selectedSeries && activeSrId == null;
+                      const label = `${metadata.seriesModality} ${metadata.seriesNumber} - ${
+                        metadata.seriesDescription || 'Unnamed Series'
+                      }`;
+                      const thumbnailImageId = data.files[0];
+                      const instanceCount =
+                        metadata.seriesRelatedInstanceCount || String(data.files.length);
+
+                      return (
+                        <button
+                          key={uid}
+                          type="button"
+                          className={cn(
+                            'min-w-0 overflow-hidden rounded-md border bg-card text-left transition-[background-color,border-color,box-shadow,transform] duration-200 hover:bg-muted active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
+                            isSelected
+                              ? 'border-primary/80 bg-primary/10 shadow-sm'
+                              : 'border-border/70'
+                          )}
+                          onClick={() => {
+                            onSelectSr?.(null);
+                            onSelectSeries(uid);
+                          }}
+                          aria-label={label}
+                          aria-pressed={isSelected}
+                        >
+                          <div className="relative aspect-square overflow-hidden bg-black">
+                            <DicomSeriesThumbnail imageId={thumbnailImageId} label={label} />
+                            <div className="absolute bottom-2 left-2 flex items-center gap-1.5 text-white [filter:drop-shadow(0_1px_2px_rgb(0_0_0/0.9))]">
+                              <span
+                                aria-hidden="true"
+                                className="size-3.5 shrink-0 rounded-[3px] bg-primary shadow-sm"
+                              />
+                              <span className="text-xs font-semibold">
+                                {metadata.seriesModality}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex min-h-9 items-center gap-2 px-2 py-1.5 text-xs font-medium leading-none text-primary tabular-nums">
+                            <span className="inline-flex h-4 items-center">S:{index}</span>
+                            <span className="inline-flex h-4 items-center gap-1">
+                              <Copy aria-hidden="true" className="size-3 shrink-0" strokeWidth={2} />
+                              {instanceCount}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <hr className="my-2" />
 
