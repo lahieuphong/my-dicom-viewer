@@ -177,7 +177,7 @@ export default function SeriesSidebar({
         <div className="hidden justify-center pt-2 md:flex">
           <div
             aria-hidden="true"
-            className="flex h-8 w-8 items-center justify-center text-white"
+            className="flex h-8 w-8 items-center justify-center text-primary dark:text-white"
           >
             <Copy className="h-6 w-6 stroke-[2.25]" />
           </div>

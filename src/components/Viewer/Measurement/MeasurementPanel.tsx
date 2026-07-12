@@ -18,6 +18,38 @@ import EditLabelDialog from './EditLabelDialog';
 import MeasurementStats from './MeasurementStats';
 import PanelScrollArea from '@/components/Viewer/PanelScrollArea';
 
+type MeasurementHeaderMode = 'circle' | 'length';
+
+function CircleMeasurementIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.75" />
+      <path
+        d="M4.4 9.6 9.6 4.4M4.4 14.6 14.6 4.4M6.3 17.7 17.7 6.3M9.4 19.6 19.6 9.4M14.4 19.6 19.6 14.4"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      />
+    </svg>
+  );
+}
+
+function LengthMeasurementIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      aria-hidden="true"
+    >
+      <path d="m8.5 15.5 7-7" />
+      <rect x="3.5" y="15.5" width="5" height="5" rx="0.75" />
+      <rect x="15.5" y="3.5" width="5" height="5" rx="0.75" />
+    </svg>
+  );
+}
+
 interface MeasurementPanelProps {
   measurements: AnnotationMeasurement[];
   collapsed: boolean;
@@ -78,6 +110,7 @@ export default function MeasurementPanel({
   } | null>(null);
   const [newLabel, setNewLabel] = useState('');
   const [listCollapsed, setListCollapsed] = useState(false);
+  const [headerMode, setHeaderMode] = useState<MeasurementHeaderMode>('length');
   const formattedDate = formatStudyDate(studyDate);
   const [deletedUIDs, setDeletedUIDs] = useState<Set<string>>(new Set());
 
@@ -135,25 +168,77 @@ export default function MeasurementPanel({
         </Button>
       )}
 
-      <div className={cn('relative flex h-[52px] min-h-[52px] items-center px-2 py-0', !collapsed && 'border-b border-border')}>
+      <div
+        className={cn(
+          'relative flex h-[52px] min-h-[52px] items-center py-0',
+          collapsed ? 'px-0' : 'border-b border-border px-2'
+        )}
+      >
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setCollapsed(!collapsed)}
           aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
-          className="hidden md:inline-flex border border-border"
+          className={cn(
+            'hidden border border-border md:inline-flex',
+            collapsed && 'mx-auto'
+          )}
         >
           <i className={`fas ${collapsed ? 'fa-chevron-left' : 'fa-chevron-right'}`} />
         </Button>
 
         {!collapsed && (
           <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
-            <Button variant="ghost" size="icon" aria-label="Measurements" className="hidden md:inline-flex border border-border">
-              <i className="fas fa-vector-square text-lg font-semibold" />
-            </Button>
+            <div className="hidden items-center gap-1 md:flex" role="group" aria-label="Measurement modes">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Circle measurement mode"
+                aria-pressed={headerMode === 'circle'}
+                title="Circle measurement"
+                onClick={() => setHeaderMode('circle')}
+                className={cn(
+                  'h-9 w-9 border border-border',
+                  headerMode === 'circle'
+                    ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
+                    : 'text-primary dark:text-white'
+                )}
+              >
+                <CircleMeasurementIcon className="h-6 w-6" />
+              </Button>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Length measurement mode"
+                aria-pressed={headerMode === 'length'}
+                title="Length measurement"
+                onClick={() => setHeaderMode('length')}
+                className={cn(
+                  'h-9 w-9 border border-border',
+                  headerMode === 'length'
+                    ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
+                    : 'text-primary dark:text-white'
+                )}
+              >
+                <LengthMeasurementIcon className="h-6 w-6" />
+              </Button>
+            </div>
           </div>
         )}
       </div>
+
+      {collapsed && !mobileSidebarOpen && (
+        <div
+          aria-hidden="true"
+          className="hidden flex-col items-center gap-3 pt-2 text-primary md:flex dark:text-white"
+        >
+          <CircleMeasurementIcon className="h-6 w-6" />
+          <LengthMeasurementIcon className="h-6 w-6" />
+        </div>
+      )}
 
       {!collapsed && (
         <div className="flex min-h-0 flex-1 flex-col">
