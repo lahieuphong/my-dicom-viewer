@@ -199,13 +199,13 @@ export default function SeriesSidebar({
           </div>
 
           <div className="h-[52px] min-h-[52px] pl-4 pr-[5px] py-0 border-b border-border flex items-center justify-between gap-3">
-            <div className="flex flex-col justify-center min-w-0">
+            <div className="flex min-w-0 flex-1 flex-col justify-center">
               <div className="text-sm font-semibold truncate" title={formattedDate}>
                 {formattedDate}
               </div>
-              <div className="text-xs opacity-80">
-                <span className="flex-1 min-w-0 truncate block" title={studyDescription}>
-                  {truncateText(studyDescription, 9)}
+              <div className="min-w-0 text-xs opacity-80">
+                <span className="block truncate" title={studyDescription}>
+                  {studyDescription}
                 </span>
               </div>
             </div>
