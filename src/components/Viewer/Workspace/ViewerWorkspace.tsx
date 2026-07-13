@@ -330,6 +330,7 @@ export default function ViewerWorkspace({
                 />
                 <ViewportOverlay
                   studyDate={studyDate}
+                  seriesDescription={selectedSeriesEntry?.metadata?.seriesDescription}
                   viewportEl={viewportEl}
                   currentFrame={currentFrame}
                   totalFrames={totalFrames}

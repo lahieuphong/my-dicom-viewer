@@ -55,7 +55,7 @@ function buildPacsApiUrl(pathname: string) {
 }
 
 export function getViewerPath(studyInstanceUID: string) {
-  return `/viewer/${encodeURIComponent(studyInstanceUID)}`;
+  return `/viewer?StudyInstanceUIDs=${encodeURIComponent(studyInstanceUID)}`;
 }
 
 export function getCachedStudies() {

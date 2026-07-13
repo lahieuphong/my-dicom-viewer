@@ -12,11 +12,28 @@ export function getPreloadWindow(
   const forward = Math.max(0, options.forward ?? 16);
   const max = Math.max(1, options.max ?? backward + forward + 1);
   const center = Math.max(0, Math.min(Math.floor(Number(centerIndex) || 0), imageIds.length - 1));
-  const start = Math.max(0, center - backward);
-  const end = Math.min(imageIds.length, center + forward + 1);
-  const windowed = imageIds.slice(start, end);
+  const windowed: string[] = [imageIds[center]];
 
-  return windowed.length > max ? windowed.slice(0, max) : windowed;
+  // Decode the frames a user is most likely to request first. Forward frames
+  // lead because Cine normally advances through the stack in that direction.
+  for (
+    let distance = 1;
+    windowed.length < max && (distance <= forward || distance <= backward);
+    distance += 1
+  ) {
+    if (distance <= forward && center + distance < imageIds.length) {
+      windowed.push(imageIds[center + distance]);
+    }
+    if (
+      windowed.length < max &&
+      distance <= backward &&
+      center - distance >= 0
+    ) {
+      windowed.push(imageIds[center - distance]);
+    }
+  }
+
+  return windowed;
 }
 
 export async function loadAndCacheImageWithTimeout(
@@ -180,8 +197,7 @@ export async function preloadImagesWithTimeout(
       }
       const id = queue.shift();
       if (!id) break;
-      // eslint-disable-next-line no-await-in-loop
-      const ok = await loadAndCacheImageWithTimeout(id, perLoadTimeoutMs, signal).catch(() => false);
+      await loadAndCacheImageWithTimeout(id, perLoadTimeoutMs, signal).catch(() => false);
       loadedCount += 1;
       try {
         if (onProgress) onProgress(loadedCount, total);

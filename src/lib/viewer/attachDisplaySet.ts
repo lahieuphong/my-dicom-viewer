@@ -321,35 +321,6 @@ export async function attachDisplaySetToViewport(opts: {
         return false;
       }
 
-      try {
-        const bgKey = `__viewerBackgroundPreloadController_${viewportId}`;
-        const prevBg: AbortController | undefined =
-          typeof window !== 'undefined' ? (window as any)[bgKey] : undefined;
-        try { prevBg?.abort?.(); } catch {}
-
-        const bgController = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        if (typeof window !== 'undefined') {
-          (window as any)[bgKey] = bgController;
-        }
-
-        const bgPreloadFn = preloadImagesWithTimeoutFn ?? preloadImagesWithTimeout;
-        const bgIds = getPreloadWindow(imageIds, desiredIndex, {
-          backward: 8,
-          forward: 32,
-          max: 48,
-        });
-
-        window.setTimeout(() => {
-          try {
-            bgPreloadFn(bgIds, {
-              concurrency: 2,
-              perLoadTimeoutMs: 10000,
-              limit: bgIds.length,
-              signal: bgController?.signal,
-            }).catch(() => {});
-          } catch {}
-        }, 0);
-      } catch {}
     } catch (e) {
       // swallow any preload/controller errors but log
     }

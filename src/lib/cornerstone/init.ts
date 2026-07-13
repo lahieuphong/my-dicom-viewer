@@ -38,6 +38,27 @@ function ensureToolGroupExists() {
   }
 }
 
+function configureImageRequestPool(csCore: any) {
+  try {
+    const pool = csCore?.imageLoadPoolManager;
+    const requestType = csCore?.Enums?.RequestType;
+    if (!pool || !requestType || typeof pool.setMaxSimultaneousRequests !== 'function') return;
+
+    const limits: Array<[unknown, number]> = [
+      [requestType.Interaction, 10],
+      [requestType.Thumbnail, 5],
+      [requestType.Prefetch, 5],
+      [requestType.Compute, 10],
+    ];
+
+    for (const [type, limit] of limits) {
+      if (type != null) pool.setMaxSimultaneousRequests(type, limit);
+    }
+  } catch {
+    // Keep initialization resilient if a Cornerstone version lacks this API.
+  }
+}
+
 function wrapReleaseGraphicsResourcesIfNeeded(obj: any) {
   try {
     if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return;
@@ -172,6 +193,10 @@ async function initCornerstoneInternal() {
     }
   } catch {}
 
+  // Bound concurrent retrievals so interaction requests stay responsive while
+  // direction-aware stack prefetch runs in the background.
+  configureImageRequestPool(csCore);
+
   // 3) init tools
   try {
     await initTools();
@@ -207,14 +232,12 @@ async function initCornerstoneInternal() {
       } catch (err) {
       }
 
-      // init dicom-image-loader with conservative worker count (cap to 2)
+      // Leave one logical core for rendering/UI and cap decode parallelism.
       try {
-        // Reduce worker count to avoid overwhelming low-power clients.
         let maxWebWorkers = 1;
         try {
           const hc = (typeof navigator !== 'undefined' && (navigator as any).hardwareConcurrency) || 1;
-          // cap to 2 workers for stability on weaker devices; keep at least 1
-          maxWebWorkers = Math.max(1, Math.min(2, Math.floor(hc || 1)));
+          maxWebWorkers = Math.max(1, Math.min(3, Math.floor(hc || 1) - 1));
         } catch {}
         if (dicomImageLoader && typeof dicomImageLoader.init === 'function') {
           await dicomImageLoader.init({ maxWebWorkers });

@@ -14,20 +14,15 @@ export function useCine(
   element: HTMLDivElement | null
 ) {
   useEffect(() => {
-    if (!element) {
-      return;
-    }
+    if (!element || !isPlaying) return;
 
-    if (isPlaying) {
-      // Start cine playback on the viewport element
-      utilities.cine.playClip(element, { framesPerSecond: fps });
-    } else {
-      // Stop playback
-      utilities.cine.stopClip(element);
-    }
+    const framesPerSecond = Math.max(1, Math.min(60, Math.round(fps)));
+    utilities.cine.playClip(element, {
+      framesPerSecond,
+      loop: true,
+    });
 
     return () => {
-      // Cleanup on unmount or dependency change
       utilities.cine.stopClip(element);
     };
   }, [isPlaying, fps, element]);

@@ -23,6 +23,12 @@ const TOOL_GROUP_ID = 'toolGroup';
 
 let _registered = false;
 
+export const STACK_SCROLL_CONFIGURATION = {
+  invert: false,
+  debounceIfNotLoaded: true,
+  loop: true,
+};
+
 /**
  * Đăng ký các tools & tạo toolGroup nếu cần. Idempotent: gọi nhiều lần chỉ thực hiện 1 lần.
  * Gọi sau khi initCornerstone() (sau khi initTools()).
@@ -93,12 +99,7 @@ export function registerToolsOnce(): void {
         // Configure StackScroll once (still safe to do here)
         try {
           tgLocal.setToolConfiguration?.(StackScrollTool.toolName, {
-            invert: false,
-            loop: true,
-            prefetch: { enabled: true, forward: 24, backward: 8 },
-            renderSynchronously: false,
-            stackScrollSpeed: 1,
-            wheelSensitivity: 1,
+            ...STACK_SCROLL_CONFIGURATION,
           });
 
           // make wheel scroll active by default so users can scroll stacks

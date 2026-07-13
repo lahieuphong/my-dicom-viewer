@@ -21,7 +21,10 @@ import {
 
 import { initCornerstone } from '@/lib/cornerstone';
 import { TOOL_GROUP } from '@/constants/toolgroup';
-import { registerToolsOnce } from '@/lib/cornerstone/tools';
+import {
+  registerToolsOnce,
+  STACK_SCROLL_CONFIGURATION,
+} from '@/lib/cornerstone/tools';
 
 export type ToolID =
   | 'adjust'
@@ -340,12 +343,7 @@ export function useToolManager() {
       tryAddToolToGroup(tg, toolName, StackScrollTool);
       try {
         tg.setToolConfiguration?.(toolName, {
-          invert: false,
-          loop: true,
-          prefetch: { enabled: true, forward: 24, backward: 8 },
-          renderSynchronously: false,
-          stackScrollSpeed: 1,
-          wheelSensitivity: 1,
+          ...STACK_SCROLL_CONFIGURATION,
         });
       } catch {}
       return trySetToolActive(tg, toolName, [{ mouseButton: ToolEnums.MouseBindings.Wheel }]);

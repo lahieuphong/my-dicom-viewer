@@ -32,6 +32,7 @@ import { useRotate } from '@/hooks/useRotate';
 import { useFlipHorizontal } from '@/hooks/useFlip';
 import { useResetViewer } from '@/hooks/useResetViewer';
 import { useCine } from '@/hooks/useCine';
+import { useStackPrefetch } from '@/hooks/useStackPrefetch';
 import useViewerLayout from '@/hooks/useViewerLayout';
 
 import { fetchStudyMeta, type Series, type Study } from '@/lib/pacs/services';
@@ -658,7 +659,6 @@ const Viewer = ({ studyUID }: { studyUID: string }) => {
     };
     // Only re-run when selectedSeries or viewportReady (and some stable dependencies) change.
     // Avoid including volatile refs like viewportInstance/viewportEl to reduce spurrious retriggers.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedSeries,
     mergedSeriesMap,
@@ -1048,6 +1048,7 @@ const Viewer = ({ studyUID }: { studyUID: string }) => {
     resolveSeriesUID: resolveSeriesFromImageId,
   });
 
+  useStackPrefetch(viewportEl);
   useCine(isPlaying, fps, viewportEl);
 
   // ---------------- SR / measurement lists --------------
