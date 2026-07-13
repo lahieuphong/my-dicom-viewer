@@ -292,7 +292,7 @@ export default function ViewportOverlay({
     return `${(Math.round(zoom * 100) / 100).toFixed(2)}×`;
   }, [zoom]);
 
-  const panelClass = 'absolute px-2 py-1 rounded';
+  const panelClass = 'pointer-events-none absolute z-10 select-none px-2 py-1 rounded';
   const bg = 'bg-background dark:bg-background/50';
   const text = 'text-xs text-foreground';
 

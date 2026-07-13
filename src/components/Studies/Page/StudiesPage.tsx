@@ -104,10 +104,10 @@ function StudiesPageContent() {
 
 export default function StudiesPage() {
   return (
-    <StudiesProvider>
-      <Suspense fallback={<Loading message="Đang tải trang..." />}>
+    <Suspense fallback={<Loading message="Đang tải trang..." />}>
+      <StudiesProvider>
         <StudiesPageContent />
-      </Suspense>
-    </StudiesProvider>
+      </StudiesProvider>
+    </Suspense>
   );
 }

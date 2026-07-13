@@ -317,10 +317,12 @@ export default function ViewerWorkspace({
               </div>
 
               <div className="relative flex-1 min-h-0 w-full">
-                <ViewportLoadingOverlay
-                  visible={loadingStack || !imageAvailable}
-                  progress={loadingProgress}
-                />
+                {!loadingSeries && (
+                  <ViewportLoadingOverlay
+                    visible={loadingStack || !imageAvailable}
+                    progress={loadingProgress}
+                  />
+                )}
 
                 <DicomViewport
                   elementRef={elementRef}
