@@ -194,6 +194,10 @@ export default function SeriesSidebar({
 
       {!collapsed && (
         <>
+          <div className="flex h-12 min-h-12 items-center justify-end border-b border-border px-2">
+            <SeriesViewToggle value={viewMode} onValueChange={setViewMode} />
+          </div>
+
           <div className="h-[52px] min-h-[52px] pl-4 pr-[5px] py-0 border-b border-border flex items-center justify-between gap-3">
             <div className="flex flex-col justify-center min-w-0">
               <div className="text-sm font-semibold truncate" title={formattedDate}>
@@ -230,10 +234,6 @@ export default function SeriesSidebar({
             aria-hidden={listCollapsed}
           >
             <div className="viewer-panel-collapsible-content">
-              <div className="flex h-12 min-h-12 items-center justify-end border-b border-border px-2">
-                <SeriesViewToggle value={viewMode} onValueChange={setViewMode} />
-              </div>
-
               <PanelScrollArea
                 scrollbarVisibility="always"
                 contentClassName="min-h-full px-2 py-2 space-y-2"
