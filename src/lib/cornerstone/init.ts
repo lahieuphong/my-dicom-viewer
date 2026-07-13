@@ -16,8 +16,52 @@ import { registerToolsOnce } from './tools';
  *  - robust: phòng các lỗi runtime từ các lib bên ngoài
  */
 
-let initialized = false;
-let initPromise: Promise<{ csCore: any; dicomImageLoader: any }> | null = null;
+type CornerstoneInitResult = {
+  csCore: any;
+  dicomImageLoader: any;
+};
+
+type CornerstoneInitState = {
+  initialized: boolean;
+  promise: Promise<CornerstoneInitResult> | null;
+};
+
+const CORNERSTONE_INIT_STATE_KEY = '__dicomViewerCornerstoneInitState';
+
+function getCornerstoneInitState(): CornerstoneInitState {
+  const windowWithState = window as typeof window & {
+    [CORNERSTONE_INIT_STATE_KEY]?: CornerstoneInitState;
+    __cornerstoneReady?: boolean;
+    __cornerstoneCore?: any;
+    __cornerstoneImageLoader?: any;
+  };
+
+  if (!windowWithState[CORNERSTONE_INIT_STATE_KEY]) {
+    windowWithState[CORNERSTONE_INIT_STATE_KEY] = {
+      initialized: Boolean(
+        windowWithState.__cornerstoneReady &&
+        windowWithState.__cornerstoneCore &&
+        windowWithState.__cornerstoneImageLoader
+      ),
+      promise: null,
+    };
+  }
+
+  return windowWithState[CORNERSTONE_INIT_STATE_KEY];
+}
+
+function isDicomWorkerRegistered(csCore: any): boolean {
+  try {
+    const workerManager = csCore?.getWebWorkerManager?.();
+    const workerRegistry = workerManager?.workerRegistry;
+    return Boolean(
+      workerRegistry &&
+      Object.prototype.hasOwnProperty.call(workerRegistry, 'dicomImageLoader')
+    );
+  } catch {
+    return false;
+  }
+}
 
 function ensureToolGroupExists() {
   try {
@@ -143,23 +187,31 @@ export async function initCornerstone() {
     return { csCore: null, dicomImageLoader: null };
   }
 
-  if (initialized) {
+  const state = getCornerstoneInitState();
+
+  if (state.initialized) {
     return {
       csCore: (window as any).__cornerstoneCore ?? null,
       dicomImageLoader: (window as any).__cornerstoneImageLoader ?? null,
     };
   }
 
-  if (initPromise) {
-    return initPromise;
+  if (state.promise) {
+    return state.promise;
   }
 
-  initPromise = initCornerstoneInternal();
+  const promise = initCornerstoneInternal();
+  state.promise = promise;
 
   try {
-    return await initPromise;
+    const result = await promise;
+    state.initialized = true;
+    return result;
   } catch (err) {
-    initPromise = null;
+    if (state.promise === promise) {
+      state.promise = null;
+    }
+    state.initialized = false;
     throw err;
   }
 }
@@ -239,7 +291,11 @@ async function initCornerstoneInternal() {
           const hc = (typeof navigator !== 'undefined' && (navigator as any).hardwareConcurrency) || 1;
           maxWebWorkers = Math.max(1, Math.min(3, Math.floor(hc || 1) - 1));
         } catch {}
-        if (dicomImageLoader && typeof dicomImageLoader.init === 'function') {
+        if (
+          dicomImageLoader &&
+          typeof dicomImageLoader.init === 'function' &&
+          !isDicomWorkerRegistered(csCore)
+        ) {
           await dicomImageLoader.init({ maxWebWorkers });
         }
       } catch (err) {
@@ -405,7 +461,6 @@ async function initCornerstoneInternal() {
   }
 
   (window as any).__cornerstoneReady = true;
-  initialized = true;
 
   return {
     csCore: (window as any).__cornerstoneCore ?? null,

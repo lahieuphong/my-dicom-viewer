@@ -23,6 +23,43 @@ const TOOL_GROUP_ID = 'toolGroup';
 
 let _registered = false;
 
+function isToolRegisteredGlobally(ToolClass: any): boolean {
+  try {
+    const hasTool = (csTools as any)?.store?.hasTool;
+    if (typeof hasTool === 'function') {
+      return Boolean(hasTool(ToolClass));
+    }
+
+    const toolName = ToolClass?.toolName;
+    return Boolean(toolName && (csTools as any)?.state?.tools?.[toolName]);
+  } catch {
+    return false;
+  }
+}
+
+function toolGroupHasTool(toolGroup: any, toolName: string): boolean {
+  if (!toolGroup || !toolName) return false;
+
+  try {
+    if (typeof toolGroup.hasTool === 'function') {
+      return Boolean(toolGroup.hasTool(toolName));
+    }
+  } catch {}
+
+  try {
+    if (typeof toolGroup.getToolInstance === 'function') {
+      return Boolean(toolGroup.getToolInstance(toolName));
+    }
+  } catch {}
+
+  try {
+    const instances = toolGroup.getToolInstances?.() ?? toolGroup._toolInstances;
+    return Boolean(instances?.[toolName]);
+  } catch {
+    return false;
+  }
+}
+
 export const STACK_SCROLL_CONFIGURATION = {
   invert: false,
   debounceIfNotLoaded: true,
@@ -60,7 +97,9 @@ export function registerToolsOnce(): void {
     if (typeof addToolGlobal === 'function') {
       for (const ToolClass of tools) {
         try {
-          addToolGlobal(ToolClass);
+          if (!isToolRegisteredGlobally(ToolClass)) {
+            addToolGlobal(ToolClass);
+          }
         } catch (e) {
           // ignore duplicate/add errors
         }
@@ -88,7 +127,10 @@ export function registerToolsOnce(): void {
           if (!name) continue;
           try {
             // addTool may not exist on some TG versions; guard it
-            if (typeof (tgLocal as any).addTool === 'function') {
+            if (
+              !toolGroupHasTool(tgLocal, name) &&
+              typeof (tgLocal as any).addTool === 'function'
+            ) {
               (tgLocal as any).addTool(name);
             }
           } catch (e) {
