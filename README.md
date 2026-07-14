@@ -21,6 +21,16 @@ yarn dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+Before committing structural changes, run:
+
+```bash
+yarn verify
+```
+
+The project follows a compatibility-first `platform / extensions / modes`
+architecture. See [docs/architecture.md](docs/architecture.md) for dependency
+rules and the migration roadmap.
+
 ## Production
 
 ```bash

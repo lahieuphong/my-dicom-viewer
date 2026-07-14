@@ -10,9 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loading } from '@/components/ui/loading';
 import { Toaster } from '@/components/ui/sonner';
-import { useAuth } from '@/context/AuthContext';
-import SharedHeader from '@/components/shared/Header';
-import SharedFooter from '@/components/shared/Footer';
+import { useAuth } from '@/features/auth';
+import { AppFooter, AppHeader } from '@/platform/ui';
 import { toast } from 'sonner';
 
 export default function LoginPage() {
@@ -71,7 +70,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex flex-col h-screen">
-      <SharedHeader
+      <AppHeader
         showBackButton
         showLogo
         showStudyUID={false}
@@ -152,7 +151,7 @@ export default function LoginPage() {
         </Card>
       </main>
 
-      <SharedFooter />
+      <AppFooter />
       <Toaster />
     </div>
   );

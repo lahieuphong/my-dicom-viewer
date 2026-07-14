@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getViewerPath } from '@/lib/pacs/services';
+import { getViewerPath } from '@/extensions/static-dicom-data-source';
 
 type LegacyViewerPageProps = {
   params: Promise<{

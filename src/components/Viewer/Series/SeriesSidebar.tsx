@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import { ChevronUp, Copy } from 'lucide-react';
-import type { Series } from '@/lib/pacs/services';
+import type { Series } from '@/platform/core';
 import { Button } from '@/components/ui/button';
 import { cn, formatStudyDate } from '@/lib/utils';
 import PanelScrollArea from '@/components/Viewer/PanelScrollArea';

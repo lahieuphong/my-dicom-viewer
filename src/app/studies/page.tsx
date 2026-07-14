@@ -1,5 +1,5 @@
 'use client';
 
-import StudiesPage from '@/components/Studies/Page';
+import { StudiesPage } from '@/features/studies';
 
 export default StudiesPage;

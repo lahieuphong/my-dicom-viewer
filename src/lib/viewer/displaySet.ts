@@ -1,16 +1,11 @@
 // src/lib/viewer/displaySet.ts
 'use client';
 
-import type { Series } from '@/lib/pacs/services';
+import type { DisplaySet, Series } from '@/platform/core';
 import { getInitialVOIFromSeriesMetadata } from '@/lib/cornerstone/voi';
 import { normalizeImageId } from '@/lib/cornerstone/helpers';
 
-export interface DisplaySet {
-  imageIds: string[];
-  initialImageIdIndex: number;
-  initialVOIRange?: { lower: number; upper: number } | null;
-  seriesInstanceUID?: string | null;
-}
+export type { DisplaySet } from '@/platform/core';
 
 /**
  * Convert a raw file identifier into a Cornerstone-compatible imageId.

@@ -2,9 +2,8 @@
 
 import React, { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import Viewer from '@/components/Viewer/Viewer';
-import SharedFooter from '@/components/shared/Footer';
-import SharedHeader from '@/components/shared/Header';
+import { BasicViewer } from '@/modes/basic-viewer/BasicViewer';
+import { AppFooter, AppHeader } from '@/platform/ui';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import Loading from '@/components/ui/loading';
 import { StudiesProvider, useStudies } from '@/context/StudiesContext';
@@ -19,7 +18,7 @@ function StudiesPageContent() {
   if (studyUID) {
     return (
       <div className="min-h-screen flex flex-col">
-        <SharedHeader
+        <AppHeader
           showBackButton
           showLogo
           showStudyUID={false}
@@ -31,9 +30,9 @@ function StudiesPageContent() {
           <h1 className="text-2xl md:text-4xl font-bold mb-4 text-foreground">
             Viewer cho Study
           </h1>
-          <Viewer studyUID={studyUID} />
+          <BasicViewer studyUID={studyUID} />
         </main>
-        <SharedFooter />
+        <AppFooter />
       </div>
     );
   }
@@ -45,7 +44,7 @@ function StudiesPageContent() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <SharedHeader
+      <AppHeader
         showBackButton
         showLogo
         showStudyUID={false}
@@ -97,7 +96,7 @@ function StudiesPageContent() {
         </div>
       </main>
 
-      <SharedFooter />
+      <AppFooter />
     </div>
   );
 }

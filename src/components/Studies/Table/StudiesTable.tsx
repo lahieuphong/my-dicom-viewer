@@ -7,8 +7,8 @@ import {
   fetchSeries,
   getViewerPath,
   prefetchStudyViewerData,
-  type Study,
-} from '@/lib/pacs/services';
+} from '@/extensions/static-dicom-data-source';
+import type { Study } from '@/platform/core';
 import { Loading } from '@/components/ui/loading';
 import {
   Table as ShadTable,

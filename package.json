@@ -9,6 +9,9 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "verify": "yarn check:architecture && yarn lint && yarn typecheck",
     "dicom:manifest": "node scripts/generate-dicom-manifest.mjs"
   },
   "dependencies": {

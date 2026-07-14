@@ -2,11 +2,11 @@
 
 import React, { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import {
-  Study,
   fetchStudiesWithMeta,
   getCachedStudies,
   setCachedStudies,
-} from '@/lib/pacs/services';
+} from '@/extensions/static-dicom-data-source';
+import type { Study } from '@/platform/core';
 
 type StudiesCtx = {
   studies: Study[];

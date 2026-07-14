@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronUp } from 'lucide-react';
 import { AnnotationMeasurement } from '@/hooks/useMeasurements';
-import type { Series } from '@/lib/pacs/services';
+import type { Series } from '@/platform/core';
 import { cn, formatStudyDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {

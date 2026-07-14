@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getStudySummary } from '@/lib/pacs/dicomIndex';
+import { getStudySummary } from '@/server/dicom-manifest';
 
 type RouteContext = {
   params: Promise<{ studyUID: string }>;

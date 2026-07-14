@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getStudySummaries } from '@/lib/pacs/dicomIndex';
+import { getStudySummaries } from '@/server/dicom-manifest';
 
 export async function GET() {
   try {

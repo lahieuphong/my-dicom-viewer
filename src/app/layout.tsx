@@ -1,10 +1,6 @@
 // src/app/layout.tsx
 import './globals.css';
-import { ThemeProvider } from '@/context/ThemeContext';
-import { AuthProvider } from '@/context/AuthContext';
-import { PatientProvider } from '@/context/PatientContext';
-
-import { Toaster } from '@/components/ui/sonner';
+import { AppProviders } from './providers';
 
 export const metadata = {
   title: 'DICOM Viewer',
@@ -41,17 +37,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body className="min-h-full bg-background text-foreground transition-colors duration-300">
-        <ThemeProvider>
-          <AuthProvider>
-            <PatientProvider>
-              <div className="flex-1 flex flex-col min-h-0">
-                {children}
-              </div>
-            </PatientProvider>
-          </AuthProvider>
-
-          <Toaster position="top-right" richColors />
-        </ThemeProvider>
+        <AppProviders>
+          <div className="flex-1 flex flex-col min-h-0">{children}</div>
+        </AppProviders>
       </body>
     </html>
   );

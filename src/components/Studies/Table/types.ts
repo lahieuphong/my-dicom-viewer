@@ -1,4 +1,4 @@
-import type { Series, Study } from '@/lib/pacs/services';
+import type { Series, Study } from '@/platform/core';
 
 export interface StudiesTableProps {
   data: Study[];

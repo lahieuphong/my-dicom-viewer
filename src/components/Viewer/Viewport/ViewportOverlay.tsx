@@ -33,28 +33,28 @@ function OrientationSwitchIcon({ className = '' }: OverlayIconProps) {
       xmlns="http://www.w3.org/2000/svg"
     >
       <path
-        d="M8.07778 16.4182L9.96563 18.8288L7.30469 20.4557"
+        d="M7.57766 17.4182L9.4655 19.8288L6.80457 21.4557"
         stroke="currentColor"
         strokeWidth="1.25"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
-        d="M20.0917 14C20.3502 14.1669 20.5669 14.3909 20.7252 14.6547C20.8835 14.9186 20.9792 15.2152 21.0048 15.5218C21.0048 17.3123 17.4909 18.7938 13.0151 18.946"
+        d="M19.5918 15C19.8503 15.1669 20.067 15.3909 20.2253 15.6547C20.3836 15.9186 20.4793 16.2152 20.5049 16.5218C20.5049 18.3123 16.991 19.7938 12.5153 19.946"
         stroke="currentColor"
         strokeWidth="1.25"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
-        d="M9.96782 18.828C6.23931 18.4354 3.5 17.1038 3.5 15.5218C3.52464 15.2179 3.61841 14.9236 3.77416 14.6614C3.9299 14.3992 4.1435 14.1761 4.39865 14.0091"
+        d="M9.46782 19.828C5.73931 19.4354 3 18.1038 3 16.5218C3.02464 16.2179 3.11841 15.9236 3.27416 15.6614C3.4299 15.3992 3.6435 15.1761 3.89865 15.0091"
         stroke="currentColor"
         strokeWidth="1.25"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
-        d="M9.02539 14.1079C8.52393 14.1079 8.2002 13.8159 8.2002 13.3525C8.2002 13.2256 8.23193 13.0479 8.30811 12.8511L10.9678 5.62109C11.1899 5.01172 11.5581 4.73242 12.1548 4.73242C12.7578 4.73242 13.126 4.99902 13.3545 5.61475L16.0205 12.8511C16.0967 13.0605 16.1284 13.2065 16.1284 13.3525C16.1284 13.7969 15.7856 14.1079 15.3096 14.1079C14.8652 14.1079 14.6177 13.9048 14.4717 13.416L13.8687 11.6641H10.4473L9.84424 13.4033C9.69189 13.8984 9.45068 14.1079 9.02539 14.1079ZM10.8345 10.3691H13.4688L12.1675 6.45898H12.123L10.8345 10.3691Z"
+        d="M8.60608 15.1079C8.10461 15.1079 7.78088 14.8159 7.78088 14.3525C7.78088 14.2256 7.81262 14.0479 7.88879 13.8511L10.5485 6.62109C10.7706 6.01172 11.1388 5.73242 11.7355 5.73242C12.3385 5.73242 12.7067 5.99902 12.9352 6.61475L15.6012 13.8511C15.6774 14.0605 15.7091 14.2065 15.7091 14.3525C15.7091 14.7969 15.3663 15.1079 14.8903 15.1079C14.4459 15.1079 14.1984 14.9048 14.0524 14.416L13.4493 12.6641H10.028L9.42493 14.4033C9.27258 14.8984 9.03137 15.1079 8.60608 15.1079ZM10.4152 11.3691H13.0494L11.7482 7.45898H11.7037L10.4152 11.3691Z"
         fill="currentColor"
       />
     </svg>
@@ -477,12 +477,12 @@ export default function ViewportOverlay({
   return (
     <>
       <div className={`${overlayClass} left-2 top-3`}>
-        <div className={`flex h-6 items-center gap-0 ${iconClass}`}>
-          <OrientationSwitchIcon className="size-6 shrink-0" />
-          <ViewportViewsIcon className="size-6 shrink-0" />
+        <div className={`flex h-5 items-center gap-0 ${iconClass}`}>
+          <OrientationSwitchIcon className="size-5 shrink-0" />
+          <ViewportViewsIcon className="size-5 shrink-0" />
         </div>
 
-        <div className={`mt-2 ${textClass}`}>
+        <div className={`mt-1 ${textClass}`}>
           <div>{formattedDate}</div>
           {seriesDescription && (
             <div className="max-w-[min(42vw,24rem)] truncate">{seriesDescription}</div>
@@ -507,12 +507,15 @@ export default function ViewportOverlay({
           <span>W: {windowWidth != null ? windowWidth.toFixed(0) : 'N/A'}</span>
           <span>L: {windowCenter != null ? windowCenter.toFixed(0) : 'N/A'}</span>
         </div>
-        <ViewportWindowLevelIcon className={`mt-1 size-6 ${iconClass}`} />
+        <ViewportWindowLevelIcon className={`mt-1 size-5 ${iconClass}`} />
       </div>
 
-      <div className={`${overlayClass} bottom-3 right-4 ${textClass} tabular-nums`}>
-        I: {displayedInstanceNumber}
-        {totalFrames > 0 && ` (${displayFrame}/${totalFrames})`}
+      <div
+        className={`${overlayClass} bottom-3 right-4 flex items-baseline gap-1 ${textClass} tabular-nums`}
+      >
+        <span>I:</span>
+        <span>{displayedInstanceNumber}</span>
+        {totalFrames > 0 && <span>({displayFrame}/{totalFrames})</span>}
       </div>
     </>
   );

@@ -29,6 +29,57 @@ const eslintConfig = [
       "@next/next/no-assign-module-variable": "off",
     },
   },
+  {
+    files: ["src/platform/core/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "react",
+                "react/*",
+                "next",
+                "next/*",
+                "@cornerstonejs/*",
+                "@/app/*",
+                "@/components/*",
+                "@/extensions/*",
+                "@/features/*",
+                "@/hooks/*",
+                "@/server/*",
+              ],
+              message:
+                "platform/core must stay framework- and renderer-neutral.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "src/app/api/**",
+      "src/platform/core/**",
+      "src/server/**",
+      "src/lib/pacs/dicomIndex.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/server/*"],
+              message: "The server boundary is only available to API/server code.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

@@ -1,4 +1,4 @@
-import type { Study } from '@/lib/pacs/services';
+import type { Study } from '@/platform/core';
 import { fieldToString, normalizeValue } from '@/lib/utils';
 import type { Instance, SeriesWithInstances, StudyFilters } from './types';
 

@@ -1,4 +1,4 @@
-import type { Study } from '@/lib/pacs/services';
+import type { Study } from '@/platform/core';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { TableCell } from '@/components/ui/table';

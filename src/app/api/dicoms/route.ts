@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDicomIndex } from '@/lib/pacs/dicomIndex';
+import { getDicomIndex } from '@/server/dicom-manifest';
 
 export async function GET() {
   try {

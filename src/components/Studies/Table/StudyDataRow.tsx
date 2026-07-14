@@ -1,4 +1,4 @@
-import type { Study } from '@/lib/pacs/services';
+import type { Study } from '@/platform/core';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn, fieldToString, formatStudyDate, normalizeValue } from '@/lib/utils';
 import InstanceCountIcon from './InstanceCountIcon';

@@ -18,32 +18,10 @@ import {
 } from '@cornerstonejs/tools';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { safeGetEnabledElement, normalizeImageId as normalizeId } from '@/lib/cornerstone/helpers';
+import type { AnnotationMeasurement as CoreAnnotationMeasurement } from '@/platform/core';
 
-export interface AnnotationMeasurement {
-  annotationUID: string;
-  toolName: string;
-  label: string;
-  type:
-    | 'length'
-    | 'bidirectional'
-    | 'arrowAnnotate'
-    | 'ellipticalROI'
-    | 'rectangleROI'
-    | 'circleROI'
-    | 'splineROI'
-    | 'angle';
-  data: any;
-  metadata: {
-    seriesUID: string;
-    studyUID: string;
-    viewportId: string;
-    frameIndex?: number;
-    referencedImageId?: string;
-    imageId?: string;
-    createdAt: string;
-  };
-  createdAt: string;
-}
+/** Compatibility alias; the canonical measurement shape lives in platform/core. */
+export type AnnotationMeasurement = CoreAnnotationMeasurement<any>;
 
 function parseNumberArrayFromDicomJson(meta: any, tag: string): number[] | null {
   if (!meta) return null;

@@ -1,5 +1,5 @@
-import Viewer from '@/components/Viewer/Viewer';
-import SharedHeader from '@/components/shared/Header';
+import { BasicViewer } from '@/modes/basic-viewer/BasicViewer';
+import { AppHeader } from '@/platform/ui/app-shell';
 
 type ViewerPageProps = {
   searchParams: Promise<{
@@ -27,7 +27,7 @@ export default async function ViewerPage({ searchParams }: ViewerPageProps) {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      <SharedHeader
+      <AppHeader
         showBackButton
         showLogo
         showStudyUID
@@ -38,7 +38,7 @@ export default async function ViewerPage({ searchParams }: ViewerPageProps) {
       />
 
       <div className="min-h-0 flex-1">
-        <Viewer key={studyUID} studyUID={studyUID} />
+        <BasicViewer key={studyUID} studyUID={studyUID} />
       </div>
     </div>
   );

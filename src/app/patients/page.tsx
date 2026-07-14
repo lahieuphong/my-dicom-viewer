@@ -1,5 +1,5 @@
 'use client';
 
-import PatientLookupPage from '@/components/Patients/Page';
+import { PatientLookupPage } from '@/features/patients';
 
 export default PatientLookupPage;
