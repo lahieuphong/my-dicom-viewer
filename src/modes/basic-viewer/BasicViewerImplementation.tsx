@@ -22,7 +22,6 @@ import {
 import { TOOL_GROUP } from '@/constants/toolgroup';
 import { VIEWPORT_ID } from '@/constants/viewport';
 
-import { useTheme } from '@/platform/ui';
 import { ViewerWorkspace, useViewerLayout } from '@/extensions/default';
 import {
   attachDisplaySetToViewport,
@@ -150,12 +149,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   const prevSeriesRef = useRef<string | null>(null);
   const viewSrRef = useRef<((seriesUID: string, instanceUID?: string | null) => Promise<boolean>) | null>(null);
 
-  const { theme } = useTheme();
   const [studyMeta, setStudyMeta] = useState<Study>(() => createFallbackStudyMeta(studyUID));
-  const viewportBackground = useMemo<[number, number, number]>(
-    () => (theme === 'dark' ? [0, 0, 0] : [1, 1, 1]),
-    [theme]
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -203,7 +197,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     mergedSeriesMap,
     voiDefaults,
     onFrameIndexChange: setCurrentFrameBatched,
-    viewportBackground,
   });
 
   const { ensureImageRendered } = useEnsureImageRendered({

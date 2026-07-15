@@ -14,6 +14,7 @@ import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canv
 import { ATTEMPTS_ENGINE, USER_COOLDOWN_MS } from '@/lib/viewer/constants';
 
 const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
+const VIEWPORT_BACKGROUND: [number, number, number] = [0, 0, 0];
 
 async function waitForElement(ref: React.RefObject<HTMLElement | null>, timeout = 3000) {
   const start = Date.now();
@@ -147,14 +148,12 @@ export function useRenderingEngine({
   mergedSeriesMap,
   voiDefaults,
   onFrameIndexChange,
-  viewportBackground,
 }: {
   elRef: React.RefObject<HTMLDivElement | null>;
   selectedSeriesId: string;
   mergedSeriesMap: Record<string, { files: string[]; metadata: any }>;
   voiDefaults: Record<string, { lower: number; upper: number }>;
   onFrameIndexChange?: (index: number) => void;
-  viewportBackground?: [number, number, number];
 }) {
   const renderingEngineRef = useRef<RenderingEngine | null>(null);
   const [viewportInstance, setViewportInstance] = useState<StackViewport | null>(null);
@@ -344,7 +343,7 @@ export function useRenderingEngine({
             type: viewportType,
             element: mountEl,
             defaultOptions: {
-              background: viewportBackground ?? [0, 0, 0],
+              background: VIEWPORT_BACKGROUND,
             },
           }]);
         } catch (err) {}
@@ -834,8 +833,7 @@ export function useRenderingEngine({
         }, delayMs);
       } catch (e) {}
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSeriesId, imageFilesJson, voiDefaults, elRef, viewportBackground]);
+  }, [selectedSeriesId, imageFilesJson, voiDefaults, elRef]);
 
   return { renderingEngineRef, viewportInstance, viewportEl };
 }

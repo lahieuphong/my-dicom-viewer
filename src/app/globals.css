@@ -324,6 +324,10 @@
   background: var(--viewport-background);
 }
 
+.viewport-element {
+  background: var(--viewport-background);
+}
+
 /* src/styles/globals.css (hoặc file css chung) */
 .viewport-element canvas,
 .viewport-element canvas.cornerstone-canvas {
