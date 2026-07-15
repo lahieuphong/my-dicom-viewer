@@ -13,7 +13,7 @@ function preserveCurrentFrame(element: HTMLElement) {
   const canvas = element.querySelector('canvas.cornerstone-canvas') as HTMLCanvasElement | null;
   const host = canvas?.parentElement;
   if (!canvas || !host || canvas.width <= 0 || canvas.height <= 0) {
-    return { refresh: () => {}, remove: () => {} };
+    return { remove: () => {} };
   }
 
   const previousSnapshot = host.querySelector(
@@ -21,7 +21,13 @@ function preserveCurrentFrame(element: HTMLElement) {
   ) as HTMLCanvasElement | null;
   const source = previousSnapshot ?? canvas;
   const snapshot = document.createElement('canvas');
+  const context = snapshot.getContext('2d');
+  if (!context) {
+    return { remove: () => {} };
+  }
+
   snapshot.dataset.viewerResizeSnapshot = 'true';
+  snapshot.setAttribute('aria-hidden', 'true');
   snapshot.width = source.width;
   snapshot.height = source.height;
   Object.assign(snapshot.style, {
@@ -36,7 +42,7 @@ function preserveCurrentFrame(element: HTMLElement) {
   });
 
   try {
-    snapshot.getContext('2d')?.drawImage(source, 0, 0);
+    context.drawImage(source, 0, 0);
     host.appendChild(snapshot);
     previousSnapshot?.remove();
   } catch {
@@ -44,13 +50,6 @@ function preserveCurrentFrame(element: HTMLElement) {
   }
 
   return {
-    refresh: () => {
-      try {
-        snapshot.width = canvas.width;
-        snapshot.height = canvas.height;
-        snapshot.getContext('2d')?.drawImage(canvas, 0, 0);
-      } catch {}
-    },
     remove: () => snapshot.remove(),
   };
 }
@@ -91,20 +90,35 @@ export function fitViewportToElement({
   const snapshot = preserveCurrentFrame(element);
   let fallbackTimer: number | null = null;
   let removalTimer: number | null = null;
+  let firstRemovalFrame: number | null = null;
+  let secondRemovalFrame: number | null = null;
+  let rendered = false;
 
   const handleImageRendered = () => {
+    if (rendered) return;
+    rendered = true;
     element.removeEventListener(IMAGE_RENDERED_EVENT, handleImageRendered);
     if (fallbackTimer != null) window.clearTimeout(fallbackTimer);
     if (removalTimer != null) window.clearTimeout(removalTimer);
-    snapshot.refresh();
-    removalTimer = window.setTimeout(() => {
-      removalTimer = null;
-      snapshot.remove();
-    }, 34);
+    if (firstRemovalFrame != null) window.cancelAnimationFrame(firstRemovalFrame);
+    if (secondRemovalFrame != null) window.cancelAnimationFrame(secondRemovalFrame);
+
+    // IMAGE_RENDERED is dispatched during Cornerstone's render pass. Keep the
+    // preserved frame through the next paint so a cleared canvas is never shown.
+    firstRemovalFrame = window.requestAnimationFrame(() => {
+      firstRemovalFrame = null;
+      secondRemovalFrame = window.requestAnimationFrame(() => {
+        secondRemovalFrame = null;
+        removalTimer = window.setTimeout(() => {
+          removalTimer = null;
+          snapshot.remove();
+        }, 34);
+      });
+    });
   };
 
   element.addEventListener(IMAGE_RENDERED_EVENT, handleImageRendered, { once: true });
-  fallbackTimer = window.setTimeout(handleImageRendered, 300);
+  fallbackTimer = window.setTimeout(handleImageRendered, 500);
 
   normalizeCanvasAndContext(element);
 

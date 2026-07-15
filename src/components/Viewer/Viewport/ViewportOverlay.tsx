@@ -469,9 +469,9 @@ export default function ViewportOverlay({
   const displayedInstanceNumber = instanceNumber ?? displayFrame;
   const overlayClass = 'pointer-events-none absolute z-10 select-none';
   const textClass =
-    'text-sm font-medium leading-5 text-muted-foreground dark:text-blue-200/80 [text-shadow:0_1px_2px_rgb(0_0_0/0.95)]';
+    'text-sm font-medium leading-5 text-[#b7cde8] [text-shadow:0_1px_2px_rgb(0_0_0/1),0_0_3px_rgb(0_0_0/0.9)]';
   const markerClass =
-    'text-xs font-semibold text-muted-foreground dark:text-blue-200/65 [text-shadow:0_1px_2px_rgb(0_0_0/0.95)]';
+    'text-xs font-semibold text-[#9fb9d8] [text-shadow:0_1px_2px_rgb(0_0_0/1),0_0_3px_rgb(0_0_0/0.9)]';
   const iconClass = 'text-[#348cfd]';
 
   return (

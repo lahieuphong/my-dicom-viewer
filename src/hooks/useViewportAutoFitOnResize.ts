@@ -16,6 +16,14 @@ type UseViewportAutoFitOnResizeArgs = {
   resizeSignal?: unknown;
 };
 
+const VIEWER_GRID_SELECTOR = '.viewer-workspace-grid';
+const RESIZE_SETTLE_DELAY_MS = 80;
+
+function isPanelResizeActive(viewportEl: HTMLElement) {
+  const grid = viewportEl.closest<HTMLElement>(VIEWER_GRID_SELECTOR);
+  return grid?.dataset.panelResizing === 'true';
+}
+
 export function useViewportAutoFitOnResize({
   viewportEl,
   viewportInstance,
@@ -28,10 +36,20 @@ export function useViewportAutoFitOnResize({
   const trailingTimerRef = useRef<number | null>(null);
   const forceNextFitRef = useRef(false);
   const lastSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const panelResizePendingRef = useRef(false);
 
   const fitViewport = useCallback(() => {
     frameRef.current = null;
     if (!enabled || !viewportEl || !viewportInstance) return;
+
+    // Cornerstone clears its backing canvas when resize() changes its dimensions.
+    // Keep the current frame CSS-scaled while a panel is actively being dragged,
+    // then perform one real resize after the layout has settled.
+    if (isPanelResizeActive(viewportEl)) {
+      panelResizePendingRef.current = true;
+      forceNextFitRef.current = true;
+      return;
+    }
 
     const width = Math.round(viewportEl.clientWidth);
     const height = Math.round(viewportEl.clientHeight);
@@ -49,6 +67,7 @@ export function useViewportAutoFitOnResize({
       viewport: viewportInstance,
       viewportId,
     });
+    panelResizePendingRef.current = false;
   }, [enabled, renderingEngineRef, viewportEl, viewportId, viewportInstance]);
 
   const scheduleFit = useCallback((force = false) => {
@@ -57,41 +76,80 @@ export function useViewportAutoFitOnResize({
     frameRef.current = window.requestAnimationFrame(fitViewport);
   }, [fitViewport]);
 
-  const scheduleTrailingFit = useCallback(() => {
+  const scheduleSettledFit = useCallback(() => {
     if (trailingTimerRef.current != null) {
       window.clearTimeout(trailingTimerRef.current);
     }
     trailingTimerRef.current = window.setTimeout(() => {
       trailingTimerRef.current = null;
+      if (viewportEl && isPanelResizeActive(viewportEl)) {
+        panelResizePendingRef.current = true;
+        forceNextFitRef.current = true;
+        return;
+      }
       scheduleFit(true);
-    }, 80);
-  }, [scheduleFit]);
+    }, RESIZE_SETTLE_DELAY_MS);
+  }, [scheduleFit, viewportEl]);
+
+  const clearScheduledFit = useCallback(() => {
+    if (frameRef.current != null) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    if (trailingTimerRef.current != null) {
+      window.clearTimeout(trailingTimerRef.current);
+      trailingTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (!enabled || !viewportEl || !viewportInstance) return;
 
     scheduleFit();
 
+    const gridEl = viewportEl.closest<HTMLElement>(VIEWER_GRID_SELECTOR);
+
     const handleResize = () => {
-      scheduleFit();
-      scheduleTrailingFit();
+      if (isPanelResizeActive(viewportEl)) {
+        panelResizePendingRef.current = true;
+        forceNextFitRef.current = true;
+        clearScheduledFit();
+        return;
+      }
+
+      // ResizeObserver may fire every frame during a grid transition. Waiting
+      // for a quiet window avoids repeatedly clearing the WebGL canvas.
+      scheduleSettledFit();
     };
 
-    const clearScheduledFit = () => {
-      if (frameRef.current != null) {
-        window.cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
+    const handlePanelResizeStateChange = () => {
+      if (isPanelResizeActive(viewportEl)) {
+        panelResizePendingRef.current = true;
+        forceNextFitRef.current = true;
+        clearScheduledFit();
+        return;
       }
-      if (trailingTimerRef.current != null) {
-        window.clearTimeout(trailingTimerRef.current);
-        trailingTimerRef.current = null;
-      }
+
+      if (!panelResizePendingRef.current) return;
+      scheduleSettledFit();
     };
+
+    const mutationObserver =
+      gridEl && typeof MutationObserver !== 'undefined'
+        ? new MutationObserver(handlePanelResizeStateChange)
+        : null;
+    if (mutationObserver && gridEl) {
+      mutationObserver.observe(gridEl, {
+        attributes: true,
+        attributeFilter: ['data-panel-resizing'],
+      });
+    }
 
     if (typeof ResizeObserver === 'undefined') {
       window.addEventListener('resize', handleResize);
       return () => {
         window.removeEventListener('resize', handleResize);
+        mutationObserver?.disconnect();
         clearScheduledFit();
       };
     }
@@ -101,13 +159,20 @@ export function useViewportAutoFitOnResize({
 
     return () => {
       observer.disconnect();
+      mutationObserver?.disconnect();
       clearScheduledFit();
     };
-  }, [enabled, scheduleFit, scheduleTrailingFit, viewportEl, viewportInstance]);
+  }, [
+    clearScheduledFit,
+    enabled,
+    scheduleFit,
+    scheduleSettledFit,
+    viewportEl,
+    viewportInstance,
+  ]);
 
   useEffect(() => {
     if (!enabled || !viewportEl || !viewportInstance) return;
-    scheduleFit(true);
-    scheduleTrailingFit();
-  }, [enabled, resizeSignal, scheduleFit, scheduleTrailingFit, viewportEl, viewportInstance]);
+    scheduleSettledFit();
+  }, [enabled, resizeSignal, scheduleSettledFit, viewportEl, viewportInstance]);
 }
