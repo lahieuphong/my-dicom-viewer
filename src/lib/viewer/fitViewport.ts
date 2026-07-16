@@ -5,6 +5,8 @@ import type { RenderingEngine, StackViewport } from '@cornerstonejs/core';
 import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
 
 type ViewPresentation = ReturnType<StackViewport['getViewPresentation']>;
+type ViewportCamera = ReturnType<StackViewport['getCamera']>;
+type ViewportSize = { width: number; height: number };
 
 const IMAGE_RENDERED_EVENT = 'CORNERSTONE_IMAGE_RENDERED';
 const RESIZE_SNAPSHOT_SELECTOR = '[data-viewer-resize-snapshot="true"]';
@@ -69,16 +71,67 @@ function restorePresentation(viewport: StackViewport, presentation: ViewPresenta
   } catch {}
 }
 
+function readCamera(viewport: StackViewport): ViewportCamera | null {
+  try {
+    return viewport.getCamera?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getCameraForResizedElement(
+  camera: ViewportCamera | null,
+  previousSize: ViewportSize | null,
+  nextSize: ViewportSize
+): ViewportCamera | null {
+  const parallelScale = camera?.parallelScale;
+  if (
+    !camera ||
+    !previousSize ||
+    !Number.isFinite(parallelScale) ||
+    parallelScale == null ||
+    parallelScale <= 0 ||
+    previousSize.width <= 0 ||
+    previousSize.height <= 0
+  ) {
+    return null;
+  }
+
+  const widthRatio = nextSize.width / previousSize.width;
+  const heightRatio = nextSize.height / previousSize.height;
+  const visibleFrameScale = Math.min(widthRatio, heightRatio);
+  if (!Number.isFinite(visibleFrameScale) || visibleFrameScale <= 0) return null;
+
+  // During a panel drag the old canvas is object-fit: contain. Convert that
+  // exact visible scale into an absolute Cornerstone camera for the new canvas.
+  const nextParallelScale = (parallelScale * heightRatio) / visibleFrameScale;
+  if (!Number.isFinite(nextParallelScale) || nextParallelScale <= 0) return null;
+
+  return { ...camera, parallelScale: nextParallelScale };
+}
+
+function restoreCamera(viewport: StackViewport, camera: ViewportCamera | null) {
+  if (!camera) return false;
+  try {
+    viewport.setCamera(camera);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function fitViewportToElement({
   element,
   engine,
   viewport,
   viewportId,
+  previousSize = null,
 }: {
   element: HTMLElement | null;
   engine: RenderingEngine | null;
   viewport: StackViewport | null;
   viewportId: string;
+  previousSize?: ViewportSize | null;
 }) {
   if (!element || !viewport) return;
 
@@ -87,6 +140,11 @@ export function fitViewportToElement({
   if (width <= 0 || height <= 0) return;
 
   const presentation = readPresentation(viewport);
+  const resizedCamera = getCameraForResizedElement(
+    readCamera(viewport),
+    previousSize,
+    { width, height }
+  );
   const snapshot = preserveCurrentFrame(element);
   let fallbackTimer: number | null = null;
   let removalTimer: number | null = null;
@@ -125,7 +183,9 @@ export function fitViewportToElement({
   if (!engine) {
     try {
       viewport.resetCameraForResize?.();
-      restorePresentation(viewport, presentation);
+      if (!restoreCamera(viewport, resizedCamera)) {
+        restorePresentation(viewport, presentation);
+      }
       viewport.render?.();
     } catch {
       handleImageRendered();
@@ -134,9 +194,12 @@ export function fitViewportToElement({
   }
 
   try {
-    // Fit the new canvas, then retain the user's relative camera presentation.
+    // Resize establishes the new fit camera; the absolute camera then keeps the
+    // frame seen during the drag instead of reapplying a relative zoom value.
     engine.resize(false, false);
-    restorePresentation(viewport, presentation);
+    if (!restoreCamera(viewport, resizedCamera)) {
+      restorePresentation(viewport, presentation);
+    }
     engine.renderViewport(viewportId);
   } catch {
     handleImageRendered();

@@ -55,10 +55,16 @@ export function useViewportAutoFitOnResize({
     const height = Math.round(viewportEl.clientHeight);
     if (width <= 0 || height <= 0) return;
 
-    const lastSize = lastSizeRef.current;
+    const previousSize = lastSizeRef.current;
     const forceFit = forceNextFitRef.current;
     forceNextFitRef.current = false;
-    if (!forceFit && lastSize?.width === width && lastSize?.height === height) return;
+    if (
+      !forceFit &&
+      previousSize?.width === width &&
+      previousSize?.height === height
+    ) {
+      return;
+    }
     lastSizeRef.current = { width, height };
 
     fitViewportToElement({
@@ -66,6 +72,7 @@ export function useViewportAutoFitOnResize({
       engine: renderingEngineRef.current,
       viewport: viewportInstance,
       viewportId,
+      previousSize,
     });
     panelResizePendingRef.current = false;
   }, [enabled, renderingEngineRef, viewportEl, viewportId, viewportInstance]);
