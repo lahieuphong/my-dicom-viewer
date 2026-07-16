@@ -29,6 +29,7 @@ export default function DicomViewport({
       {/* THIS INNER DIV is the one we enable for Cornerstone */}
       <div
         ref={elementRef}
+        id={`${VIEWPORT_ID}-element`}
         className="viewport-element w-full h-full"
         data-viewport-role="content"
         data-viewport-uid={VIEWPORT_ID}

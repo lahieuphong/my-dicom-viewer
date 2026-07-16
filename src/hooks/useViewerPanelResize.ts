@@ -280,7 +280,7 @@ export function useViewerPanelResize({
       const renderedWidth =
         side === 'left'
           ? handleRect.left - gridRect.left
-          : gridRect.right - handleRect.right;
+          : gridRect.right - handleRect.left;
       const fallbackWidth =
         side === 'left'
           ? sidebarCollapsed

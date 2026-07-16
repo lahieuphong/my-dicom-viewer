@@ -22,6 +22,7 @@ import {
   DicomViewport,
   ViewportLoadingOverlay,
   ViewportOverlay,
+  ViewportStackScrollbar,
 } from '@/components/Viewer/Viewport';
 
 type SeriesSidebarProps = ComponentProps<typeof SeriesSidebar>;
@@ -64,6 +65,7 @@ type ViewerWorkspaceProps = {
   onExportJSON: () => void;
   onExportDICOMSR: () => void;
   currentFrame: number;
+  onFrameChange: (frame: number) => boolean | void | Promise<boolean | void>;
   viewportEl: HTMLDivElement | null;
   selectedMeasurementUID: string | null;
   activeTool: ToolID;
@@ -125,6 +127,7 @@ export default function ViewerWorkspace({
   onExportJSON,
   onExportDICOMSR,
   currentFrame,
+  onFrameChange,
   viewportEl,
   selectedMeasurementUID,
   activeTool,
@@ -334,6 +337,12 @@ export default function ViewerWorkspace({
                   viewportEl={viewportEl}
                   currentFrame={currentFrame}
                   totalFrames={totalFrames}
+                />
+                <ViewportStackScrollbar
+                  currentFrame={currentFrame}
+                  totalFrames={totalFrames}
+                  onFrameChange={onFrameChange}
+                  disabled={loadingStack || !imageAvailable}
                 />
               </div>
             </>

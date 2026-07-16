@@ -511,7 +511,7 @@ export default function ViewportOverlay({
       </div>
 
       <div
-        className={`${overlayClass} bottom-3 right-4 flex items-baseline gap-1 ${textClass} tabular-nums`}
+        className={`${overlayClass} bottom-3 right-8 flex items-baseline gap-1 ${textClass} tabular-nums`}
       >
         <span>I:</span>
         <span>{displayedInstanceNumber}</span>

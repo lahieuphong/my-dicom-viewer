@@ -244,7 +244,7 @@
   }
 
   .viewer-panel-resize-handle-right {
-    right: var(--viewer-right-panel-width, 250px);
+    right: calc(var(--viewer-right-panel-width, 250px) - 14px);
   }
 
   .viewer-panel-resize-handle::before {
@@ -260,9 +260,9 @@
   }
 
   .viewer-panel-resize-handle-right::before {
-    right: 0;
-    left: auto;
-    transform: translateX(50%);
+    right: auto;
+    left: 0;
+    transform: translateX(-50%);
   }
 
   .viewer-panel-resize-handle:hover::before,

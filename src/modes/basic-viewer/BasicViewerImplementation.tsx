@@ -9,7 +9,7 @@ import {
   useMemo,
 } from 'react';
 
-import { imageLoader } from '@cornerstonejs/core';
+import { imageLoader, utilities as csCoreUtilities } from '@cornerstonejs/core';
 
 import { useBatchedFrameState, useSeriesLoader } from './application';
 
@@ -198,6 +198,46 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     voiDefaults,
     onFrameIndexChange: setCurrentFrameBatched,
   });
+
+  const handleViewportFrameChange = useCallback(
+    async (frameOneBased: number) => {
+      if (!viewportEl || !viewportInstance) return false;
+
+      const imageIds = viewportInstance.getImageIds?.() ?? [];
+      if (!Array.isArray(imageIds) || imageIds.length <= 1) return false;
+
+      const targetIndex = Math.min(
+        imageIds.length - 1,
+        Math.max(0, Math.round(Number(frameOneBased) || 1) - 1)
+      );
+
+      try {
+        viewportEl.dataset.__lastUserInteraction = String(Date.now());
+      } catch {}
+
+      setCurrentFrame(targetIndex + 1);
+
+      try {
+        await csCoreUtilities.jumpToSlice(viewportEl, {
+          imageIndex: targetIndex,
+          debounceLoading: true,
+        });
+        return true;
+      } catch {
+        try {
+          await viewportInstance.setImageIdIndex(targetIndex);
+          return true;
+        } catch {
+          const currentIndex = viewportInstance.getCurrentImageIdIndex?.();
+          if (typeof currentIndex === 'number' && currentIndex >= 0) {
+            setCurrentFrame(currentIndex + 1);
+          }
+          return false;
+        }
+      }
+    },
+    [setCurrentFrame, viewportEl, viewportInstance]
+  );
 
   const { ensureImageRendered } = useEnsureImageRendered({
     renderingEngineRef,
@@ -1694,6 +1734,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       onExportJSON={() => openSrNameDialog('json')}
       onExportDICOMSR={() => openSrNameDialog('dicom')}
       currentFrame={currentFrame}
+      onFrameChange={handleViewportFrameChange}
       viewportEl={viewportEl}
       selectedMeasurementUID={selectedMeasurementUID}
       activeTool={activeTool}
