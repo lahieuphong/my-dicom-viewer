@@ -20,7 +20,7 @@ export default function DicomViewport({
       tabIndex={0}
       data-testid="dicom-viewport"
       className={
-        `viewport-container w-full h-full border-b border-border ` +
+        `viewport-container w-full h-full ` +
         `${crosshair ? 'cursor-crosshair ' : 'cursor-default '}` +
         `overflow-hidden flex items-center justify-center`
       }
