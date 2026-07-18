@@ -26,7 +26,7 @@ export default function CineControls({
         onClick={onTogglePlay}
         disabled={isLoading}
         className={`
-          w-8 h-8 sm:w-10 sm:h-10 p-0 flex items-center justify-center
+          w-8 h-8 sm:w-9 sm:h-9 p-0 flex items-center justify-center
           border border-border rounded-md
           ${isActive ? 'bg-primary text-primary-foreground' : 'bg-transparent text-foreground'}
           ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}

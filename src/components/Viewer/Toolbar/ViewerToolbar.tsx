@@ -65,7 +65,7 @@ export default function Toolbar({
         onClick={() => onSelectTool(tool)}
         variant={isActive ? 'default' : 'ghost'}
         className={`
-          w-8 h-8 sm:w-10 sm:h-10 p-0 flex items-center justify-center
+          w-8 h-8 sm:w-9 sm:h-9 p-0 flex items-center justify-center
           border border-border rounded-md
           ${isActive
             ? 'bg-primary text-primary-foreground'
@@ -120,7 +120,7 @@ export default function Toolbar({
           <DropdownMenuTrigger asChild>
             <Button
               variant={isMeasurementActive ? 'default' : 'ghost'}
-              className="w-12 sm:w-16 h-8 sm:h-10 p-0 flex items-center justify-center border border-border rounded-md"
+              className="w-12 sm:w-14 h-8 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
               title="Measurement tools"
             >
               <i className={`fas fa-${measurementIcon} sm:mr-1`} />
@@ -160,7 +160,7 @@ export default function Toolbar({
           <DropdownMenuTrigger asChild>
             <Button
               variant={isOtherToolActive ? 'default' : 'ghost'}
-              className="w-12 sm:w-16 h-8 sm:h-10 p-0 flex items-center justify-center border border-border rounded-md"
+              className="w-12 sm:w-14 h-8 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
               title="Other tools"
             >
               <i className={`fas fa-${otherIcon} sm:mr-1`} />

@@ -72,7 +72,7 @@ export default function SharedHeader({
       <header className="bg-card border-b border-border w-full">
         <div className="max-w-full h-14 flex items-center justify-between px-4 md:px-4 lg:px-6 gap-4">
           {/* LEFT SECTION */}
-          <div className="flex items-center gap-2 md:gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-4">
             {showBackButton && (
               <Button
                 variant="ghost"
@@ -99,7 +99,7 @@ export default function SharedHeader({
 
             {showStudyUID && studyUID && (
               <span
-                className="hidden md:inline text-sm italic truncate max-w-xs text-secondary-foreground"
+                className="min-w-0 flex-1 truncate text-sm italic text-secondary-foreground"
                 title={studyUID}
               >
                 Lần chụp: {studyUID}
@@ -109,7 +109,7 @@ export default function SharedHeader({
 
           {/* RIGHT SECTION */}
           {(showSupport || showSecurity || showUserMenu) && (
-            <div className="flex items-center gap-2 md:gap-4">
+            <div className="flex shrink-0 items-center gap-2 md:gap-4">
               {showSupport && (
                 <Label
                   htmlFor="support"

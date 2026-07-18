@@ -417,7 +417,7 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
         variant="ghost"
         title="Capture Image"
         onClick={() => setOpen(true)}
-        className="w-8 h-8 sm:w-10 sm:h-10 p-0 flex items-center justify-center border border-border rounded-md"
+        className="w-8 h-8 sm:w-9 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
       >
         <i className="fas fa-camera" />
       </Button>
