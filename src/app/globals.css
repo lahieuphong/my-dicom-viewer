@@ -152,13 +152,40 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: 1px;
+    width: 0.5px;
     pointer-events: none;
-    background: color-mix(in srgb, var(--border) 82%, var(--foreground) 18%);
+    background: var(--border);
     transition: width 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
   }
 
+  .studies-resizable-data-row > td:not(:last-child)::after {
+    content: none;
+  }
+
   .studies-resizable-boundary-active::after {
+    width: 3px;
+    background: #60a5fa;
+    box-shadow: 0 0 14px rgba(96, 165, 250, 0.88);
+  }
+
+  .studies-resize-handle::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    transform: translateX(-50%);
+    pointer-events: none;
+    background: transparent;
+    box-shadow: none;
+    transition: width 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .studies-resize-handle:hover::before,
+  .studies-resize-handle:focus-visible::before,
+  .studies-resize-handle:active::before,
+  .studies-resize-handle[data-active='true']::before {
     width: 3px;
     background: #60a5fa;
     box-shadow: 0 0 14px rgba(96, 165, 250, 0.88);
