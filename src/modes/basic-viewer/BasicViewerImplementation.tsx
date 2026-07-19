@@ -42,6 +42,7 @@ import {
   useResetViewer,
   useRotate,
   useStackPrefetch,
+  useStackScrollWheel,
   useToolManager,
   useViewportAutoFitOnResize,
   useViewportState,
@@ -1086,6 +1087,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   });
 
   useStackPrefetch(viewportEl);
+  useStackScrollWheel(viewportEl, selectedSeries);
   useCine(isPlaying, fps, viewportEl);
 
   // ---------------- SR / measurement lists --------------

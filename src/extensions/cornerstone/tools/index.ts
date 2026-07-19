@@ -11,3 +11,4 @@ export { useForceZoomOne } from '@/hooks/useForceZoomOne';
 export { useResetViewer } from '@/hooks/useResetViewer';
 export { useRotate } from '@/hooks/useRotate';
 export { useStackPrefetch } from '@/hooks/useStackPrefetch';
+export { useStackScrollWheel } from '@/hooks/useStackScrollWheel';

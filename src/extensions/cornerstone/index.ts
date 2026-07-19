@@ -48,6 +48,7 @@ export {
   useResetViewer,
   useRotate,
   useStackPrefetch,
+  useStackScrollWheel,
   useToolManager,
 } from './tools';
 export type { ToolID } from './tools';

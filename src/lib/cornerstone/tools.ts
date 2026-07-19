@@ -16,8 +16,9 @@ import {
   SplineROITool,
   AngleTool,
   StackScrollTool,
-  Enums as ToolEnums,
 } from '@cornerstonejs/tools';
+
+import { ensureStackScrollWheelActive } from './stackScroll';
 
 const TOOL_GROUP_ID = 'toolGroup';
 
@@ -59,12 +60,6 @@ function toolGroupHasTool(toolGroup: any, toolName: string): boolean {
     return false;
   }
 }
-
-export const STACK_SCROLL_CONFIGURATION = {
-  invert: false,
-  debounceIfNotLoaded: true,
-  loop: true,
-};
 
 /**
  * Đăng ký các tools & tạo toolGroup nếu cần. Idempotent: gọi nhiều lần chỉ thực hiện 1 lần.
@@ -138,19 +133,9 @@ export function registerToolsOnce(): void {
           }
         }
 
-        // Configure StackScroll once (still safe to do here)
-        try {
-          tgLocal.setToolConfiguration?.(StackScrollTool.toolName, {
-            ...STACK_SCROLL_CONFIGURATION,
-          });
-
-          // make wheel scroll active by default so users can scroll stacks
-          tgLocal.setToolActive?.(StackScrollTool.toolName, {
-            bindings: [{ mouseButton: ToolEnums.MouseBindings.Wheel }],
-          });
-        } catch {
-          // ignore config errors
-        }
+        // Keep native Cornerstone wheel navigation active independently from
+        // whichever primary tool the user selects.
+        ensureStackScrollWheelActive(TOOL_GROUP_ID);
       }
     } catch (e) {
       // swallow additions errors

@@ -23,8 +23,8 @@ import { initCornerstone } from '@/lib/cornerstone';
 import { TOOL_GROUP } from '@/constants/toolgroup';
 import {
   registerToolsOnce,
-  STACK_SCROLL_CONFIGURATION,
 } from '@/lib/cornerstone/tools';
+import { ensureStackScrollWheelActive } from '@/lib/cornerstone/stackScroll';
 
 export type ToolID =
   | 'adjust'
@@ -341,12 +341,7 @@ export function useToolManager() {
 
     if (toolName === StackScrollTool.toolName) {
       tryAddToolToGroup(tg, toolName, StackScrollTool);
-      try {
-        tg.setToolConfiguration?.(toolName, {
-          ...STACK_SCROLL_CONFIGURATION,
-        });
-      } catch {}
-      return trySetToolActive(tg, toolName, [{ mouseButton: ToolEnums.MouseBindings.Wheel }]);
+      return ensureStackScrollWheelActive(TOOL_GROUP);
     }
 
     // Ensure the tool exists in the ToolGroup (do NOT re-register globally here)
