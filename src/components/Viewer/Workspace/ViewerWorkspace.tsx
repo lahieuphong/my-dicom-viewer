@@ -337,6 +337,12 @@ export default function ViewerWorkspace({
                   viewportEl={viewportEl}
                   currentFrame={currentFrame}
                   totalFrames={totalFrames}
+                  seriesMap={seriesMap}
+                  selectedSeriesUID={selectedSeries}
+                  onSelectSeries={(seriesUID) => {
+                    onSelectSr?.(null);
+                    onSelectSeries(seriesUID);
+                  }}
                 />
                 <ViewportStackScrollbar
                   currentFrame={currentFrame}

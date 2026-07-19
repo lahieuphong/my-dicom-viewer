@@ -5,6 +5,7 @@ import { Enums as CoreEnums, getEnabledElement, metaData } from '@cornerstonejs/
 import type { StackViewport } from '@cornerstonejs/core';
 import { utilities as csToolsUtilities } from '@cornerstonejs/tools';
 import { formatStudyDate } from '@/lib/utils';
+import { ViewportDataOverlayMenu, type ViewportSeriesMap } from './DataOverlay';
 
 type Props = {
   studyDate: string;
@@ -12,6 +13,9 @@ type Props = {
   viewportEl: HTMLDivElement | null;
   currentFrame?: number;
   totalFrames?: number;
+  seriesMap?: ViewportSeriesMap;
+  selectedSeriesUID?: string;
+  onSelectSeries?: (seriesUID: string) => void;
 };
 
 type VoiRange = { lower: number; upper: number };
@@ -56,31 +60,6 @@ function OrientationSwitchIcon({ className = '' }: OverlayIconProps) {
       <path
         d="M8.60608 15.1079C8.10461 15.1079 7.78088 14.8159 7.78088 14.3525C7.78088 14.2256 7.81262 14.0479 7.88879 13.8511L10.5485 6.62109C10.7706 6.01172 11.1388 5.73242 11.7355 5.73242C12.3385 5.73242 12.7067 5.99902 12.9352 6.61475L15.6012 13.8511C15.6774 14.0605 15.7091 14.2065 15.7091 14.3525C15.7091 14.7969 15.3663 15.1079 14.8903 15.1079C14.4459 15.1079 14.1984 14.9048 14.0524 14.416L13.4493 12.6641H10.028L9.42493 14.4033C9.27258 14.8984 9.03137 15.1079 8.60608 15.1079ZM10.4152 11.3691H13.0494L11.7482 7.45898H11.7037L10.4152 11.3691Z"
         fill="currentColor"
-      />
-    </svg>
-  );
-}
-
-function ViewportViewsIcon({ className = '' }: OverlayIconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M12.1675 14.7545C12.0607 14.8152 11.9393 14.8152 11.8325 14.7545L3.25173 9.89965C3.09887 9.81314 3 9.6169 3 9.4C3 9.1831 3.09887 8.98686 3.25173 8.90035L11.8325 4.04549C11.9393 3.98484 12.0607 3.98484 12.1675 4.04549L20.7483 8.90035C20.9011 8.98686 21 9.1831 21 9.4C21 9.6169 20.9011 9.81314 20.7483 9.89965L12.1675 14.7545Z"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M16.7793 12.1L20.7483 14.3367C20.9011 14.4227 21 14.6178 21 14.8333C21 15.0489 20.9011 15.2439 20.7483 15.3299L12.1675 20.1548C12.0607 20.2151 11.9393 20.2151 11.8325 20.1548L3.25173 15.3299C3.09887 15.2439 3 15.0489 3 14.8333C3 14.6178 3.09887 14.4227 3.25173 14.3367L7.20181 12.1"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
       />
     </svg>
   );
@@ -154,6 +133,9 @@ export default function ViewportOverlay({
   viewportEl,
   currentFrame = 1,
   totalFrames = 0,
+  seriesMap,
+  selectedSeriesUID = '',
+  onSelectSeries,
 }: Props): React.ReactElement {
   const [windowWidth, setWindowWidth] = useState<number | null>(null);
   const [windowCenter, setWindowCenter] = useState<number | null>(null);
@@ -479,7 +461,11 @@ export default function ViewportOverlay({
       <div className={`${overlayClass} left-2 top-3`}>
         <div className={`flex h-5 items-center gap-0 ${iconClass}`}>
           <OrientationSwitchIcon className="size-5 shrink-0" />
-          <ViewportViewsIcon className="size-5 shrink-0" />
+          <ViewportDataOverlayMenu
+            seriesMap={seriesMap}
+            selectedSeriesUID={selectedSeriesUID}
+            onSelectSeries={onSelectSeries}
+          />
         </div>
 
         <div className={`mt-1 ${textClass}`}>
