@@ -43,6 +43,7 @@ import {
   useRotate,
   useStackPrefetch,
   useStackScrollWheel,
+  useStackVoiPersistence,
   useToolManager,
   useViewportAutoFitOnResize,
   useViewportState,
@@ -267,6 +268,12 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   useForceZoomOne(viewportInstance, renderingEngineRef, {
     enabled: true,   // 👈 bật/tắt cực dễ
     delayMs: 80,     // 👈 có thể chỉnh nếu cần
+  });
+
+  useStackVoiPersistence({
+    viewportInstance,
+    viewportEl,
+    stackKey: selectedSeries,
   });
 
   // đặt gần các useEffect khác, trong body Viewer component

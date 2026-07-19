@@ -20,6 +20,7 @@ export {
   useEnsureImageRendered as useRenderedImageGuard,
 } from '@/hooks/useEnsureImageRendered';
 export { useViewportAutoFitOnResize } from '@/hooks/useViewportAutoFitOnResize';
+export { useStackVoiPersistence } from '@/hooks/useStackVoiPersistence';
 
 export { attachDisplaySetToViewport } from '@/lib/viewer/attachDisplaySet';
 export { createDisplaySetFromSeries } from '@/lib/viewer/displaySet';

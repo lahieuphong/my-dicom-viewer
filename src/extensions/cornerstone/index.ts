@@ -30,6 +30,7 @@ export {
   useRenderedImageGuard,
   useRenderingEngine,
   useStackRenderingEngine,
+  useStackVoiPersistence,
   useViewportAutoFitOnResize,
   useViewportImageReadiness,
   useViewportState,

@@ -732,9 +732,26 @@ export function useRenderingEngine({
         }
       } catch (err) {}
 
+      // The cached VOI is only an initialization fallback. Re-applying it every
+      // time the stack loops back to image 0 would overwrite a user's current
+      // Window/Level adjustment with the first image's original VOI.
+      let initialVoiEventPending = !Boolean(voiDefaults[selectedSeriesId]);
+
       const onStackNewImage = (e: any) => {
         try {
-          const idx = typeof e?.detail?.imageIdIndex === 'number' ? e.detail.imageIdIndex : 0;
+          const eventIndex = e?.detail?.imageIdIndex;
+          let viewportIndex: unknown = null;
+          try {
+            viewportIndex = vp?.getCurrentImageIdIndex?.();
+          } catch {}
+
+          const idx = Number.isInteger(eventIndex)
+            ? eventIndex
+            : Number.isInteger(viewportIndex)
+              ? (viewportIndex as number)
+              : null;
+
+          if (idx === null) return;
 
           if (onFrameIndexChange) onFrameIndexChange(idx + 1);
 
@@ -744,8 +761,12 @@ export function useRenderingEngine({
             }
           } catch {}
 
-          // compute/apply VOI only for the initialIndex (heavy)
-          if (idx !== initialIndex) return;
+          const shouldInitializeVoi = initialVoiEventPending && idx === initialIndex;
+          // Consume the one-time initialization opportunity on the first valid
+          // stack event. A later return to image 0 is navigation, not setup.
+          initialVoiEventPending = false;
+
+          if (!shouldInitializeVoi) return;
 
           (async () => {
             try {
