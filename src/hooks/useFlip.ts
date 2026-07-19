@@ -12,21 +12,14 @@ export function useFlipHorizontal(
     if (!engine) return;
 
     try {
-      const vp = engine.getViewport(viewportId) as StackViewport;
-      const pres = vp.getViewPresentation();
-      const cam = vp.getCamera();
-      const newFlip = !cam.flipHorizontal;
+      const viewport = engine.getViewport(viewportId) as StackViewport;
+      const isFlipped = viewport.getCamera().flipHorizontal ?? false;
 
-      vp.setCamera({ ...cam, flipHorizontal: newFlip });
-      vp.setViewPresentation({
-        ...pres,
-        pan: pres.pan ?? [0, 0],
-        zoom: pres.zoom ?? 1,
-        rotation: pres.rotation ?? 0,
-      });
-
-      requestAnimationFrame(() => engine.renderViewport(viewportId));
-    } catch (e) {
+      // Only mutate the flip flag. Passing the previous full camera here can
+      // overwrite the geometry that Cornerstone creates for the flip.
+      viewport.setCamera({ flipHorizontal: !isFlipped });
+      viewport.render();
+    } catch {
     }
   };
 
