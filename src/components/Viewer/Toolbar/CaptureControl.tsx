@@ -16,6 +16,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 
 // icon for dropdown selected check
 import { Check } from 'lucide-react';
+import ToolbarTooltip from './ToolbarTooltip';
+import { CAPTURE_TOOLTIP } from './tooltips';
 
 interface CaptureControlProps {
   viewportEl: HTMLDivElement | null;
@@ -413,14 +415,16 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
 
   return (
     <div className="relative">
-      <Button
-        variant="ghost"
-        title="Capture Image"
-        onClick={() => setOpen(true)}
-        className="w-8 h-8 sm:w-9 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
-      >
-        <i className="fas fa-camera" />
-      </Button>
+      <ToolbarTooltip label={CAPTURE_TOOLTIP.label} detail={CAPTURE_TOOLTIP.detail}>
+        <Button
+          variant="ghost"
+          onClick={() => setOpen(true)}
+          className="w-8 h-8 sm:w-9 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
+          aria-label={`${CAPTURE_TOOLTIP.label} — ${CAPTURE_TOOLTIP.detail}`}
+        >
+          <i className="fas fa-camera" />
+        </Button>
+      </ToolbarTooltip>
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/30 backdrop-blur-sm">

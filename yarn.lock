@@ -1801,6 +1801,24 @@
   dependencies:
     "@radix-ui/react-compose-refs" "1.1.3"
 
+"@radix-ui/react-tooltip@^1.2.12":
+  version "1.2.12"
+  resolved "https://registry.yarnpkg.com/@radix-ui/react-tooltip/-/react-tooltip-1.2.12.tgz#f38a646eda98036e66fd33fc4725621e2f7aa812"
+  integrity sha512-U3HoftgWnmla78vzQbLvKKb7bUYJxoiiqYFzp1wu/TBMyDqMZSuCl3aRICsD6EfVEwcJD2mumGDGUXLFVqQHKA==
+  dependencies:
+    "@radix-ui/primitive" "1.1.5"
+    "@radix-ui/react-compose-refs" "1.1.3"
+    "@radix-ui/react-context" "1.2.0"
+    "@radix-ui/react-dismissable-layer" "1.1.15"
+    "@radix-ui/react-id" "1.1.2"
+    "@radix-ui/react-popper" "1.3.3"
+    "@radix-ui/react-portal" "1.1.13"
+    "@radix-ui/react-presence" "1.1.7"
+    "@radix-ui/react-primitive" "2.1.7"
+    "@radix-ui/react-slot" "1.3.0"
+    "@radix-ui/react-use-controllable-state" "1.2.3"
+    "@radix-ui/react-visually-hidden" "1.2.7"
+
 "@radix-ui/react-use-callback-ref@1.1.2":
   version "1.1.2"
   resolved "https://registry.yarnpkg.com/@radix-ui/react-use-callback-ref/-/react-use-callback-ref-1.1.2.tgz#ddc0bc1381ff3b62368c248808efc45a098bafde"

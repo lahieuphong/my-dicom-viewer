@@ -2,6 +2,7 @@
 'use client';
 import React from 'react';
 import { Button } from '@/components/ui/button';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -14,6 +15,12 @@ import { ToolID } from '@/hooks/useToolManager';
 
 import CaptureControl from './CaptureControl';
 import CineControls from './CineControls';
+import ToolbarTooltip from './ToolbarTooltip';
+import {
+  getToolTooltip,
+  MEASUREMENT_TOOLS_TOOLTIP,
+  MORE_TOOLS_TOOLTIP,
+} from './tooltips';
 
 interface ToolbarProps {
   activeTool: ToolID;
@@ -60,21 +67,24 @@ export default function Toolbar({
 }: ToolbarProps) {
   const renderButton = (tool: ToolID, iconClass: string, title: string) => {
     const isActive = activeTool === tool;
+    const tooltip = getToolTooltip(tool, { label: title, detail: `${title} Tool` });
     return (
-      <Button
-        onClick={() => onSelectTool(tool)}
-        variant={isActive ? 'default' : 'ghost'}
-        className={`
-          w-8 h-8 sm:w-9 sm:h-9 p-0 flex items-center justify-center
-          border border-border rounded-md
-          ${isActive
-            ? 'bg-primary text-primary-foreground'
-            : 'bg-transparent text-foreground'}
-        `}
-        title={title}
-      >
-        <i className={iconClass} />
-      </Button>
+      <ToolbarTooltip label={tooltip.label} detail={tooltip.detail}>
+        <Button
+          onClick={() => onSelectTool(tool)}
+          variant={isActive ? 'default' : 'ghost'}
+          className={`
+            w-8 h-8 sm:w-9 sm:h-9 p-0 flex items-center justify-center
+            border border-border rounded-md
+            ${isActive
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-transparent text-foreground'}
+          `}
+          aria-label={`${tooltip.label} — ${tooltip.detail}`}
+        >
+          <i className={iconClass} />
+        </Button>
+      </ToolbarTooltip>
     );
   };
 
@@ -88,140 +98,157 @@ export default function Toolbar({
 
   const measurementIcon = isMeasurementActive ? getIconForTool(activeTool) : 'ruler';
   const otherIcon = isOtherToolActive ? getIconForOtherTool(activeTool) : 'tools';
+  const measurementTooltip = isMeasurementActive
+    ? getToolTooltip(activeTool, MEASUREMENT_TOOLS_TOOLTIP)
+    : MEASUREMENT_TOOLS_TOOLTIP;
+  const otherTooltip = isOtherToolActive
+    ? getToolTooltip(activeTool, MORE_TOOLS_TOOLTIP)
+    : MORE_TOOLS_TOOLTIP;
 
   return (
-    <div className="h-full overflow-x-auto">
-      <div
-        className="
-          flex flex-nowrap justify-center items-center whitespace-nowrap
-          h-full gap-1 sm:gap-2 px-2 py-0
-          bg-card
-        "
-      >
-        {renderButton('adjust', 'fas fa-adjust', 'Adjust')}
-        {renderButton('pan', 'fas fa-arrows-alt', 'Pan')}
-        {renderButton('zoom', 'fas fa-search-plus', 'Zoom')}
+    <TooltipProvider>
+      <div className="h-full overflow-x-auto">
+        <div
+          role="toolbar"
+          aria-label="Công cụ xem ảnh DICOM"
+          className="
+            flex flex-nowrap justify-center items-center whitespace-nowrap
+            h-full gap-1 sm:gap-2 px-2 py-0
+            bg-card
+          "
+        >
+          {renderButton('adjust', 'fas fa-adjust', 'Adjust')}
+          {renderButton('pan', 'fas fa-arrows-alt', 'Pan')}
+          {renderButton('zoom', 'fas fa-search-plus', 'Zoom')}
 
-        {/* Cine Controls */}
-        <CineControls
-          isPlaying={isPlaying}
-          fps={fps}
-          onTogglePlay={() => {
-            onTogglePlay();
-            onSelectTool('cine');
-          }}
-          onFpsChange={onFpsChange}
-          isLoading={isLoading}
-          isActive={isCineActive}
-        />
+          {/* Cine Controls */}
+          <CineControls
+            isPlaying={isPlaying}
+            fps={fps}
+            onTogglePlay={() => {
+              onTogglePlay();
+              onSelectTool('cine');
+            }}
+            onFpsChange={onFpsChange}
+            isLoading={isLoading}
+            isActive={isCineActive}
+          />
 
-        {/* Measurement Tools Dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant={isMeasurementActive ? 'default' : 'ghost'}
-              className="w-12 sm:w-14 h-8 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
-              title="Measurement tools"
+          {/* Measurement Tools Dropdown */}
+          <DropdownMenu>
+            <ToolbarTooltip
+              label={measurementTooltip.label}
+              detail={measurementTooltip.detail}
             >
-              <i className={`fas fa-${measurementIcon} sm:mr-1`} />
-              <i className="fas fa-ellipsis-h hidden sm:inline" />
-            </Button>
-          </DropdownMenuTrigger>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant={isMeasurementActive ? 'default' : 'ghost'}
+                  className="w-12 sm:w-14 h-8 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
+                  aria-label={`${measurementTooltip.label} — ${measurementTooltip.detail}`}
+                >
+                  <i className={`fas fa-${measurementIcon} sm:mr-1`} />
+                  <i className="fas fa-ellipsis-h hidden sm:inline" />
+                </Button>
+              </DropdownMenuTrigger>
+            </ToolbarTooltip>
 
-          <DropdownMenuContent className="w-56 bg-card text-foreground border border-border">
-            <DropdownMenuLabel>Công cụ đo lường</DropdownMenuLabel>
-            <DropdownMenuGroup>
-              {measurementTools.map((tool) => {
-                const disabled = isSeriesSR;
-                return (
-                  <DropdownMenuItem
-                    key={tool}
-                    onClick={(e) => {
-                      if (disabled) {
-                        e.stopPropagation();
-                        return;
-                      }
-                      onSelectTool(tool);
-                    }}
-                    className={`w-full text-left flex items-center px-2 py-2 ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'}`}
-                    aria-disabled={disabled}
-                  >
-                    <i className={`fas fa-${getIconForTool(tool)} mr-2`} />
-                    <span className="capitalize">{tool}</span>
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <DropdownMenuContent className="w-56 bg-card text-foreground border border-border">
+              <DropdownMenuLabel>Công cụ đo lường</DropdownMenuLabel>
+              <DropdownMenuGroup>
+                {measurementTools.map((tool) => {
+                  const disabled = isSeriesSR;
+                  return (
+                    <DropdownMenuItem
+                      key={tool}
+                      onClick={(e) => {
+                        if (disabled) {
+                          e.stopPropagation();
+                          return;
+                        }
+                        onSelectTool(tool);
+                      }}
+                      className={`w-full text-left flex items-center px-2 py-2 ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'}`}
+                      aria-disabled={disabled}
+                    >
+                      <i className={`fas fa-${getIconForTool(tool)} mr-2`} />
+                      <span className="capitalize">{tool}</span>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        {/* Other Tools Dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant={isOtherToolActive ? 'default' : 'ghost'}
-              className="w-12 sm:w-14 h-8 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
-              title="Other tools"
-            >
-              <i className={`fas fa-${otherIcon} sm:mr-1`} />
-              <i className="fas fa-ellipsis-h hidden sm:inline" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56 bg-card text-foreground border border-border">
-            <DropdownMenuLabel>Other</DropdownMenuLabel>
-            <DropdownMenuGroup>
-              {/* Angle Tool */}
-              <DropdownMenuItem
-                onClick={(e) => {
-                  if (isSeriesSR) {
-                    e.stopPropagation();
-                    return;
-                  }
-                  onSelectTool('angle');
-                }}
-                className={`w-full text-left flex items-center px-2 py-2 ${isSeriesSR ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'}`}
-                aria-disabled={isSeriesSR}
-              >
-                <i className="fas fa-angle-right mr-2" /> Angle
-              </DropdownMenuItem>
+          {/* Other Tools Dropdown */}
+          <DropdownMenu>
+            <ToolbarTooltip label={otherTooltip.label} detail={otherTooltip.detail}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant={isOtherToolActive ? 'default' : 'ghost'}
+                  className="w-12 sm:w-14 h-8 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
+                  aria-label={`${otherTooltip.label} — ${otherTooltip.detail}`}
+                >
+                  <i className={`fas fa-${otherIcon} sm:mr-1`} />
+                  <i className="fas fa-ellipsis-h hidden sm:inline" />
+                </Button>
+              </DropdownMenuTrigger>
+            </ToolbarTooltip>
+            <DropdownMenuContent className="w-56 bg-card text-foreground border border-border">
+              <DropdownMenuLabel>Other</DropdownMenuLabel>
+              <DropdownMenuGroup>
+                {/* Angle Tool */}
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    if (isSeriesSR) {
+                      e.stopPropagation();
+                      return;
+                    }
+                    onSelectTool('angle');
+                  }}
+                  className={`w-full text-left flex items-center px-2 py-2 ${isSeriesSR ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'}`}
+                  aria-disabled={isSeriesSR}
+                >
+                  <i className="fas fa-angle-right mr-2" /> Angle
+                </DropdownMenuItem>
 
-              {/* Rotate 90° */}
-              <DropdownMenuItem
-                onClick={() => {
-                  onRotate90();
-                  onSelectTool('rotate90');
-                }}
-              >
-                <i className="fas fa-sync-alt mr-2" /> Rotate 90°
-              </DropdownMenuItem>
+                {/* Rotate 90° */}
+                <DropdownMenuItem
+                  onClick={() => {
+                    onRotate90();
+                    onSelectTool('rotate90');
+                  }}
+                >
+                  <i className="fas fa-sync-alt mr-2" /> Rotate 90°
+                </DropdownMenuItem>
 
-              {/* Flip Horizontal */}
-              <DropdownMenuItem
-                onClick={() => {
-                  onFlipHorizontal();
-                  onSelectTool('flipHorizontal');
-                }}
-              >
-                <i className="fas fa-arrows-h mr-2" /> Flip Horizontal
-              </DropdownMenuItem>
+                {/* Flip Horizontal */}
+                <DropdownMenuItem
+                  onClick={() => {
+                    onFlipHorizontal();
+                    onSelectTool('flipHorizontal');
+                  }}
+                >
+                  <i className="fas fa-arrows-h mr-2" /> Flip Horizontal
+                </DropdownMenuItem>
 
-              {/* Reset */}
-              <DropdownMenuItem
-                onClick={() => {
-                  onReset();
-                  onSelectTool('reset');
-                }}
-              >
-                <i className="fas fa-redo mr-2" /> Reset View
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                {/* Reset */}
+                <DropdownMenuItem
+                  onClick={() => {
+                    onReset();
+                    onSelectTool('reset');
+                  }}
+                >
+                  <i className="fas fa-redo mr-2" /> Reset View
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        {/* CaptureControl */}
-        <CaptureControl viewportEl={viewportEl ?? null} />
+          {/* CaptureControl */}
+          <CaptureControl viewportEl={viewportEl ?? null} />
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
 
