@@ -12,14 +12,14 @@ import { TOOL_GROUP } from '@/constants/toolgroup';
  * Match OHIF's stack navigation semantics:
  * - wheel remains independent from the primary mouse tool;
  * - unloaded images are debounced by Cornerstone's target-index queue;
- * - manual wheel navigation stops at the stack boundaries.
+ * - manual wheel navigation wraps continuously across stack boundaries.
  *
  * Cine has its own loop option in useCine and is intentionally unaffected.
  */
 export const STACK_SCROLL_CONFIGURATION = Object.freeze({
   invert: false,
   debounceIfNotLoaded: true,
-  loop: false,
+  loop: true,
 });
 
 export const STACK_SCROLL_WHEEL_BINDINGS = Object.freeze([
