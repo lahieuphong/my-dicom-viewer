@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   Enums as CoreEnums,
   type StackViewport,
@@ -55,6 +55,11 @@ export function useStackVoiPersistence({
   stackKey,
 }: UseStackVoiPersistenceOptions) {
   const userVoiRef = useRef<VoiRange | null>(null);
+  const clearPersistedVoi = useCallback(() => {
+    // This also invalidates any STACK_NEW_IMAGE microtask that captured the
+    // previous object reference before Reset View was requested.
+    userVoiRef.current = null;
+  }, []);
 
   useEffect(() => {
     userVoiRef.current = null;
@@ -187,6 +192,8 @@ export function useStackVoiPersistence({
       );
     };
   }, [stackKey, viewportEl, viewportInstance]);
+
+  return clearPersistedVoi;
 }
 
 export default useStackVoiPersistence;

@@ -46,7 +46,6 @@ import {
   useStackVoiPersistence,
   useToolManager,
   useViewportAutoFitOnResize,
-  useViewportState,
   type AnnotationMeasurement,
   type ToolID,
 } from '@/extensions/cornerstone';
@@ -270,7 +269,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     delayMs: 80,     // 👈 có thể chỉnh nếu cần
   });
 
-  useStackVoiPersistence({
+  const clearPersistedVoi = useStackVoiPersistence({
     viewportInstance,
     viewportEl,
     stackKey: selectedSeries,
@@ -310,9 +309,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
     return () => { cancelled = true; };
   }, [viewportInstance]);
-
-
-  const { saveInitialState, resetToInitial } = useViewportState();
 
   // --- Robust runtime check of enabled element presence (safe, effect-based)
   const [runtimeHasImage, setRuntimeHasImage] = useState<boolean>(false);
@@ -400,7 +396,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const rotate = useRotate(viewportInstance);
   const flipHorizontal = useFlipHorizontal(renderingEngineRef, viewportId);
-  const resetViewer = useResetViewer(resetToInitial, viewportInstance);
+  const resetViewer = useResetViewer(viewportInstance, clearPersistedVoi);
   // useViewerLayout: quản lý grid + collapsed state cho sidebar & measurement panel
   const {
     gridCols,
