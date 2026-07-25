@@ -1,471 +1,1032 @@
-// Structured-report generator owned by the DICOM SR extension.
-import { annotation as csAnnotation } from '@cornerstonejs/tools';
+'use client';
+
+import { metaData } from '@cornerstonejs/core';
+
+import {
+  getCornerstoneSrRuntime,
+  SUPPORTED_SR_TOOL_NAMES,
+} from './adapterRuntime';
+
+export type DicomCode = {
+  CodeValue: string;
+  CodingSchemeDesignator: string;
+  CodeMeaning: string;
+};
 
 export interface SRMeasurement {
-  annotationUID: string;
-  trackingUniqueIdentifier?: string;
-  toolName: string;
-  finding?: string;
-  imageIndex?: number;
-  values?: Record<string, number | string | boolean | null>;
-  coordinates?: {
-    world?: number[][];
-    patient?: number[][];
-    image?: number[][];
-  };
-  referencedSOPInstanceUID?: string | null;
-  frameOfReferenceUID?: string | null;
+  uid: string;
+  label?: string;
+  annotation: any;
 }
 
 export interface CreateSRRequest {
-  request: 'CreateStructuredReport';
-  type?: string;
-  seriesUID?: string | null;
-  studyUID: string;
-  patientName?: string | null;
-  patientID?: string | null;
-  patientBirthDate?: string | null;
-  patientSex?: string | null;
-  documentTitle?: string | null;
+  studyInstanceUID: string;
   measurements: SRMeasurement[];
-  _issues?: string[];
-  generatedAt?: string;
+  seriesDescription: string;
+  seriesNumber: number;
+  instanceNumber?: number;
 }
 
-const PLACEHOLDER = null;
+export interface GeneratedStructuredReport {
+  dataset: any;
+  exportedMeasurementUIDs: string[];
+  sourceImageIds: string[];
+  sourceSeriesInstanceUIDs: string[];
+  measurementGroupCount: number;
+}
 
-/**
- * Read DICOM JSON tag and try to return a plain string (Value[0] if present).
- * Returns null when not available or not a string.
- */
-const getDicomTagString = (dicomJson: any, tag: string): string | null => {
+const FREE_TEXT_CODE_VALUE = 'CORNERSTONEFREETEXT';
+const FREE_TEXT_SCHEME = 'CORNERSTONEJS';
+const LENGTH_CONCEPTS = new Set([
+  'length',
+  'long axis',
+  'short axis',
+  'perimeter',
+  'radius',
+]);
+const AREA_CONCEPTS = new Set(['area']);
+
+function cloneAnnotation(annotation: any): any {
   try {
-    const entry = dicomJson?.[tag];
-    if (!entry) return null;
-
-    // Common DICOM JSON layout: { "vr": "PN", "Value": ["NGUYEN^VAN^A"] }
-    if (Array.isArray(entry.Value) && entry.Value.length > 0) {
-      const v0 = entry.Value[0];
-      if (typeof v0 === 'string') return v0;
-      // Sometimes the value is still an object; try common subfields
-      if (v0 && typeof v0 === 'object') {
-        // For PN objects, DICOM JSON may have Alphabetic component etc
-        if (typeof v0.Alphabetic === 'string') return v0.Alphabetic;
-        if (typeof v0.alphabetic === 'string') return v0.alphabetic;
-      }
-    }
-
-    // Some providers may store directly as a string at the tag key
-    if (typeof entry === 'string') return entry;
-
-    return null;
-  } catch (e) {
-    return null;
-  }
-};
-
-/** Normalize date-like strings to YYYYMMDD, or return null if not possible */
-const normalizeDateToYYYYMMDD = (raw?: string | null): string | null => {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  if (!s) return null;
-  // If already digits only and length 8, assume OK
-  const digits = s.replace(/[^0-9]/g, '');
-  if (digits.length === 8) return digits;
-  // If given like YYYY-MM-DD or YYYY/MM/DD
-  const m = s.match(/(\d{4}).?(\d{1,2}).?(\d{1,2})/);
-  if (m) {
-    const y = m[1].padStart(4, '0');
-    const mm = m[2].padStart(2, '0');
-    const dd = m[3].padStart(2, '0');
-    return `${y}${mm}${dd}`;
-  }
-  return null;
-};
-
-/** Try to find metadata object stored in metaManager for a given imageId (best-effort) */
-function tryGetMeta(metaManager: any, imageId?: string | null) {
-  if (!metaManager || !imageId) return null;
-  try {
-    const raw = String(imageId || '');
-    const candidates = [
-      raw,
-      raw.replace(/^imageId:/, ''),
-      raw.split('?')[0],
-      raw.replace(/^imageId:/, '').split('?')[0],
-    ].filter(Boolean);
-
-    for (const key of candidates) {
-      try {
-        if (typeof metaManager.get === 'function') {
-          const meta = metaManager.get(key);
-          if (meta) return meta;
-        } else if (metaManager[key]) {
-          return metaManager[key];
-        }
-      } catch {
-        // continue
-      }
-    }
-
-    // some managers store keys using the SOPInstanceUID or last path segment
-    try {
-      const alt = raw.replace(/^imageId:/, '').split('/').pop() ?? '';
-      if (alt) {
-        if (typeof metaManager.get === 'function') {
-          const m2 = metaManager.get(alt);
-          if (m2) return m2;
-        } else if (metaManager[alt]) {
-          return metaManager[alt];
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    return null;
+    return structuredClone(annotation);
   } catch {
-    return null;
+    return JSON.parse(JSON.stringify(annotation));
   }
 }
 
-function parseNumberArrayFromDicomJson(meta: any, tag: string): number[] | null {
-  if (!meta) return null;
-  const entry = meta?.[tag];
-  if (!entry) return null;
-  const vals = entry.Value ?? entry;
-  if (!Array.isArray(vals)) return null;
-  return vals.map((v: any) => Number(v));
+function asSequence(value: any): any[] {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function countMeasurementGroups(value: any): number {
+  if (!value || typeof value !== 'object') return 0;
+
+  let count = 0;
+  const concept = asSequence(value.ConceptNameCodeSequence)[0];
+  if (concept?.CodeMeaning === 'Measurement Group') {
+    count += 1;
+  }
+
+  for (const item of asSequence(value.ContentSequence)) {
+    count += countMeasurementGroups(item);
+  }
+
+  return count;
+}
+
+function createFreeTextCode(label: string): DicomCode {
+  return {
+    CodeValue: FREE_TEXT_CODE_VALUE,
+    CodingSchemeDesignator: FREE_TEXT_SCHEME,
+    CodeMeaning: label.slice(0, 64),
+  };
+}
+
+function firstNonEmptyString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+function firstDefined<T>(...values: T[]): T | undefined {
+  return values.find((value) => value !== null && typeof value !== 'undefined');
+}
+
+function padNumber(value: unknown, width: number): string {
+  return String(Number(value) || 0).padStart(width, '0');
+}
+
+function normalizeDicomDate(value: any): string | undefined {
+  if (typeof value === 'string') {
+    const normalized = value.replace(/[^0-9]/g, '');
+    return normalized || undefined;
+  }
+  if (!value || typeof value !== 'object' || !value.year) return undefined;
+
+  return `${padNumber(value.year, 4)}${padNumber(
+    value.month,
+    2
+  )}${padNumber(value.day, 2)}`;
+}
+
+function normalizeDicomTime(value: any): string | undefined {
+  if (typeof value === 'string') {
+    const normalized = value.replace(/:/g, '');
+    return normalized || undefined;
+  }
+  if (!value || typeof value !== 'object') return undefined;
+
+  return `${padNumber(value.hours, 2)}${padNumber(
+    value.minutes,
+    2
+  )}${padNumber(value.seconds, 2)}`;
+}
+
+function normalizePersonName(value: any): string | undefined {
+  if (typeof value === 'string') return value || undefined;
+  if (!value || typeof value !== 'object') return undefined;
+
+  const groups = [
+    value.Alphabetic ?? value.alphabetic,
+    value.Ideographic ?? value.ideographic,
+    value.Phonetic ?? value.phonetic,
+  ].map((part) => (typeof part === 'string' ? part : ''));
+  while (groups.length && !groups[groups.length - 1]) groups.pop();
+  return groups.join('=') || undefined;
+}
+
+function assignDefined(
+  target: Record<string, any>,
+  key: string,
+  value: unknown
+): void {
+  if (value !== null && typeof value !== 'undefined' && value !== '') {
+    target[key] = value;
+  }
 }
 
 /**
- * Convert pixel coordinates [col(x), row(y)] to patient coordinates in mm
- * requires tags: ImagePositionPatient (00200032), ImageOrientationPatient (00200037), PixelSpacing (00280030)
+ * dicom-image-loader's synthetic `instance` module omits patientModule and
+ * generalStudyModule. dcmjs copies patient/study tags from `instance`, so
+ * build a normalized allow-list here before generating the report. Parsed
+ * date/time objects cannot be passed directly to dcmjs's DICOM writer.
  */
-function pixelToPatientCoords(pointPx: number[], meta: any): number[] | null {
-  if (!meta) return null;
-  const ipp = parseNumberArrayFromDicomJson(meta, '00200032'); // ImagePositionPatient
-  const iop = parseNumberArrayFromDicomJson(meta, '00200037'); // ImageOrientationPatient
-  const pxSp = parseNumberArrayFromDicomJson(meta, '00280030'); // PixelSpacing (row, col)
+const srMetadataProvider = {
+  get(type: string, imageId: string): any {
+    const value = metaData.get(type, imageId);
+    if (type === 'frameNumber') {
+      const direct = Number(value);
+      if (Number.isInteger(direct) && direct >= 1) return direct;
 
-  if (!ipp || !iop || !pxSp) return null;
-  if (iop.length < 6 || pxSp.length < 2) return null;
-
-  const rowCosine = [iop[0], iop[1], iop[2]];
-  const colCosine = [iop[3], iop[4], iop[5]];
-  const rowSpacing = Number(pxSp[0]);
-  const colSpacing = Number(pxSp[1]);
-
-  const x = Number(pointPx[0]); // column
-  const y = Number(pointPx[1]); // row
-
-  const patient: number[] = [0, 0, 0];
-  for (let i = 0; i < 3; i++) {
-    patient[i] =
-      Number(ipp[i]) +
-      colCosine[i] * x * colSpacing +
-      rowCosine[i] * y * rowSpacing;
-  }
-  return patient;
-}
-
-function euclidean(a: number[], b: number[]) {
-  let s = 0;
-  const n = Math.max(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    const da = a[i] ?? 0;
-    const db = b[i] ?? 0;
-    s += (da - db) * (da - db);
-  }
-  return Math.sqrt(s);
-}
-
-/** Robust extractor for pixel points from many tool shapes */
-function extractPointsFromInst(inst: any): number[][] | undefined {
-  const d = inst?.data ?? inst;
-  const handles = d?.handles ?? d;
-
-  // 1) handles.points common pattern
-  if (Array.isArray(handles?.points) && handles.points.length) {
-    const p = handles.points
-      .map((pt: any) => {
-        if (Array.isArray(pt) && pt.length >= 2) return [Number(pt[0]), Number(pt[1])];
-        if (pt && typeof pt.x === 'number' && typeof pt.y === 'number') return [Number(pt.x), Number(pt.y)];
-        if (pt && Array.isArray(pt.position) && pt.position.length >= 2) return [Number(pt.position[0]), Number(pt.position[1])];
-        return null;
-      })
-      .filter(Boolean);
-    if (p.length) return p as number[][];
-  }
-
-  // 2) start/end pair (length)
-  if (handles?.start && handles?.end) {
-    const s = handles.start;
-    const e = handles.end;
-    const p1 = Array.isArray(s) && s.length >= 2 ? [Number(s[0]), Number(s[1])] : (s && s.x != null ? [Number(s.x), Number(s.y)] : null);
-    const p2 = Array.isArray(e) && e.length >= 2 ? [Number(e[0]), Number(e[1])] : (e && e.x != null ? [Number(e.x), Number(e.y)] : null);
-    if (p1 && p2) return [p1, p2];
-  }
-
-  // 3) controlPoints
-  if (Array.isArray(handles?.controlPoints) && handles.controlPoints.length) {
-    const p = handles.controlPoints
-      .map((pt: any) => {
-        if (Array.isArray(pt) && pt.length >= 2) return [Number(pt[0]), Number(pt[1])];
-        if (pt && typeof pt.x === 'number') return [Number(pt.x), Number(pt.y)];
-        return null;
-      })
-      .filter(Boolean);
-    if (p.length) return p as number[][];
-  }
-
-  // 4) other object-like containers
-  if (handles && typeof handles === 'object' && !Array.isArray(handles)) {
-    for (const k of Object.keys(handles)) {
-      const v = handles[k];
-      if (Array.isArray(v) && v.length) {
-        const p = v
-          .map((pt: any) => {
-            if (Array.isArray(pt) && pt.length >= 2) return [Number(pt[0]), Number(pt[1])];
-            if (pt && typeof pt.x === 'number') return [Number(pt.x), Number(pt.y)];
-            if (pt && Array.isArray(pt.position) && pt.position.length >= 2) return [Number(pt.position[0]), Number(pt.position[1])];
-            return null;
-          })
-          .filter(Boolean);
-        if (p.length) return p as number[][];
-      }
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Build CreateSRRequest JSON from Cornerstone annotations.
- * - Not binary DICOM SR.
- * - Tries best-effort to include referenced SOP + frameOfReference + patient coords + length_mm.
- */
-export function buildStructuredReport(
-  studyUID: string,
-  annotationUIDs: string[],
-  opts?: { documentTitle?: string }
-): CreateSRRequest {
-  const instances = annotationUIDs
-    .map((uid) => csAnnotation.state.getAnnotation(uid))
-    .filter(Boolean)
-    .map((inst: any) => JSON.parse(JSON.stringify(inst)));
-
-  const metaManager = (typeof window !== 'undefined' && (window as any).wadorsMetaDataManager)
-    ? (window as any).wadorsMetaDataManager
-    : null;
-
-  let patientName: string | null = null;
-  let patientID: string | null = null;
-  let patientBirthDate: string | null = null;
-  let patientSex: string | null = null;
-  let seriesUID: string | null = null;
-  let documentTitle = opts?.documentTitle ?? 'Structured Report';
-
-  if (instances.length > 0) {
-    const first = instances[0];
-    const refImageId: string | undefined = first?.metadata?.referencedImageId || first?.metadata?.imageId;
-    try {
-      if (metaManager && refImageId) {
-        const meta = tryGetMeta(metaManager, refImageId);
-        if (meta) {
-          const pn = getDicomTagString(meta, '00100010');
-          const pid = getDicomTagString(meta, '00100020');
-          const pbdRaw = getDicomTagString(meta, '00100030');
-          const ps = getDicomTagString(meta, '00100040');
-          const sUID = getDicomTagString(meta, '0020000E');
-          const studyDesc = getDicomTagString(meta, '00081030');
-
-          if (pn) patientName = pn;
-          if (pid) patientID = pid;
-          if (pbdRaw) patientBirthDate = normalizeDateToYYYYMMDD(pbdRaw);
-          if (ps) patientSex = ps;
-          if (sUID) seriesUID = sUID;
-          if (studyDesc) {
-            documentTitle = `${documentTitle} - ${studyDesc}`;
-          }
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
-
-  const reportIssues: string[] = [];
-
-  const measurements: SRMeasurement[] = instances.map((inst: any, idx: number) => {
-    const annotationUID = inst.annotationUID ?? `${studyUID}.sr.${Date.now()}.${idx}`;
-    const toolName = inst?.metadata?.toolName ?? inst?.toolName ?? 'Unknown';
-    const finding = inst?.data?.label ?? inst?.label ?? '';
-    const imageIndex =
-      typeof inst?.metadata?.sliceIndex === 'number'
-        ? inst.metadata.sliceIndex
-        : typeof inst?.metadata?.frameIndex === 'number'
-        ? inst.metadata.frameIndex
+      /**
+       * Both WADO-URI `frame=` and WADO-RS `/frames/` use DICOM's one-based
+       * frame number. Some dicom-image-loader providers do not expose a
+       * separate frameNumber metadata module, so retain that exact reference.
+       */
+      const match = String(imageId).match(
+        /(?:[?&]frame=|\/frames\/)(\d+)/i
+      );
+      const fromImageId = Number(match?.[1]);
+      return Number.isInteger(fromImageId) && fromImageId >= 1
+        ? fromImageId
         : undefined;
+    }
+    if (type !== 'instance') return value;
 
-    // resolve referenced image id
-    const refImageId: string | undefined =
-      inst?.metadata?.referencedImageId ||
-      inst?.metadata?.imageId ||
-      inst?.data?.imageId ||
-      inst?.metadata?.referencedSOPInstanceUID ||
-      inst?.metadata?.sopInstanceUID ||
-      undefined;
+    const base = value ?? {};
+    const patient = metaData.get('patientModule', imageId) ?? {};
+    const patientStudy =
+      metaData.get('patientStudyModule', imageId) ?? {};
+    const generalStudy =
+      metaData.get('generalStudyModule', imageId) ?? {};
+    const generalSeries =
+      metaData.get('generalSeriesModule', imageId) ?? {};
+    const sopCommon = metaData.get('sopCommonModule', imageId) ?? {};
+    const multiframe = metaData.get('multiframeModule', imageId) ?? {};
+    const instance: Record<string, any> = {};
 
-    if (!refImageId) {
-      reportIssues.push(`annotation ${annotationUID}: missing referencedImageId`);
+    assignDefined(
+      instance,
+      'StudyInstanceUID',
+      firstDefined(
+        base.StudyInstanceUID,
+        generalSeries.studyInstanceUID
+      )
+    );
+    assignDefined(
+      instance,
+      'SeriesInstanceUID',
+      firstDefined(
+        base.SeriesInstanceUID,
+        generalSeries.seriesInstanceUID
+      )
+    );
+    assignDefined(
+      instance,
+      'SeriesNumber',
+      firstDefined(base.SeriesNumber, generalSeries.seriesNumber)
+    );
+    assignDefined(
+      instance,
+      'SeriesDescription',
+      firstDefined(
+        base.SeriesDescription,
+        generalSeries.seriesDescription
+      )
+    );
+    assignDefined(
+      instance,
+      'Modality',
+      firstDefined(base.Modality, generalSeries.modality)
+    );
+    assignDefined(
+      instance,
+      'StudyDescription',
+      firstDefined(
+        base.StudyDescription,
+        generalStudy.studyDescription
+      )
+    );
+    assignDefined(
+      instance,
+      'AccessionNumber',
+      firstDefined(
+        base.AccessionNumber,
+        generalStudy.accessionNumber
+      )
+    );
+    assignDefined(
+      instance,
+      'PatientID',
+      firstDefined(base.PatientID, patient.patientID)
+    );
+    assignDefined(
+      instance,
+      'PatientName',
+      normalizePersonName(
+        firstDefined(base.PatientName, patient.patientName)
+      )
+    );
+    assignDefined(
+      instance,
+      'PatientSex',
+      firstDefined(
+        base.PatientSex,
+        patient.patientSex,
+        patientStudy.patientSex
+      )
+    );
+    assignDefined(
+      instance,
+      'PatientBirthDate',
+      normalizeDicomDate(
+        firstDefined(
+          base.PatientBirthDate,
+          patient.patientBirthDate,
+          patientStudy.patientBirthDate
+        )
+      )
+    );
+    assignDefined(
+      instance,
+      'PatientBirthTime',
+      normalizeDicomTime(
+        firstDefined(
+          base.PatientBirthTime,
+          patient.patientBirthTime,
+          patientStudy.patientBirthTime
+        )
+      )
+    );
+    assignDefined(
+      instance,
+      'IssuerOfPatientID',
+      firstDefined(
+        base.IssuerOfPatientID,
+        patient.issuerOfPatientID
+      )
+    );
+    assignDefined(
+      instance,
+      'PatientIdentityRemoved',
+      firstDefined(
+        base.PatientIdentityRemoved,
+        patient.patientIdentityRemoved
+      )
+    );
+
+    const patientAge = firstDefined(
+      base.PatientAge,
+      patientStudy.patientAge
+    );
+    if (
+      typeof patientAge === 'string' &&
+      /^\d{3}[DWMY]$/.test(patientAge)
+    ) {
+      instance.PatientAge = patientAge;
     }
 
-    const meta = tryGetMeta(metaManager, refImageId);
+    assignDefined(
+      instance,
+      'StudyDate',
+      normalizeDicomDate(
+        firstDefined(base.StudyDate, generalStudy.studyDate)
+      )
+    );
+    assignDefined(
+      instance,
+      'StudyTime',
+      normalizeDicomTime(
+        firstDefined(base.StudyTime, generalStudy.studyTime)
+      )
+    );
+    assignDefined(
+      instance,
+      'StudyID',
+      firstDefined(
+        base.StudyID,
+        generalStudy.studyID,
+        generalStudy.studyId
+      )
+    );
+    assignDefined(
+      instance,
+      'ReferringPhysicianName',
+      normalizePersonName(
+        firstDefined(
+          base.ReferringPhysicianName,
+          generalStudy.referringPhysicianName
+        )
+      )
+    );
+    assignDefined(
+      instance,
+      'BodyPartExamined',
+      firstDefined(
+        base.BodyPartExamined,
+        generalStudy.bodyPartExamined,
+        generalSeries.bodyPartExamined
+      )
+    );
+    assignDefined(
+      instance,
+      'TimezoneOffsetFromUTC',
+      firstDefined(
+        base.TimezoneOffsetFromUTC,
+        generalStudy.timezoneOffsetFromUTC,
+        generalSeries.timezoneOffsetFromUTC
+      )
+    );
+    assignDefined(
+      instance,
+      'SeriesDate',
+      normalizeDicomDate(
+        firstDefined(base.SeriesDate, generalSeries.seriesDate)
+      )
+    );
+    assignDefined(
+      instance,
+      'SeriesTime',
+      normalizeDicomTime(
+        firstDefined(base.SeriesTime, generalSeries.seriesTime)
+      )
+    );
+    assignDefined(
+      instance,
+      'NumberOfFrames',
+      firstDefined(base.NumberOfFrames, multiframe.numberOfFrames)
+    );
+    assignDefined(
+      instance,
+      'SOPClassUID',
+      firstDefined(base.SOPClassUID, sopCommon.sopClassUID)
+    );
+    assignDefined(
+      instance,
+      'SOPInstanceUID',
+      firstDefined(base.SOPInstanceUID, sopCommon.sopInstanceUID)
+    );
 
-    // determine referenced SOP UID
-    let referencedSOPInstanceUID: string | null = null;
-    if (meta) {
-      referencedSOPInstanceUID = getDicomTagString(meta, '00080018') || null;
+    return instance;
+  },
+};
+
+function toPoint3(value: any): [number, number, number] | null {
+  if (!Array.isArray(value) && !ArrayBuffer.isView(value)) return null;
+
+  const indexed = value as any;
+  const x = Number(indexed[0]);
+  const y = Number(indexed[1]);
+  const z = Number(indexed[2] ?? 0);
+  return [x, y, z].every(Number.isFinite) ? [x, y, z] : null;
+}
+
+function distance3(first: any, second: any): number {
+  const a = toPoint3(first);
+  const b = toPoint3(second);
+  if (!a || !b) return Number.NaN;
+
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}
+
+function polylineLength(points: any[], closed: boolean): number {
+  if (!Array.isArray(points) || points.length < 2) return Number.NaN;
+
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const segment = distance3(points[index - 1], points[index]);
+    if (!Number.isFinite(segment)) return Number.NaN;
+    total += segment;
+  }
+
+  if (closed) {
+    const closingSegment = distance3(points[points.length - 1], points[0]);
+    if (!Number.isFinite(closingSegment)) return Number.NaN;
+    total += closingSegment;
+  }
+
+  return total;
+}
+
+/**
+ * Area of a planar polygon embedded in 3D. Cornerstone stores annotation
+ * handles in patient/world millimetres, so the result is square millimetres.
+ */
+function polygonArea3(points: any[]): number {
+  if (!Array.isArray(points) || points.length < 3) return Number.NaN;
+
+  const parsed = points.map(toPoint3);
+  if (parsed.some((point) => !point)) return Number.NaN;
+
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (let index = 0; index < parsed.length; index += 1) {
+    const current = parsed[index]!;
+    const next = parsed[(index + 1) % parsed.length]!;
+    x += current[1] * next[2] - current[2] * next[1];
+    y += current[2] * next[0] - current[0] * next[2];
+    z += current[0] * next[1] - current[1] * next[0];
+  }
+
+  return Math.hypot(x, y, z) / 2;
+}
+
+function angleDegrees(first: any, vertex: any, last: any): number {
+  const a = toPoint3(first);
+  const b = toPoint3(vertex);
+  const c = toPoint3(last);
+  if (!a || !b || !c) return Number.NaN;
+
+  const firstVector = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const secondVector = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
+  const firstLength = Math.hypot(...firstVector);
+  const secondLength = Math.hypot(...secondVector);
+  if (!firstLength || !secondLength) return Number.NaN;
+
+  const cosine = Math.max(
+    -1,
+    Math.min(
+      1,
+      firstVector.reduce(
+        (sum, value, index) => sum + value * secondVector[index],
+        0
+      ) /
+        (firstLength * secondLength)
+    )
+  );
+  return (Math.acos(cosine) * 180) / Math.PI;
+}
+
+function requireFiniteStat(
+  stats: Record<string, any>,
+  key: string,
+  fallback: number,
+  annotationUID: string
+): number {
+  const current = Number(stats[key]);
+  const value = Number.isFinite(current) ? current : fallback;
+  if (!Number.isFinite(value)) {
+    throw new Error(
+      `Measurement ${annotationUID} has no valid ${key} value.`
+    );
+  }
+  stats[key] = value;
+  return value;
+}
+
+function hasPhysicalPixelSpacing(imageId: string): boolean {
+  const imagePlane = metaData.get('imagePlaneModule', imageId) ?? {};
+  const rowPixelSpacing = Number(imagePlane.rowPixelSpacing);
+  const columnPixelSpacing = Number(imagePlane.columnPixelSpacing);
+  return (
+    Number.isFinite(rowPixelSpacing) &&
+    rowPixelSpacing > 0 &&
+    Number.isFinite(columnPixelSpacing) &&
+    columnPixelSpacing > 0
+  );
+}
+
+function normalizeLengthUnit(
+  value: unknown,
+  referencedImageId: string
+): 'mm' | 'px' {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized.startsWith('px')) return 'px';
+  if (normalized.startsWith('mm')) return 'mm';
+  return hasPhysicalPixelSpacing(referencedImageId) ? 'mm' : 'px';
+}
+
+function normalizeAreaUnit(
+  value: unknown,
+  referencedImageId: string
+): 'mm2' | 'px2' {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized.startsWith('px')) return 'px2';
+  if (normalized.startsWith('mm')) return 'mm2';
+  return hasPhysicalPixelSpacing(referencedImageId) ? 'mm2' : 'px2';
+}
+
+/**
+ * Cornerstone's current SR adapters omit units for several tool types and
+ * require perimeter/radius values that normal cachedStats do not always
+ * contain. Complete those values on the cloned export snapshot only.
+ */
+function normalizeCachedStats(
+  annotation: any,
+  referencedImageId: string,
+  toolName: string,
+  annotationUID: string
+): void {
+  const cachedStats = annotation?.data?.cachedStats;
+  if (!cachedStats || typeof cachedStats !== 'object') {
+    annotation.data.cachedStats = {};
+  }
+
+  const expectedKey = `imageId:${referencedImageId}`;
+  const normalizedCachedStats = annotation.data.cachedStats;
+  if (!normalizedCachedStats[expectedKey]) {
+    const firstStats = Object.values(normalizedCachedStats)[0];
+    normalizedCachedStats[expectedKey] =
+      firstStats && typeof firstStats === 'object' ? { ...firstStats } : {};
+  }
+  const stats = normalizedCachedStats[expectedKey] as Record<string, any>;
+  const handlePoints = annotation?.data?.handles?.points ?? [];
+  const contourPoints = annotation?.data?.contour?.polyline ?? [];
+
+  switch (toolName) {
+    case 'Length': {
+      requireFiniteStat(
+        stats,
+        'length',
+        distance3(handlePoints[0], handlePoints[1]),
+        annotationUID
+      );
+      stats.unit = normalizeLengthUnit(stats.unit, referencedImageId);
+      break;
     }
-    if (!referencedSOPInstanceUID && refImageId) {
-      const m = String(refImageId).replace(/^imageId:/, '').match(/\/instances\/([^\/]+)/);
-      if (m && m[1]) referencedSOPInstanceUID = m[1];
-      else {
-        const cand = String(refImageId).split('/').pop();
-        if (cand && cand.includes('.')) referencedSOPInstanceUID = cand;
+    case 'Bidirectional': {
+      const firstAxis = distance3(handlePoints[0], handlePoints[1]);
+      const secondAxis = distance3(handlePoints[2], handlePoints[3]);
+      requireFiniteStat(
+        stats,
+        'length',
+        Math.max(firstAxis, secondAxis),
+        annotationUID
+      );
+      requireFiniteStat(
+        stats,
+        'width',
+        Math.min(firstAxis, secondAxis),
+        annotationUID
+      );
+      stats.unit = normalizeLengthUnit(stats.unit, referencedImageId);
+      break;
+    }
+    case 'CircleROI': {
+      const radius = requireFiniteStat(
+        stats,
+        'radius',
+        distance3(handlePoints[0], handlePoints[1]),
+        annotationUID
+      );
+      requireFiniteStat(
+        stats,
+        'perimeter',
+        2 * Math.PI * radius,
+        annotationUID
+      );
+      requireFiniteStat(
+        stats,
+        'area',
+        Math.PI * radius * radius,
+        annotationUID
+      );
+      stats.unit = normalizeLengthUnit(
+        stats.unit ?? stats.radiusUnit ?? stats.areaUnit,
+        referencedImageId
+      );
+      stats.areaUnit = normalizeAreaUnit(
+        stats.areaUnit ?? stats.unit,
+        referencedImageId
+      );
+      break;
+    }
+    case 'EllipticalROI': {
+      const firstDiameter = distance3(handlePoints[0], handlePoints[1]);
+      const secondDiameter = distance3(handlePoints[2], handlePoints[3]);
+      requireFiniteStat(
+        stats,
+        'area',
+        (Math.PI * firstDiameter * secondDiameter) / 4,
+        annotationUID
+      );
+      stats.areaUnit = normalizeAreaUnit(
+        stats.areaUnit,
+        referencedImageId
+      );
+      break;
+    }
+    case 'RectangleROI': {
+      const orderedCorners = [
+        handlePoints[0],
+        handlePoints[1],
+        handlePoints[3],
+        handlePoints[2],
+      ];
+      requireFiniteStat(
+        stats,
+        'perimeter',
+        polylineLength(orderedCorners, true),
+        annotationUID
+      );
+      requireFiniteStat(
+        stats,
+        'area',
+        polygonArea3(orderedCorners),
+        annotationUID
+      );
+      stats.unit = normalizeLengthUnit(
+        stats.unit ?? stats.areaUnit,
+        referencedImageId
+      );
+      stats.areaUnit = normalizeAreaUnit(
+        stats.areaUnit ?? stats.unit,
+        referencedImageId
+      );
+      break;
+    }
+    case 'SplineROI': {
+      const closed = annotation?.data?.contour?.closed !== false;
+      requireFiniteStat(
+        stats,
+        'perimeter',
+        polylineLength(contourPoints, closed),
+        annotationUID
+      );
+      requireFiniteStat(
+        stats,
+        'area',
+        polygonArea3(contourPoints),
+        annotationUID
+      );
+      stats.unit = normalizeLengthUnit(
+        stats.unit ?? stats.areaUnit,
+        referencedImageId
+      );
+      stats.areaUnit = normalizeAreaUnit(
+        stats.areaUnit ?? stats.unit,
+        referencedImageId
+      );
+      break;
+    }
+    case 'Angle': {
+      requireFiniteStat(
+        stats,
+        'angle',
+        angleDegrees(handlePoints[0], handlePoints[1], handlePoints[2]),
+        annotationUID
+      );
+      break;
+    }
+  }
+}
+
+function normalizeAndValidateNumericContent(value: any): void {
+  if (!value || typeof value !== 'object') return;
+
+  const concept = String(
+    asSequence(value.ConceptNameCodeSequence)[0]?.CodeMeaning ?? ''
+  )
+    .trim()
+    .toLowerCase();
+
+  /**
+   * dcmjs 0.43 emits Point/ArrowAnnotate as a NUM without a measured value and
+   * puts two points into a POINT SCOORD. Represent it as the qualitative
+   * spatial content item it actually is: one arrow tip plus its IMAGE child.
+   * Cornerstone's reader supports this direct SCOORD form and reconstructs a
+   * display tail on hydration.
+   */
+  if (
+    value.ValueType === 'NUM' &&
+    concept === 'center' &&
+    !asSequence(value.MeasuredValueSequence)[0]
+  ) {
+    const spatialItem = asSequence(value.ContentSequence).find(
+      (item) =>
+        item?.ValueType === 'SCOORD' || item?.ValueType === 'SCOORD3D'
+    );
+    if (!spatialItem) {
+      throw new Error('Generated SR point annotation has no spatial content.');
+    }
+
+    const coordinateCount = spatialItem.ValueType === 'SCOORD3D' ? 3 : 2;
+    const graphicData = Array.from(spatialItem.GraphicData ?? []).slice(
+      0,
+      coordinateCount
+    );
+    if (
+      graphicData.length !== coordinateCount ||
+      graphicData.some((coordinate) => !Number.isFinite(Number(coordinate)))
+    ) {
+      throw new Error(
+        'Generated SR point annotation has invalid coordinates.'
+      );
+    }
+
+    value.ValueType = spatialItem.ValueType;
+    value.GraphicType = 'POINT';
+    value.GraphicData = graphicData;
+    value.ContentSequence = spatialItem.ContentSequence;
+    if (spatialItem.ReferencedFrameOfReferenceUID) {
+      value.ReferencedFrameOfReferenceUID =
+        spatialItem.ReferencedFrameOfReferenceUID;
+    }
+    delete value.MeasuredValueSequence;
+  }
+
+  if (value.ValueType === 'NUM') {
+    const measuredValue = asSequence(value.MeasuredValueSequence)[0];
+    const numericValue = Number(measuredValue?.NumericValue);
+
+    if (!Number.isFinite(numericValue)) {
+      throw new Error(
+        `Generated SR has an invalid numeric value for ${concept || 'a measurement'}.`
+      );
+    }
+    // DICOM DS is limited to 16 characters. Keep ample measurement precision
+    // while preventing dcmjs from silently truncating longer JS decimals.
+    measuredValue.NumericValue = Number(numericValue.toPrecision(12));
+
+    if (AREA_CONCEPTS.has(concept)) {
+      const conceptCode = asSequence(
+        value.ConceptNameCodeSequence
+      )[0];
+      if (conceptCode?.CodeValue === 'G-D7FE') {
+        // dcmjs uses the SRT Length code for Ellipse AREA.
+        conceptCode.CodeValue = 'G-A166';
       }
     }
-    if (!referencedSOPInstanceUID) referencedSOPInstanceUID = inst?.metadata?.sopInstanceUID || inst?.sopInstanceUID || null;
-    if (!referencedSOPInstanceUID) {
-      reportIssues.push(`annotation ${annotationUID}: could not determine referencedSOPInstanceUID`);
+
+    const unit = asSequence(
+      measuredValue?.MeasurementUnitsCodeSequence
+    )[0];
+    if (!unit?.CodeValue || !unit?.CodingSchemeDesignator) {
+      throw new Error(
+        `Generated SR has no measurement unit for ${concept || 'a numeric value'}.`
+      );
     }
-
-    const frameOfReferenceUID = meta ? (getDicomTagString(meta, '00200052') || null) : (inst?.metadata?.frameOfReferenceUID ?? null);
-
-    // extract pixel points robustly
-    const pixelPoints = extractPointsFromInst(inst);
-    if (!pixelPoints || pixelPoints.length === 0) {
-      reportIssues.push(`annotation ${annotationUID}: no pixel points extracted`);
+    if (
+      LENGTH_CONCEPTS.has(concept) &&
+      !['mm', '1'].includes(String(unit.CodeValue))
+    ) {
+      throw new Error(
+        `Generated SR has an unsupported length unit for ${concept}.`
+      );
     }
+    if (
+      AREA_CONCEPTS.has(concept) &&
+      !['mm2', '1'].includes(String(unit.CodeValue))
+    ) {
+      throw new Error(
+        `Generated SR has an unsupported area unit for ${concept}.`
+      );
+    }
+  }
 
-    // compute pixel length if possible
-    let length_px: number | undefined = undefined;
-    if (pixelPoints && pixelPoints.length >= 2) {
-      const a = pixelPoints[0], b = pixelPoints[1];
-      const dx = a[0] - b[0], dy = a[1] - b[1];
-      length_px = Math.sqrt(dx * dx + dy * dy);
-    } else {
-      // try cachedStats fallback
-      try {
-        if (inst?.data?.cachedStats) {
-          const keys = Object.keys(inst.data.cachedStats);
-          if (keys.length > 0) {
-            const stat = inst.data.cachedStats[keys[0]];
-            if (stat?.length != null) length_px = Number(stat.length);
-          }
-        }
-      } catch (e) {
-        // ignore
+  for (const item of asSequence(value.ContentSequence)) {
+    normalizeAndValidateNumericContent(item);
+  }
+}
+
+function assertSourceMetadata(
+  referencedImageId: string,
+  studyInstanceUID: string,
+  annotationUID: string
+): {
+  sourceSeriesInstanceUID: string;
+} {
+  const sopCommon = metaData.get('sopCommonModule', referencedImageId) as
+    | { sopClassUID?: string; sopInstanceUID?: string }
+    | undefined;
+  const instance = metaData.get('instance', referencedImageId) as
+    | {
+        StudyInstanceUID?: string;
+        SeriesInstanceUID?: string;
       }
+    | undefined;
+
+  if (!sopCommon?.sopClassUID || !sopCommon.sopInstanceUID) {
+    throw new Error(
+      `Measurement ${annotationUID} is missing referenced SOP metadata.`
+    );
+  }
+
+  if (!instance?.StudyInstanceUID || !instance.SeriesInstanceUID) {
+    throw new Error(
+      `Measurement ${annotationUID} is missing study/series metadata.`
+    );
+  }
+
+  if (instance.StudyInstanceUID !== studyInstanceUID) {
+    throw new Error(
+      `Measurement ${annotationUID} belongs to a different study.`
+    );
+  }
+
+  const numberOfFrames = Number(
+    srMetadataProvider.get('instance', referencedImageId)
+      ?.NumberOfFrames
+  );
+  if (Number.isFinite(numberOfFrames) && numberOfFrames > 1) {
+    const frameNumber = srMetadataProvider.get(
+      'frameNumber',
+      referencedImageId
+    );
+    if (!Number.isInteger(frameNumber) || frameNumber < 1) {
+      throw new Error(
+        `Measurement ${annotationUID} is missing its referenced frame number.`
+      );
+    }
+  }
+
+  return {
+    sourceSeriesInstanceUID: instance.SeriesInstanceUID,
+  };
+}
+
+function validateGeneratedDataset(
+  dataset: any,
+  request: CreateSRRequest,
+  expectedMeasurementCount: number
+): number {
+  if (!dataset?.SOPClassUID) {
+    throw new Error('Generated report has no SOP Class UID.');
+  }
+  if (!dataset?.SOPInstanceUID || !dataset?.SeriesInstanceUID) {
+    throw new Error('Generated report has no SOP/Series Instance UID.');
+  }
+  if (dataset.StudyInstanceUID !== request.studyInstanceUID) {
+    throw new Error('Generated report does not belong to the active study.');
+  }
+
+  const template = asSequence(dataset.ContentTemplateSequence)[0];
+  if (String(template?.TemplateIdentifier ?? '') !== '1500') {
+    throw new Error('Generated report is not a DICOM TID 1500 report.');
+  }
+
+  const groupCount = countMeasurementGroups(dataset);
+  if (groupCount !== expectedMeasurementCount) {
+    throw new Error(
+      `Generated report contains ${groupCount}/${expectedMeasurementCount} measurement groups.`
+    );
+  }
+
+  return groupCount;
+}
+
+/**
+ * OHIF-compatible SR generation:
+ * Measurement-service snapshots are intersected with live Cornerstone
+ * annotations by UID before this function is called.  Each tool is then
+ * serialized by the official Cornerstone3D TID300/TID1501/TID1500 adapters.
+ */
+export async function buildStructuredReport(
+  request: CreateSRRequest
+): Promise<GeneratedStructuredReport> {
+  if (!request.studyInstanceUID) {
+    throw new Error('Study Instance UID is required.');
+  }
+  if (!request.measurements.length) {
+    throw new Error('There are no measurements to export.');
+  }
+
+  const { MeasurementReport } = await getCornerstoneSrRuntime();
+  const toolState: Record<string, Record<string, { data: any[] }>> = {};
+  const exportedMeasurementUIDs: string[] = [];
+  const sourceImageIds = new Set<string>();
+  const sourceSeriesInstanceUIDs = new Set<string>();
+
+  for (const measurement of request.measurements) {
+    const annotation = cloneAnnotation(measurement.annotation);
+    const annotationUID = String(
+      annotation?.annotationUID ?? measurement.uid ?? ''
+    );
+    const toolName = String(
+      annotation?.metadata?.toolName ?? annotation?.toolName ?? ''
+    );
+    const referencedImageId = String(
+      annotation?.metadata?.referencedImageId ??
+        annotation?.metadata?.imageId ??
+        ''
+    );
+
+    if (!annotationUID || annotationUID !== measurement.uid) {
+      throw new Error('Measurement and annotation identifiers do not match.');
+    }
+    if (!SUPPORTED_SR_TOOL_NAMES.has(toolName)) {
+      throw new Error(`Tool ${toolName || 'Unknown'} cannot be exported to SR.`);
+    }
+    if (!referencedImageId) {
+      throw new Error(
+        `Measurement ${annotationUID} has no referenced image.`
+      );
+    }
+    if (!MeasurementReport.measurementAdapterByToolType?.has(toolName)) {
+      throw new Error(`No DICOM SR adapter is registered for ${toolName}.`);
     }
 
-    // compute mm length if possible
-    let length_mm: number | null = null;
-    let mmComputed = false; // true if computed from patient coords (best), or from PixelSpacing as fallback.
-    if (pixelPoints && pixelPoints.length >= 2 && meta) {
-      try {
-        const p0 = pixelToPatientCoords(pixelPoints[0], meta);
-        const p1 = pixelToPatientCoords(pixelPoints[1], meta);
-        if (p0 && p1) {
-          length_mm = euclidean(p0, p1);
-          mmComputed = true;
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
+    const { sourceSeriesInstanceUID } = assertSourceMetadata(
+      referencedImageId,
+      request.studyInstanceUID,
+      annotationUID
+    );
 
-    // if mm not computed but PixelSpacing exists we can approximate by avg spacing * px
-    if (length_mm == null && length_px != null && meta) {
-      const pxSp = parseNumberArrayFromDicomJson(meta, '00280030');
-      if (pxSp && Array.isArray(pxSp) && pxSp.length >= 2) {
-        const avg = (Number(pxSp[0]) + Number(pxSp[1])) / 2;
-        length_mm = Number((length_px * avg).toFixed(3));
-        mmComputed = false; // fallback conversion
-      }
-    }
-
-    // Build values object consistently (numbers or null)
-    const values: Record<string, number | string | boolean | null> = {};
-    values['length_px'] = length_px != null ? Number(Number(length_px).toFixed(3)) : null;
-    if (length_mm != null) {
-      values['length_mm'] = Number(Number(length_mm).toFixed(3));
-      values['unit'] = 'mm';
-      values['mmComputed'] = mmComputed;
-    } else {
-      values['length_mm'] = null;
-      values['unit'] = 'px';
-      values['mmComputed'] = false;
-    }
-
-    // coordinates: include image (pixel) always if available, and patient if available
-    const coordsObj: any = {};
-    if (pixelPoints && pixelPoints.length) {
-      coordsObj.image = pixelPoints.map((pt: any) => [Number(pt[0]), Number(pt[1])]);
-    }
-    if (meta && pixelPoints && pixelPoints.length) {
-      try {
-        const patientPts = pixelPoints
-          .map((pt) => pixelToPatientCoords(pt, meta))
-          .filter(Boolean) as number[][];
-        if (patientPts && patientPts.length) coordsObj.patient = patientPts;
-        if (patientPts && patientPts.length) coordsObj.world = patientPts;
-      } catch (e) {
-        // ignore
-      }
-    } else if (pixelPoints && pixelPoints.length) {
-      coordsObj.world = pixelPoints.map((pt: any) => [Number(pt[0]), Number(pt[1])]);
-    }
-
-    const measurement: SRMeasurement = {
-      annotationUID,
-      trackingUniqueIdentifier: annotationUID,
+    annotation.metadata = {
+      ...(annotation.metadata ?? {}),
       toolName,
-      finding,
-      imageIndex,
-      values: Object.keys(values).length ? (values as any) : undefined,
-      coordinates: Object.keys(coordsObj).length ? coordsObj : undefined,
-      referencedSOPInstanceUID: referencedSOPInstanceUID ?? null,
-      frameOfReferenceUID: frameOfReferenceUID ?? null,
+      referencedImageId,
+    };
+    annotation.data = {
+      ...(annotation.data ?? {}),
     };
 
-    // NOTE: use bracket access to avoid TypeScript linting errors on keys with underscores
-    if (measurement.values?.['length_px'] == null && measurement.values?.['length_mm'] == null) {
-      reportIssues.push(`annotation ${annotationUID}: no length info available`);
+    const label = firstNonEmptyString(
+      measurement.label,
+      annotation.metadata?.label,
+      annotation.data?.label,
+      toolName === 'ArrowAnnotate' ? annotation.data?.text : undefined
+    );
+    if (label) {
+      annotation.data.label = label;
+      annotation.metadata.label = label;
+
+      const freeTextCode = createFreeTextCode(label);
+      if (toolName === 'ArrowAnnotate') {
+        annotation.data.text = label;
+        annotation.finding = freeTextCode;
+      } else {
+        annotation.findingSites = [
+          ...(Array.isArray(annotation.findingSites)
+            ? annotation.findingSites
+            : []),
+          freeTextCode,
+        ];
+      }
     }
 
-    return measurement;
-  });
+    normalizeCachedStats(
+      annotation,
+      referencedImageId,
+      toolName,
+      annotationUID
+    );
 
-  // Build final report with server-friendly plain fields
-  const report: CreateSRRequest = {
-    request: 'CreateStructuredReport',
-    type: 'StructuredReport',
-    studyUID,
-    generatedAt: new Date().toISOString(),
-    seriesUID: seriesUID ?? null,
-    patientName: patientName ?? null,
-    patientID: patientID ?? null,
-    patientBirthDate: patientBirthDate ?? null,
-    patientSex: patientSex ?? null,
-    documentTitle,
-    measurements,
+    toolState[referencedImageId] ??= {};
+    toolState[referencedImageId][toolName] ??= { data: [] };
+    toolState[referencedImageId][toolName].data.push(annotation);
+
+    exportedMeasurementUIDs.push(annotationUID);
+    sourceImageIds.add(referencedImageId);
+    sourceSeriesInstanceUIDs.add(sourceSeriesInstanceUID);
+  }
+
+  const report = MeasurementReport.generateReport(
+    toolState,
+    srMetadataProvider,
+    {
+      SeriesDescription:
+        request.seriesDescription.trim() || 'Measurement Report',
+      SeriesNumber: request.seriesNumber,
+      InstanceNumber: request.instanceNumber ?? 1,
+    }
+  );
+  const dataset = report?.dataset;
+
+  if (!dataset) {
+    throw new Error('Cornerstone failed to generate a DICOM SR dataset.');
+  }
+  if (typeof dataset.SpecificCharacterSet === 'undefined') {
+    dataset.SpecificCharacterSet = 'ISO_IR 192';
+  }
+  normalizeAndValidateNumericContent(dataset);
+
+  const measurementGroupCount = validateGeneratedDataset(
+    dataset,
+    request,
+    exportedMeasurementUIDs.length
+  );
+
+  return {
+    dataset,
+    exportedMeasurementUIDs,
+    sourceImageIds: Array.from(sourceImageIds),
+    sourceSeriesInstanceUIDs: Array.from(sourceSeriesInstanceUIDs),
+    measurementGroupCount,
   };
-
-  (report as any)._issues = reportIssues;
-
-  if (reportIssues.length) {}
-
-  return report;
 }

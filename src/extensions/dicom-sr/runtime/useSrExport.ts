@@ -1,632 +1,580 @@
-// Structured-report application hook owned by the DICOM SR extension.
 'use client';
+
+import { useCallback, useEffect, useRef } from 'react';
 import { saveAs } from 'file-saver';
 import { annotation as csAnnotation } from '@cornerstonejs/tools';
-import { buildStructuredReport } from './generator';
-import { getEnabledElement } from '@cornerstonejs/core';
-import { enableElement } from '@/lib/cornerstone/element';
-import type { StackViewport } from '@cornerstonejs/core';
+
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
+import { releaseMeasurementAnnotationStyle } from '@/lib/cornerstone/measurementStyles';
+import { safeRemoveAnnotationByUID } from '@/lib/viewer/annotationHelpers';
 import type { Series } from '@/platform/core';
-import { normalizeId } from '@/lib/viewer/dom';
+
+import {
+  buildStructuredReport,
+  type GeneratedStructuredReport,
+  type SRMeasurement,
+} from './generator';
+import {
+  datasetToDicomJson,
+  datasetToDicomPart10Blob,
+} from './dicomWriter';
+import {
+  hydrateStructuredReportForLocalViewer,
+  type HydratedLocalSrMeasurement,
+} from './hydration';
+import {
+  collectSrMeasurementSnapshot,
+  StaleMeasurementSnapshotError,
+} from './measurementSnapshot';
+
+type SeriesMapEntry = { files: string[]; metadata: Series };
+
+type LoadedSrEntry = {
+  id: string;
+  label: string;
+  count: number;
+  instances: any[];
+  groupLabel?: string;
+};
 
 type UseSrExportDeps = {
   allMeasurements: AnnotationMeasurement[];
-  mergedSeriesMap: Record<string, { files: string[]; metadata: Series }>;
-  viewportInstance: StackViewport | null;
-  viewportEl: HTMLDivElement | null;
+  mergedSeriesMap: Record<string, SeriesMapEntry>;
+  mergedSeriesMapRef?: {
+    current: Record<string, SeriesMapEntry>;
+  };
   setExtraSeriesMap: (
-    updater: (prev: Record<string, { files: string[]; metadata: Series }>) => Record<string, { files: string[]; metadata: Series }>
+    updater: (
+      previous: Record<string, SeriesMapEntry>
+    ) => Record<string, SeriesMapEntry>
   ) => void;
-  setAllMeasurements: (m: AnnotationMeasurement[] | ((prev: AnnotationMeasurement[]) => AnnotationMeasurement[])) => void;
+  setAllMeasurements: (
+    measurements:
+      | AnnotationMeasurement[]
+      | ((
+          previous: AnnotationMeasurement[]
+        ) => AnnotationMeasurement[])
+  ) => void;
   refreshMeasurements?: () => void;
-  setLoadedSrList: (fn: (prev: any[]) => any[]) => void;
-  setActiveSrId: (id: string | null) => void;
-  setSelectedMeasurementUID: (id: string | null) => void;
-  setCurrentFrame: (n: number) => void;
-  renderingEngineRef: { current: any } | null;
+  setLoadedSrList: (
+    updater: (previous: LoadedSrEntry[]) => LoadedSrEntry[]
+  ) => void;
   studyUID: string;
+  trackedSeriesUID: string;
   viewportId: string;
-  viewSr?: (seriesUID: string, instanceUID?: string | null) => Promise<any>;
 };
 
-export function useSrExport(deps: UseSrExportDeps) {
-  const {
+type ExportFormat = 'json' | 'dicom';
+
+function assertExportIsCurrent(
+  generationRef: { current: number },
+  expectedGeneration: number,
+  activeStudyUIDRef: { current: string },
+  expectedStudyUID: string
+): void {
+  if (
+    generationRef.current !== expectedGeneration ||
+    activeStudyUIDRef.current !== expectedStudyUID
+  ) {
+    throw new Error(
+      'Structured Report creation was cancelled because the active study changed.'
+    );
+  }
+}
+
+function disposeLocalAnnotations(annotationUIDs: Iterable<string>): void {
+  for (const uid of annotationUIDs) {
+    void safeRemoveAnnotationByUID(uid);
+    releaseMeasurementAnnotationStyle(uid);
+  }
+}
+
+function sanitizeFileName(value: string): string {
+  return value
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, ' ')
+    .slice(0, 120);
+}
+
+function getNextSrSeriesNumber(
+  seriesMap: Record<string, SeriesMapEntry>
+): number {
+  // OHIF reserves 3000 as the new-report sentinel and writes the first SR as
+  // 3001 (`SeriesNumber = 1 + priorSeriesNumber`).
+  let highest = 3000;
+
+  for (const entry of Object.values(seriesMap)) {
+    if (entry?.metadata?.seriesModality !== 'SR') continue;
+    const parsed = Number(entry.metadata.seriesNumber);
+    if (Number.isFinite(parsed)) highest = Math.max(highest, parsed);
+  }
+
+  return highest + 1;
+}
+
+function createReferencedImageStack(
+  report: GeneratedStructuredReport,
+  seriesMap: Record<string, SeriesMapEntry>
+): string[] {
+  const imageIds: string[] = [];
+  const seen = new Set<string>();
+
+  for (const seriesUID of report.sourceSeriesInstanceUIDs) {
+    for (const imageId of seriesMap[seriesUID]?.files ?? []) {
+      if (seen.has(imageId)) continue;
+      seen.add(imageId);
+      imageIds.push(imageId);
+    }
+  }
+
+  for (const imageId of report.sourceImageIds) {
+    if (seen.has(imageId)) continue;
+    seen.add(imageId);
+    imageIds.push(imageId);
+  }
+
+  return imageIds;
+}
+
+function addHydratedAnnotations(
+  hydrated: HydratedLocalSrMeasurement[]
+): string[] {
+  const added: string[] = [];
+
+  try {
+    for (const item of hydrated) {
+      const uid = item.annotation.annotationUID;
+      (csAnnotation.state as any).addAnnotation(item.annotation);
+      added.push(uid);
+      csAnnotation.locking.setAnnotationLocked(uid, true);
+      csAnnotation.visibility.setAnnotationVisibility(uid, false);
+    }
+    return added;
+  } catch (error) {
+    disposeLocalAnnotations(added);
+    throw error;
+  }
+}
+
+export function useSrExport({
+  allMeasurements,
+  mergedSeriesMap,
+  mergedSeriesMapRef,
+  setExtraSeriesMap,
+  setAllMeasurements,
+  refreshMeasurements,
+  setLoadedSrList,
+  studyUID,
+  trackedSeriesUID,
+  viewportId,
+}: UseSrExportDeps) {
+  const exportInFlightRef = useRef<Promise<string[] | null> | null>(null);
+  const localSrAnnotationsBySeriesRef = useRef<
+    Map<string, Set<string>>
+  >(new Map());
+  const lifecycleGenerationRef = useRef(0);
+  const activeStudyUIDRef = useRef(studyUID);
+  activeStudyUIDRef.current = studyUID;
+
+  useEffect(() => {
+    const generation = ++lifecycleGenerationRef.current;
+
+    return () => {
+      if (lifecycleGenerationRef.current === generation) {
+        lifecycleGenerationRef.current += 1;
+      }
+      exportInFlightRef.current = null;
+      for (const annotationUIDs of localSrAnnotationsBySeriesRef.current.values()) {
+        disposeLocalAnnotations(annotationUIDs);
+      }
+      localSrAnnotationsBySeriesRef.current.clear();
+    };
+  }, [studyUID]);
+
+  const collectMeasurementSnapshot = useCallback((): SRMeasurement[] => {
+    /**
+     * This mirrors OHIF's StudyInstanceUID + tracked SeriesInstanceUID
+     * measurement filter. Selection and visibility are intentionally not
+     * predicates: every tracked measurement in that source series is exported.
+     */
+    return collectSrMeasurementSnapshot({
+      allMeasurements,
+      seriesMap: mergedSeriesMap,
+      studyInstanceUID: studyUID,
+      trackedSeriesInstanceUID: trackedSeriesUID,
+      getAnnotation: (annotationUID) =>
+        (csAnnotation.state as any).getAnnotation?.(annotationUID) ??
+        null,
+    });
+  }, [
     allMeasurements,
     mergedSeriesMap,
-    viewportInstance,
-    viewportEl,
-    setExtraSeriesMap,
-    setAllMeasurements,
-    refreshMeasurements,
-    setLoadedSrList,
-    setActiveSrId,
-    setSelectedMeasurementUID,
-    setCurrentFrame,
-    renderingEngineRef,
     studyUID,
-  } = deps;
+    trackedSeriesUID,
+  ]);
 
-  // tolerant alias to annotation state (many cs-tools versions)
-  const stateAny = (csAnnotation as any).state as any;
+  const registerLocalReport = useCallback(
+    (
+      report: GeneratedStructuredReport,
+      title: string,
+      hydrated: HydratedLocalSrMeasurement[],
+      expectedGeneration: number,
+      expectedStudyUID: string
+    ): string[] => {
+      assertExportIsCurrent(
+        lifecycleGenerationRef,
+        expectedGeneration,
+        activeStudyUIDRef,
+        expectedStudyUID
+      );
+      const dataset = report.dataset;
+      const reportSeriesUID = String(dataset.SeriesInstanceUID);
+      const reportImageIds = createReferencedImageStack(
+        report,
+        mergedSeriesMap
+      );
 
-  // ----------------- Helper functions -----------------
-  function matchesSopOnId(id?: string | null, sop?: string | null) {
-    if (!id || !sop) return false;
-    const nid = normalizeId(id);
-    const cand = String(sop).replace(/^imageId:/, '').split('/').pop();
-    if (!cand) return false;
-    return nid.includes(cand);
-  }
-
-  function makeNewAnnotationUID(origUID: string, srId: string) {
-    const now = Date.now();
-    const rnd = Math.random().toString(36).slice(2, 8);
-    return `${srId}::${origUID}::${now}::${rnd}`;
-  }
-  // ----------------------------------------------------------
-
-  function tryGetAnnotation(uid: string) {
-    if (!stateAny) return null;
-    try {
-      if (typeof stateAny.getAnnotation === 'function') {
-        return stateAny.getAnnotation(uid);
-      }
-      return (stateAny as any).getAnnotation?.(uid) ?? null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  async function waitForAnnotation(uid: string, timeout = 2000, interval = 50) {
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-      const inst = tryGetAnnotation(uid);
-      if (inst) return inst;
-      await new Promise((r) => setTimeout(r, interval));
-    }
-    return null;
-  }
-
-  function tryLockAnnotationByUid(uid: string) {
-    try {
-      if ((csAnnotation as any).locking && typeof (csAnnotation as any).locking.setAnnotationLocked === 'function') {
-        try { (csAnnotation as any).locking.setAnnotationLocked(uid, true); } catch (_) {}
-      }
-      if (stateAny && typeof stateAny.setAnnotationLocked === 'function') {
-        try { stateAny.setAnnotationLocked(uid, true); } catch (_) {}
-      }
-      if (stateAny && typeof stateAny.lockAnnotation === 'function') {
-        try { stateAny.lockAnnotation(uid, true); } catch (_) {}
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
-
-  // ---- NEW: Force remove originals helper (robust across cs-tools versions) ----
-  async function forceRemoveOriginalAnnotations(uidsToRemove: string[], el?: HTMLDivElement | null) {
-    if (!stateAny) return;
-    try {
-      // find frameOfReferenceUID from enabled element or dataset
-      let forUID: string | null = null;
-      try {
-        if (el) {
-          const enabled = getEnabledElement(el) ?? (el as any).__enabledElement ?? null;
-          if (enabled && enabled.viewport && typeof enabled.viewport.getFrameOfReferenceUID === 'function') {
-            forUID = enabled.viewport.getFrameOfReferenceUID?.() ?? null;
-          } else if ((el as any).dataset?.frameOfReferenceUID) {
-            forUID = (el as any).dataset.frameOfReferenceUID ?? null;
-          }
-        }
-      } catch (e) {
-        // ignore
+      if (!reportImageIds.length) {
+        throw new Error('The SR report has no resolvable source images.');
       }
 
-      // if we don't have forUID and el exists, try enableElement() then re-read
-      if (!forUID && el) {
-        try {
-          enableElement(el);
-          const enabled = getEnabledElement(el) ?? null;
-          if (enabled && enabled.viewport && typeof enabled.viewport.getFrameOfReferenceUID === 'function') {
-            forUID = enabled.viewport.getFrameOfReferenceUID?.() ?? null;
-            try { if (forUID) el.dataset.frameOfReferenceUID = forUID; } catch {}
-          }
-        } catch (e) {
-          // ignore
-        }
+      if (hydrated.length !== report.measurementGroupCount) {
+        throw new Error(
+          `Only ${hydrated.length}/${report.measurementGroupCount} SR measurements could be hydrated.`
+        );
       }
 
-      // 1) Call getAnnotations in the best-supported signature:
-      let annsRaw: any = [];
-      try {
-        if (forUID && typeof stateAny.getAnnotations === 'function') {
-          annsRaw = stateAny.getAnnotations(forUID) ?? [];
-        } else if (typeof stateAny.getAnnotations === 'function') {
-          try {
-            annsRaw = stateAny.getAnnotations() ?? [];
-          } catch (e) {
-            annsRaw = [];
-          }
-        } else {
-          annsRaw = [];
-        }
-      } catch (e) {
-        try {
-          annsRaw = (csAnnotation.state as any).getAnnotations?.(forUID) ?? (csAnnotation.state as any).getAnnotations?.() ?? [];
-        } catch {
-          annsRaw = [];
-        }
-      }
-
-      // Normalize to flat array
-      let annsArray: any[] = [];
-      if (!annsRaw) annsArray = [];
-      else if (Array.isArray(annsRaw)) annsArray = annsRaw;
-      else if (annsRaw instanceof Map) {
-        annsRaw.forEach((v: any) => {
-          if (Array.isArray(v)) annsArray.push(...v);
-          else if (v) annsArray.push(v);
-        });
-      } else if (typeof annsRaw === 'object') {
-        try {
-          Object.values(annsRaw).forEach((v: any) => {
-            if (Array.isArray(v)) annsArray.push(...v);
-            else if (v) annsArray.push(v);
-          });
-        } catch {
-          annsArray = [];
-        }
-      } else {
-        annsArray = [];
-      }
-
-      // de-duplicate and keep only those in uidsToRemove (if provided)
-      const seen = new Set<string>();
-      annsArray = annsArray.filter((a: any) => {
-        const uid = a?.annotationUID ?? a?.uid ?? null;
-        if (!uid) return false;
-        if (seen.has(uid)) return false;
-        if (Array.isArray(uidsToRemove) && uidsToRemove.length > 0 && !uidsToRemove.includes(uid)) return false;
-        seen.add(uid);
-        return true;
-      });
-
-      // Remove each candidate
-      for (const inst of annsArray) {
-        try {
-          const tryUid = inst.annotationUID ?? inst.uid ?? null;
-          if (tryUid) {
-            try {
-              if (typeof stateAny.removeAnnotation === 'function') {
-                const res = stateAny.removeAnnotation(tryUid);
-                if (res && typeof res.then === 'function') await res;
-              }
-            } catch (_) {}
-          }
-
-          try {
-            if (typeof stateAny.removeAnnotation === 'function') {
-              const res = stateAny.removeAnnotation(inst);
-              if (res && typeof res.then === 'function') await res;
-            }
-          } catch (_) {}
-
-          try {
-            if (el && (stateAny as any).removeAnnotation) {
-              const maybe = (stateAny as any).removeAnnotation(inst, el);
-              if (maybe && typeof maybe.then === 'function') await maybe;
-            }
-          } catch (_) {}
-
-          try {
-            const maybe = (csAnnotation.state as any).removeAnnotation?.(inst) ?? null;
-            if (maybe && typeof maybe.then === 'function') await maybe;
-          } catch (_) {}
-        } catch (e) {
-          // ignore per-instance failures
-        }
-      }
-    } catch (e) {
-      // ignore top-level
-    }
-  }
-
-  // ---- restoreSavedInstances (kept, with minor robustness) ----
-  async function restoreSavedInstances(instancesSaved: any[]): Promise<string[] | null> {
-    if (!instancesSaved || instancesSaved.length === 0) return null;
-    const mergedKeys = Object.keys(mergedSeriesMap);
-    if (!mergedKeys.length) return null;
-
-    const extractSop = (raw?: string): string | null => {
-      if (!raw) return null;
-      const s = String(raw).replace(/^imageId:/, '');
-      const m = s.match(/\/instances\/([^\/]+)/);
-      if (m && m[1]) return m[1];
-      const parts = s.split('/');
-      return parts.length ? parts[parts.length - 1] : s;
-    };
-
-    // Map inst -> base series (prefer non-SR)
-    const instToBase = new Map<any, string | null>();
-    const nonSrKeys = mergedKeys.filter((k) => !String(k).startsWith('SR_'));
-    const fallbackKeys = mergedKeys;
-
-    for (const inst of instancesSaved) {
-      const raw = inst.metadata?.referencedImageId || inst.metadata?.imageId || '';
-      const declaredSeries = inst.metadata?.seriesInstanceUID;
-      let found: string | null = null;
-
-      if (declaredSeries && !String(declaredSeries).startsWith('SR_') && mergedSeriesMap[declaredSeries]) {
-        found = declaredSeries;
-      } else {
-        const sop = extractSop(raw);
-
-        if (sop && nonSrKeys.length > 0) {
-          for (const uid of nonSrKeys) {
-            const files = mergedSeriesMap[uid]?.files ?? [];
-            if (files.some((id) => matchesSopOnId(id, sop))) { found = uid; break; }
-          }
-        }
-
-        if (!found && raw && nonSrKeys.length > 0) {
-          const normRaw = normalizeId(raw);
-          for (const uid of nonSrKeys) {
-            const files = mergedSeriesMap[uid]?.files ?? [];
-            if (files.some((id) => normalizeId(id) === normRaw)) { found = uid; break; }
-          }
-        }
-
-        if (!found && nonSrKeys.length === 0) {
-          if (sop) {
-            for (const uid of fallbackKeys) {
-              const files = mergedSeriesMap[uid]?.files ?? [];
-              if (files.some((id) => matchesSopOnId(id, sop))) { found = uid; break; }
-            }
-          }
-          if (!found && raw) {
-            const normRaw = normalizeId(raw);
-            for (const uid of fallbackKeys) {
-              const files = mergedSeriesMap[uid]?.files ?? [];
-              if (files.some((id) => normalizeId(id) === normRaw)) { found = uid; break; }
-            }
-          }
-        }
-      }
-
-      if (!found) {
-        const firstNonSr = nonSrKeys[0] ?? fallbackKeys[0];
-        found = firstNonSr ?? null;
-      }
-
-      instToBase.set(inst, found);
-    }
-
-    // Group by base
-    const groups = new Map<string, any[]>();
-    instToBase.forEach((base, inst) => {
-      const key = base ?? '__unknown__';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(inst);
-    });
-
-    const createdSrIds: string[] = [];
-    const loadedEntries: any[] = [];
-    let firstNewSrId: string | null = null;
-    let firstGroupInitialIndex = 0;
-    let groupIndex = 0;
-
-    // NEW: map để ghi nhớ files tương ứng với mỗi usedSrId
-    const groupFilesMap = new Map<string, string[]>();
-
-    for (const [baseSeriesId, instList] of Array.from(groups.entries())) {
-      groupIndex += 1;
-      const baseId = baseSeriesId === '__unknown__' ? mergedKeys[0] : baseSeriesId;
-      if (!baseId) continue;
-
-      const baseFiles = mergedSeriesMap[baseId]?.files ?? [];
-      const baseMeta = mergedSeriesMap[baseId]?.metadata ?? ({} as Series);
-      if (!baseFiles.length) continue;
-
-      const isBaseAlreadySR = String(baseId).startsWith('SR_') && Boolean(mergedSeriesMap[baseId]);
-
-      let usedSrId: string;
-      if (isBaseAlreadySR) {
-        usedSrId = baseId;
-      } else {
-        usedSrId = `SR_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${groupIndex}`;
-        createdSrIds.push(usedSrId);
-
-        const srDescription = `SR ${baseMeta.seriesDescription ?? ''}`;
-
-        setExtraSeriesMap((prev) => {
-          if (prev[usedSrId]) return prev;
-          return {
-            ...prev,
-            [usedSrId]: {
-              files: baseFiles,
-              metadata: {
-                ...baseMeta,
-                seriesInstanceUID: usedSrId,
-                seriesDescription: srDescription,
-                seriesModality: 'SR',
-              } as Series,
+      const seriesEntry: SeriesMapEntry = {
+        files: reportImageIds,
+        metadata: {
+          seriesDescription:
+            String(dataset.SeriesDescription ?? '').trim() || title,
+          seriesInstanceUID: reportSeriesUID,
+          seriesNumber: String(dataset.SeriesNumber ?? ''),
+          seriesModality: 'SR',
+          seriesRelatedInstanceCount: '1',
+          instances: [
+            {
+              sopInstanceUID: String(dataset.SOPInstanceUID),
+              instanceNumber: Number(dataset.InstanceNumber ?? 1),
+              url: '',
             },
-          };
+          ],
+        },
+      };
+
+      const previousRefValue = mergedSeriesMapRef?.current;
+      if (mergedSeriesMapRef) {
+        mergedSeriesMapRef.current = {
+          ...mergedSeriesMapRef.current,
+          [reportSeriesUID]: seriesEntry,
+        };
+      }
+
+      let addedAnnotationUIDs: string[] = [];
+      try {
+        addedAnnotationUIDs = addHydratedAnnotations(hydrated);
+      } catch (error) {
+        if (mergedSeriesMapRef && previousRefValue) {
+          mergedSeriesMapRef.current = previousRefValue;
+        }
+        throw error;
+      }
+
+      try {
+        setExtraSeriesMap((previous) => ({
+          ...previous,
+          [reportSeriesUID]: seriesEntry,
+        }));
+
+        setLoadedSrList((previous) => [
+          ...previous.filter((item) => item.id !== reportSeriesUID),
+          {
+            id: reportSeriesUID,
+            label:
+              String(dataset.SeriesDescription ?? '').trim() || title,
+            count: hydrated.length,
+            instances: [
+              {
+                sopInstanceUID: String(dataset.SOPInstanceUID),
+                SOPInstanceUID: dataset.SOPInstanceUID,
+                SOPClassUID: dataset.SOPClassUID,
+                SeriesInstanceUID: reportSeriesUID,
+              },
+            ],
+          },
+        ]);
+
+        setAllMeasurements((previous) => {
+          const byUID = new Map(
+            previous.map((measurement) => [
+              measurement.annotationUID,
+              measurement,
+            ])
+          );
+          for (const { measurement } of hydrated) {
+            byUID.set(measurement.annotationUID, measurement);
+          }
+          return Array.from(byUID.values());
         });
 
-        if (!firstNewSrId) firstNewSrId = usedSrId;
+        localSrAnnotationsBySeriesRef.current.set(
+          reportSeriesUID,
+          new Set(addedAnnotationUIDs)
+        );
+      } catch (error) {
+        disposeLocalAnnotations(addedAnnotationUIDs);
+        if (mergedSeriesMapRef && previousRefValue) {
+          mergedSeriesMapRef.current = previousRefValue;
+        }
+        throw error;
       }
 
-      // store files for this SR id so we can setStack to the correct one later
-      groupFilesMap.set(usedSrId, baseFiles);
+      refreshMeasurements?.();
+      return [reportSeriesUID];
+    },
+    [
+      mergedSeriesMap,
+      mergedSeriesMapRef,
+      refreshMeasurements,
+      setAllMeasurements,
+      setExtraSeriesMap,
+      setLoadedSrList,
+      studyUID,
+      viewportId,
+    ]
+  );
 
-      if (firstGroupInitialIndex === undefined || firstGroupInitialIndex === null) {
-        firstGroupInitialIndex = 0;
+  const rollbackLocalReport = useCallback(
+    (
+      reportSeriesUID: string,
+      hydrated: HydratedLocalSrMeasurement[]
+    ): void => {
+      const annotationUIDs =
+        localSrAnnotationsBySeriesRef.current.get(reportSeriesUID) ??
+        new Set(
+          hydrated.map((item) => item.measurement.annotationUID)
+        );
+      localSrAnnotationsBySeriesRef.current.delete(reportSeriesUID);
+      disposeLocalAnnotations(annotationUIDs);
+
+      if (mergedSeriesMapRef) {
+        const next = { ...mergedSeriesMapRef.current };
+        delete next[reportSeriesUID];
+        mergedSeriesMapRef.current = next;
       }
-      if (firstGroupInitialIndex === 0) {
-        const raw0 = instList[0]?.metadata?.referencedImageId || instList[0]?.metadata?.imageId || '';
-        const sop0 = extractSop(raw0);
-        const idx0 = sop0 ? baseFiles.findIndex((id) => matchesSopOnId(id, sop0)) : -1;
-        firstGroupInitialIndex = idx0 >= 0 ? idx0 : 0;
-      }
-
-      for (const inst of instList) {
-        const raw = inst.metadata?.referencedImageId || inst.metadata?.imageId || '';
-        const sop = extractSop(raw);
-        let resolvedIndex = sop ? baseFiles.findIndex((id) => matchesSopOnId(id, sop)) : -1;
-        if (resolvedIndex < 0) resolvedIndex = 0;
-        const resolvedImageId = baseFiles[resolvedIndex] ?? baseFiles[0];
-
-        if (!inst.metadata) inst.metadata = {};
-        inst.metadata.referencedImageId = resolvedImageId;
-        inst.metadata.imageId = resolvedImageId;
-        inst.metadata.frameIndex = typeof inst.metadata.sliceIndex === 'number' ? inst.metadata.sliceIndex : resolvedIndex;
-        inst.metadata.seriesInstanceUID = usedSrId;
-
-        const origUID = inst.annotationUID ?? `orig-${Date.now()}`;
-        inst.annotationUID = makeNewAnnotationUID(origUID, usedSrId);
-      }
-
-      const entryLabel = `SR ${baseMeta.seriesDescription ?? ''}`;
-
-      loadedEntries.push({
-        id: usedSrId,
-        label: entryLabel,
-        count: instList.length,
-        instances: instList,
+      setExtraSeriesMap((previous) => {
+        if (!previous[reportSeriesUID]) return previous;
+        const next = { ...previous };
+        delete next[reportSeriesUID];
+        return next;
       });
-    }
+      setLoadedSrList((previous) =>
+        previous.filter((item) => item.id !== reportSeriesUID)
+      );
+      setAllMeasurements((previous) =>
+        previous.filter(
+          (measurement) => !annotationUIDs.has(measurement.annotationUID)
+        )
+      );
+    },
+    [
+      mergedSeriesMapRef,
+      setAllMeasurements,
+      setExtraSeriesMap,
+      setLoadedSrList,
+    ]
+  );
 
-    if (!viewportInstance || !viewportEl) return null;
+  const runExport = useCallback(
+    async (
+      format: ExportFormat,
+      documentTitle?: string
+    ): Promise<string[] | null> => {
+      if (exportInFlightRef.current) {
+        throw new Error('A Structured Report is already being created.');
+      }
 
-    enableElement(viewportEl);
-    const enabledEl = getEnabledElement(viewportEl);
-    if (!enabledEl) return null;
-    const vp = enabledEl.viewport as StackViewport;
-    const forUID = (typeof vp.getFrameOfReferenceUID === 'function') ? vp.getFrameOfReferenceUID() : undefined;
-    if (forUID) viewportEl.dataset.frameOfReferenceUID = forUID;
-
-    // Add SR instances to state (do NOT attach handlers for SR — add without element)
-    for (const entry of loadedEntries) {
-      for (const inst of entry.instances) {
+      const operation = (async () => {
+        const expectedGeneration = lifecycleGenerationRef.current;
+        const expectedStudyUID = studyUID;
+        const title = (
+          String(documentTitle ?? '').trim() || 'Measurement Report'
+        ).slice(0, 64);
+        let measurements: SRMeasurement[];
         try {
-          try {
-            const maybe = stateAny.addAnnotation?.(inst);
-            if (maybe && typeof (maybe as Promise<any>).then === 'function') await maybe;
-          } catch (_) {
-            try { (csAnnotation.state as any).addAnnotation?.(inst); } catch (_) {}
+          measurements = collectMeasurementSnapshot();
+        } catch (error) {
+          if (error instanceof StaleMeasurementSnapshotError) {
+            refreshMeasurements?.();
           }
-          try { stateAny.triggerAnnotationModified?.(inst, viewportEl); } catch (_) {}
-          try { tryLockAnnotationByUid(inst.annotationUID); } catch (_) {}
-        } catch (e) {
+          throw error;
         }
-      }
-    }
-
-    // Wait for registration
-    for (const entry of loadedEntries) {
-      for (const inst of entry.instances) {
-        await waitForAnnotation(inst.annotationUID, 2000, 50);
-      }
-    }
-
-    // Lock them again to be safe
-    for (const entry of loadedEntries) {
-      for (const inst of entry.instances) {
-        try { tryLockAnnotationByUid(inst.annotationUID); } catch (_) {}
-      }
-    }
-
-    // Build measurementsFromSR
-    const measurementsFromSR: AnnotationMeasurement[] = [];
-    for (const entry of loadedEntries) {
-      for (const i of entry.instances) {
-        const idx =
-          typeof i.metadata.sliceIndex === 'number'
-            ? i.metadata.sliceIndex
-            : typeof i.metadata.frameIndex === 'number'
-            ? i.metadata.frameIndex
-            : 0;
-
-        const liveInst = tryGetAnnotation(i.annotationUID) ?? null;
-
-        let flatData: any = {};
-        if (liveInst?.data?.cachedStats) {
-          const firstStat = Object.values(liveInst.data.cachedStats)[0] ?? {};
-          flatData = { ...firstStat };
+        if (!measurements.length) {
+          throw new Error(
+            'There are no tracked measurements in this study to export.'
+          );
         }
-        flatData.handles = liveInst?.data?.handles ?? i.data?.handles ?? i.handles;
+        assertExportIsCurrent(
+          lifecycleGenerationRef,
+          expectedGeneration,
+          activeStudyUIDRef,
+          expectedStudyUID
+        );
 
-        measurementsFromSR.push({
-          annotationUID: i.annotationUID,
-          toolName: i.metadata?.toolName ?? i.toolName ?? '',
-          label: i.metadata?.label ?? '',
-          type: (i.metadata?.toolName as any) || (i.toolName as any) || 'unknown',
-          data: flatData,
-          metadata: {
-            seriesUID: i.metadata?.seriesInstanceUID,
-            studyUID,
-            viewportId: deps.viewportId,
-            frameIndex: idx,
-            referencedImageId: i.metadata?.referencedImageId ?? '',
-            createdAt: i.metadata?.createdAt || '',
-          },
-          createdAt: i.metadata?.createdAt || '',
-        } as AnnotationMeasurement);
-      }
-    }
+        const report = await buildStructuredReport({
+          studyInstanceUID: expectedStudyUID,
+          measurements,
+          seriesDescription: title,
+          seriesNumber: getNextSrSeriesNumber(mergedSeriesMap),
+          instanceNumber: 1,
+        });
+        assertExportIsCurrent(
+          lifecycleGenerationRef,
+          expectedGeneration,
+          activeStudyUIDRef,
+          expectedStudyUID
+        );
+        const expectedMeasurementUIDs = new Set(
+          measurements.map((measurement) => measurement.uid)
+        );
+        if (
+          report.exportedMeasurementUIDs.length !==
+            expectedMeasurementUIDs.size ||
+          report.exportedMeasurementUIDs.some(
+            (annotationUID) =>
+              !expectedMeasurementUIDs.has(annotationUID)
+          )
+        ) {
+          throw new Error(
+            'DICOM SR generation did not preserve the complete measurement snapshot.'
+          );
+        }
 
-    // Merge loadedEntries into loadedSrList
-    setLoadedSrList((prev) => {
-      const map = new Map<string, any>();
-      prev.forEach((p) => map.set(p.id, p));
-      loadedEntries.forEach((e) => {
-        const existing = map.get(e.id);
-        if (existing) map.set(e.id, { ...existing, ...e });
-        else map.set(e.id, e);
-      });
-      return Array.from(map.values());
-    });
+        const expectedSourceSeriesInstanceUID = String(
+          mergedSeriesMap[trackedSeriesUID]?.metadata
+            ?.seriesInstanceUID ?? trackedSeriesUID
+        );
+        if (
+          report.sourceSeriesInstanceUIDs.length !== 1 ||
+          report.sourceSeriesInstanceUIDs[0] !==
+            expectedSourceSeriesInstanceUID
+        ) {
+          throw new Error(
+            'The measurement snapshot references a different source series.'
+          );
+        }
 
-    // Merge measurementsFromSR into global allMeasurements
-    setAllMeasurements((prev) => {
-      const map = new Map<string, AnnotationMeasurement>();
-      prev.forEach((m) => map.set(m.annotationUID, m));
-      measurementsFromSR.forEach((m) => map.set(m.annotationUID, m));
-      return Array.from(map.values());
-    });
+        const reportImageIds = createReferencedImageStack(
+          report,
+          mergedSeriesMap
+        );
+        const hydrated = await hydrateStructuredReportForLocalViewer({
+          dataset: report.dataset,
+          reportImageIds,
+          reportSeriesInstanceUID: String(
+            report.dataset.SeriesInstanceUID
+          ),
+          studyInstanceUID: expectedStudyUID,
+          viewportId,
+        });
+        assertExportIsCurrent(
+          lifecycleGenerationRef,
+          expectedGeneration,
+          activeStudyUIDRef,
+          expectedStudyUID
+        );
+        if (hydrated.length !== report.measurementGroupCount) {
+          throw new Error(
+            `Only ${hydrated.length}/${report.measurementGroupCount} SR measurements could be validated.`
+          );
+        }
 
-    refreshMeasurements?.();
-
-    const reusedOrCreated = createdSrIds.length ? createdSrIds[0] : loadedEntries[0]?.id ?? null;
-    setActiveSrId(reusedOrCreated);
-
-    // --- Now set viewport stack to the SR we actually activated (if we have files for it) ---
-    try {
-      const targetId = reusedOrCreated;
-      const targetFiles = targetId ? groupFilesMap.get(targetId) ?? groupFilesMap.get(loadedEntries[0]?.id) : groupFilesMap.get(loadedEntries[0]?.id);
-      const targetInitialIndex = (measurementsFromSR.length && measurementsFromSR.find(m => String(m.metadata.seriesUID) === String(targetId))?.metadata.frameIndex) ?? 0;
-
-      if (Array.isArray(targetFiles) && targetFiles.length > 0) {
-        await viewportInstance.setStack(targetFiles, Math.min(Math.max(0, targetInitialIndex), targetFiles.length - 1));
-        // small delay to ensure stack is updated
-        await new Promise((r) => setTimeout(r, 50));
-
-        // sync current frame & selection
-        if (measurementsFromSR.length > 0) {
-          const first =
-            (firstNewSrId && measurementsFromSR.find((m) => m.metadata.seriesUID === firstNewSrId)) ||
-            measurementsFromSR[0];
-          Promise.resolve().then(() => {
-            setSelectedMeasurementUID(first.annotationUID);
-            setCurrentFrame((first.metadata.frameIndex ?? 0) + 1);
+        const safeTitle = sanitizeFileName(title) || 'report';
+        let downloadBlob: Blob;
+        let downloadFileName: string;
+        if (format === 'dicom') {
+          downloadBlob = await datasetToDicomPart10Blob(report.dataset);
+          assertExportIsCurrent(
+            lifecycleGenerationRef,
+            expectedGeneration,
+            activeStudyUIDRef,
+            expectedStudyUID
+          );
+          downloadFileName = `SR_${expectedStudyUID}_${safeTitle}.dcm`;
+        } else {
+          const dicomJson = await datasetToDicomJson(report.dataset);
+          assertExportIsCurrent(
+            lifecycleGenerationRef,
+            expectedGeneration,
+            activeStudyUIDRef,
+            expectedStudyUID
+          );
+          downloadBlob = new Blob([JSON.stringify(dicomJson, null, 2)], {
+            type: 'application/dicom+json',
           });
+          downloadFileName = `SR_${expectedStudyUID}_${safeTitle}.json`;
+        }
+
+        const createdIds = registerLocalReport(
+          report,
+          title,
+          hydrated,
+          expectedGeneration,
+          expectedStudyUID
+        );
+
+        try {
+          assertExportIsCurrent(
+            lifecycleGenerationRef,
+            expectedGeneration,
+            activeStudyUIDRef,
+            expectedStudyUID
+          );
+          saveAs(downloadBlob, downloadFileName);
+        } catch (error) {
+          rollbackLocalReport(
+            String(report.dataset.SeriesInstanceUID),
+            hydrated
+          );
+          throw error;
+        }
+        return createdIds;
+      })();
+
+      exportInFlightRef.current = operation;
+      try {
+        return await operation;
+      } finally {
+        if (exportInFlightRef.current === operation) {
+          exportInFlightRef.current = null;
         }
       }
-    } catch (err) {
-    }
+    },
+    [
+      collectMeasurementSnapshot,
+      mergedSeriesMap,
+      registerLocalReport,
+      rollbackLocalReport,
+      refreshMeasurements,
+      studyUID,
+      trackedSeriesUID,
+      viewportId,
+    ]
+  );
 
-    // render
-    try {
-      const re = renderingEngineRef?.current;
-      if (re) {
-        if (typeof re.renderViewport === 'function') re.renderViewport(deps.viewportId);
-        else if (typeof re.render === 'function') re.render();
-      }
-    } catch (e) {}
+  const exportSRAsJSON = useCallback(
+    (documentTitle?: string) => runExport('json', documentTitle),
+    [runExport]
+  );
+  const exportSRAsDICOM = useCallback(
+    (documentTitle?: string) => runExport('dicom', documentTitle),
+    [runExport]
+  );
 
-    const resultIds = loadedEntries.map((e) => e.id).concat(createdSrIds.filter((id) => !loadedEntries.some((e) => e.id === id)));
-    return resultIds.length ? resultIds : null;
-  }
-
-  const sanitizeFileName = (s?: string) => {
-    if (!s) return '';
-    return String(s).replace(/[\\\/:*?"<>|]/g, '-');
+  return {
+    exportSRAsJSON,
+    exportSRAsDICOM,
   };
-
-  // ---- INTERNAL: collect context + build SR payload (NO side-effects) ----
-  function collectExportContext(documentTitle?: string) {
-    const uids = allMeasurements
-      .filter((m) => !String(m.metadata?.seriesUID).startsWith('SR_'))
-      .map((m) => m.annotationUID);
-
-    const instancesSaved: any[] = uids
-      .map((uid) => tryGetAnnotation(uid) ?? null)
-      .filter(Boolean)
-      .map((inst) => JSON.parse(JSON.stringify(inst)));
-
-    const srRequest = buildStructuredReport(studyUID, uids, {
-      documentTitle: documentTitle ?? undefined,
-    });
-
-    return { uids, instancesSaved, srRequest } as const;
-  }
-
-  // ---- NEW: Build-only for "View SR" (no POST, no download) ----
-  function getSrJson(documentTitle?: string) {
-    const { srRequest } = collectExportContext(documentTitle);
-    return srRequest; // caller can show JSON (modal/console/etc.)
-  }
-
-  // ---- Export JSON ----
-  async function exportSRAsJSON(documentTitle?: string): Promise<string[] | null> {
-    const { uids, instancesSaved, srRequest } = collectExportContext(documentTitle);
-    if (!instancesSaved.length) return null;
-
-    // Save local copy (optional)
-    try {
-      const fileName = `SR_${studyUID}_${sanitizeFileName(documentTitle || 'report')}.json`;
-      saveAs(new Blob([JSON.stringify(srRequest, null, 2)], { type: 'application/json' }), fileName);
-    } catch (e) {
-    }
-
-    // NO server POST in static-local mode.
-    // Proceed to local fallback behavior: remove originals and restore SR instances locally.
-
-    try {
-      await forceRemoveOriginalAnnotations(uids, viewportEl);
-    } catch (e) {
-    }
-
-    try {
-      setAllMeasurements((prev) => prev.filter((m) => !uids.includes(m.annotationUID)));
-    } catch (e) {
-    }
-
-    const createdIds = await restoreSavedInstances(instancesSaved);
-    return createdIds;
-  }
-
-  // ---- Export placeholder DICOM ----
-  async function exportSRAsDICOMPlaceholder(documentTitle?: string): Promise<string[] | null> {
-    const { uids, instancesSaved, srRequest } = collectExportContext(documentTitle);
-    if (!instancesSaved.length) return null;
-
-    // Save local dcm placeholder
-    try {
-      const fileName = `SR_${studyUID}_${sanitizeFileName(documentTitle || 'report')}.dcm`;
-      const dcmBlob = new Blob([JSON.stringify(srRequest, null, 2)], { type: 'application/dicom' });
-      saveAs(dcmBlob, fileName);
-    } catch (e) {
-    }
-
-    // NO server POST in static-local mode.
-    // Proceed to local fallback behavior.
-
-    try {
-      await forceRemoveOriginalAnnotations(uids, viewportEl);
-    } catch (e) {
-    }
-
-    try {
-      setAllMeasurements((prev) => prev.filter((m) => !uids.includes(m.annotationUID)));
-    } catch (e) {}
-
-    const createdIds = await restoreSavedInstances(instancesSaved);
-    return createdIds;
-  }
-
-  // IMPORTANT: expose getSrJson so the UI "View SR" button can use it without POSTing
-  return { getSrJson, exportSRAsJSON, exportSRAsDICOMPlaceholder };
 }

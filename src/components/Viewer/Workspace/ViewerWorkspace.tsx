@@ -173,6 +173,8 @@ export default function ViewerWorkspace({
     onToggleVisibility,
     onExportJSON,
     onExportDICOMSR,
+    isExportDisabled:
+      isSeriesToolbarReadOnly || measurements.length === 0,
     srList: loadedSrList,
     activeSrId,
     onSelectSr,

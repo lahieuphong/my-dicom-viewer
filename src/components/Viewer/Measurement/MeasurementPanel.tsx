@@ -70,6 +70,7 @@ interface MeasurementPanelProps {
   className?: string;
   onExportJSON?: () => void;
   onExportDICOMSR?: () => void;
+  isExportDisabled?: boolean;
 
   srList?: { id: string; label: string; count: number; instances?: any[] }[];
   activeSrId?: string | null;
@@ -97,6 +98,7 @@ export default function MeasurementPanel({
   className = '',
   onExportJSON,
   onExportDICOMSR,
+  isExportDisabled = false,
   srList,
   activeSrId,
   onSelectSr,
@@ -179,8 +181,13 @@ export default function MeasurementPanel({
 
   const visible = measurements;
 
+  const selectedSeriesMetadata = seriesInstanceUID
+    ? seriesMap[seriesInstanceUID]?.metadata
+    : undefined;
   const isSelectedSR =
-    typeof seriesInstanceUID === 'string' && seriesInstanceUID?.startsWith('SR_');
+    selectedSeriesMetadata?.seriesModality === 'SR' ||
+    (typeof seriesInstanceUID === 'string' &&
+      seriesInstanceUID.startsWith('SR_'));
 
   let currentSrEntry: { id: string; label: string; count: number; instances?: any[] } | undefined;
   if (isSelectedSR && srList && srList.length) {
@@ -313,7 +320,11 @@ export default function MeasurementPanel({
                     <button
                       type="button"
                       className="px-2 py-1 text-xs border rounded"
-                      onClick={() => onSelectSr(currentSrEntry?.id ?? seriesInstanceUID)}
+                      onClick={() =>
+                        onSelectSr(
+                          currentSrEntry?.id ?? seriesInstanceUID ?? null
+                        )
+                      }
                     >
                       View SR
                     </button>
@@ -381,13 +392,31 @@ export default function MeasurementPanel({
                 {(onExportJSON || onExportDICOMSR) && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button size="sm" variant="outline">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isExportDisabled}
+                      >
                         Create SR <i className="fas fa-caret-down ml-2" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start">
-                      {onExportJSON && <DropdownMenuItem onClick={onExportJSON}>JSON SR</DropdownMenuItem>}
-                      {onExportDICOMSR && <DropdownMenuItem onClick={onExportDICOMSR}>DICOM SR</DropdownMenuItem>}
+                      {onExportJSON && (
+                        <DropdownMenuItem
+                          disabled={isExportDisabled}
+                          onClick={onExportJSON}
+                        >
+                          JSON SR
+                        </DropdownMenuItem>
+                      )}
+                      {onExportDICOMSR && (
+                        <DropdownMenuItem
+                          disabled={isExportDisabled}
+                          onClick={onExportDICOMSR}
+                        >
+                          DICOM SR
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}

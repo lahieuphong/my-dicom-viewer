@@ -83,8 +83,11 @@ function SRGroup({
 
             return (
               <button
+                type="button"
                 key={srId}
                 onClick={() => onSelectSr?.(srId)}
+                aria-label={`View SR ${srEntry.label}`}
+                aria-pressed={isActiveSr}
                 className={cn(
                   'flex flex-col w-full text-left px-3 py-2 rounded-md transition-shadow duration-150 overflow-hidden',
                   isActiveSr
@@ -129,6 +132,11 @@ export default function SeriesSidebar({
   const [listCollapsed, setListCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<SeriesViewMode>('list');
   const formattedDate = formatStudyDate(studyDate);
+  const imageSeriesEntries = Object.entries(seriesMap).filter(
+    ([, data]) =>
+      Boolean(data?.metadata) &&
+      data.metadata?.seriesModality !== 'SR'
+  );
 
   return (
     <aside
@@ -240,7 +248,7 @@ export default function SeriesSidebar({
               >
                 {viewMode === 'list' ? (
                   <div className="space-y-2">
-                    {Object.entries(seriesMap).map(([uid, data], index) => {
+                    {imageSeriesEntries.map(([uid, data], index) => {
                       if (!data || !data.metadata) return null;
                       const metadata = data.metadata;
                       const isSelected = uid === selectedSeries && activeSrId == null;
@@ -292,7 +300,7 @@ export default function SeriesSidebar({
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2">
-                    {Object.entries(seriesMap).map(([uid, data], index) => {
+                    {imageSeriesEntries.map(([uid, data], index) => {
                       if (!data || !data.metadata) return null;
                       const metadata = data.metadata;
                       const isSelected = uid === selectedSeries && activeSrId == null;

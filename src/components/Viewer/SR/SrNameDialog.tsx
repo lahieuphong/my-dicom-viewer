@@ -21,7 +21,12 @@ export default function SrNameDialog({ open, defaultName = '', isSaving = false,
   }, [open, defaultName]);
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !isSaving) onCancel();
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Đặt tên cho SR</DialogTitle>
@@ -34,12 +39,14 @@ export default function SrNameDialog({ open, defaultName = '', isSaving = false,
           <Input
             value={value}
             onChange={(e) => setValue(e.target.value)}
+            maxLength={64}
+            disabled={isSaving}
             placeholder="VD: Lung - measurement report"
             aria-label="Tên SR"
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                if (value.trim()) onSave(value.trim());
+                if (!isSaving && value.trim()) onSave(value.trim());
               }
             }}
           />

@@ -17,7 +17,14 @@ import {
   Enums as ToolEnums,
 } from '@cornerstonejs/tools';
 import { VIEWPORT_ID } from '@/constants/viewport';
-import { safeGetEnabledElement, normalizeImageId as normalizeId } from '@/lib/cornerstone/helpers';
+import {
+  findMatchingImageIdIndex,
+  safeGetEnabledElement,
+} from '@/lib/cornerstone/helpers';
+import { isAnnotationCreationInProgress } from '@/lib/cornerstone/annotationInteraction';
+import {
+  createMeasurementListFingerprint,
+} from '@/lib/viewer/measurementFingerprint';
 import type { AnnotationMeasurement as CoreAnnotationMeasurement } from '@/platform/core';
 
 /** Compatibility alias; the canonical measurement shape lives in platform/core. */
@@ -125,6 +132,18 @@ function extractPointsFromInst(inst: any): number[][] | undefined {
   return undefined;
 }
 
+function cloneMeasurementData<T>(value: T): T {
+  try {
+    return structuredClone(value);
+  } catch {
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch {
+      return value;
+    }
+  }
+}
+
 /**
  * Main hook: collect annotation instances from cornerstone (robustly),
  * convert them to AnnotationMeasurement[] and provide refresh/updateLabel.
@@ -150,6 +169,9 @@ export const useViewportAnnotations = ({
   resolveSeriesUID?: (referencedImageId: string) => string | undefined;
 }) => {
   const [measurements, setMeasurements] = useState<AnnotationMeasurement[]>([]);
+  const createdAtByAnnotationUIDRef = useRef<Map<string, string>>(
+    new Map()
+  );
 
   // keep latest callback in ref to avoid being a dependency for callbacks/effects
   const onMeasurementsChangeRef = useRef<typeof onMeasurementsChange | undefined>(onMeasurementsChange);
@@ -267,6 +289,15 @@ export const useViewportAnnotations = ({
         anns = anns.filter((a) => (a?.toolName ?? a?.metadata?.toolName ?? '') === toolName);
       }
 
+      // ANNOTATION_ADDED fires at draw start. Keep draft geometry out of the
+      // Measurement service/UI until Cornerstone completes the interaction.
+      anns = anns.filter((annotationInstance) => {
+        const annotationUID = String(
+          annotationInstance?.annotationUID ?? ''
+        );
+        return !isAnnotationCreationInProgress(annotationUID);
+      });
+
       return anns.map((a: any) => {
         const uid = a.annotationUID ?? a.uid ?? a.id ?? String(Math.random());
 
@@ -280,19 +311,30 @@ export const useViewportAnnotations = ({
         const vp = (enabled!.viewport as StackViewport);
         const ids = (vp?.getImageIds?.() ?? []) as string[];
 
-        const normRef = normalizeId(refId);
-        const idx = ids.findIndex((id) => normalizeId(id) === normRef);
-
         const metaFrameIndex = Number.isFinite(Number(a?.metadata?.frameIndex))
           ? Number(a.metadata.frameIndex)
           : undefined;
+        const idx = findMatchingImageIdIndex(
+          ids,
+          refId,
+          metaFrameIndex
+        );
 
         let frameIndex: number | undefined;
         if (idx >= 0) frameIndex = idx;
         else if (metaFrameIndex !== undefined) frameIndex = metaFrameIndex;
         else frameIndex = undefined;
 
-        const created = a.metadata?.createdAt || new Date().toISOString();
+        const annotationCreatedAt =
+          typeof a.metadata?.createdAt === 'string' &&
+          a.metadata.createdAt
+            ? a.metadata.createdAt
+            : undefined;
+        const created =
+          annotationCreatedAt ??
+          createdAtByAnnotationUIDRef.current.get(uid) ??
+          new Date().toISOString();
+        createdAtByAnnotationUIDRef.current.set(uid, created);
 
         let foundSeriesUID =
           a.metadata?.seriesInstanceUID ||
@@ -355,7 +397,10 @@ export const useViewportAnnotations = ({
             break;
         }
 
-        flat.handles = handles;
+        // Cornerstone mutates handle objects in place while dragging. Keep an
+        // immutable snapshot so the change fingerprint can observe geometry
+        // changes instead of comparing two references to the same object.
+        flat.handles = cloneMeasurementData(handles);
 
         // try convert px->mm where possible
         try {
@@ -448,7 +493,7 @@ export const useViewportAnnotations = ({
   // Safe sender: only call external callback when changed, and defer the call
   const sendMeasurementsSafe = useCallback((ms: AnnotationMeasurement[]) => {
     try {
-      const key = ms.map(m => `${String(m.annotationUID)}|${String(m.createdAt ?? '')}`).join(',');
+      const key = createMeasurementListFingerprint(ms);
       if (lastSentMeasurementsKeyRef.current === key) {
         return;
       }
@@ -513,20 +558,12 @@ export const useViewportAnnotations = ({
       return Object.values(map).sort((a, b) => (a.annotationUID > b.annotationUID ? 1 : a.annotationUID < b.annotationUID ? -1 : 0));
     })();
 
-    // Compare previous and next using UID-keyed comparison (order-insensitive)
+    // Compare the full immutable measurement snapshots. UID/createdAt alone
+    // misses handle drags and recalculated cached statistics.
     const prevArr = lastCollectedRef.current ?? [];
-    const prevMapForCompare: Record<string, { createdAt?: string; label?: string; frame?: number | undefined }> = {};
-    prevArr.forEach((p) => {
-      prevMapForCompare[p.annotationUID] = { createdAt: p.createdAt, label: p.label, frame: p.metadata?.frameIndex };
-    });
-
-    const equal =
-      prevArr.length === next.length &&
-      next.every((m) => {
-        const o = prevMapForCompare[m.annotationUID];
-        if (!o) return false;
-        return o.createdAt === m.createdAt && o.label === m.label && o.frame === m.metadata?.frameIndex;
-      });
+    const previousFingerprint = createMeasurementListFingerprint(prevArr);
+    const nextFingerprint = createMeasurementListFingerprint(next);
+    const equal = previousFingerprint === nextFingerprint;
 
     if (!equal) {
       // update ref first so future comparisons are consistent
@@ -639,25 +676,50 @@ export const useViewportAnnotations = ({
 
   const updateLabel = useCallback(
     (annotationUID: string, newLabel: string) => {
+      let annotationInstance: any = null;
       try {
-        const ann = (annotation.state as any).getAnnotation?.(annotationUID) ?? null;
-        if (ann && ann.metadata) {
-          (ann.metadata as any).label = newLabel;
+        annotationInstance =
+          (annotation.state as any).getAnnotation?.(annotationUID) ??
+          null;
+        if (annotationInstance) {
+          annotationInstance.metadata ??= {};
+          annotationInstance.data ??= {};
+          annotationInstance.metadata.label = newLabel;
+          annotationInstance.data.label = newLabel;
+          if (
+            (annotationInstance.metadata?.toolName ??
+              annotationInstance.toolName) === ArrowAnnotateTool.toolName
+          ) {
+            annotationInstance.data.text = newLabel;
+          }
+          (annotation.state as any).triggerAnnotationModified?.(
+            annotationInstance,
+            element,
+            (ToolEnums as any).ChangeTypes?.LabelChange
+          );
         }
       } catch (e) {
       }
 
-      setMeasurements((ms) =>
-        ms.map((m) =>
-          m.annotationUID === annotationUID
-            ? { ...m, label: newLabel }
-            : m
-        )
+      const nextMeasurements = (
+        lastCollectedRef.current ?? []
+      ).map((measurement) =>
+        measurement.annotationUID === annotationUID
+          ? { ...measurement, label: newLabel }
+          : measurement
       );
-      // call refresh asynchronously (so label change propagated)
-      try { setTimeout(() => refreshRef.current(), 0); } catch {}
+      lastCollectedRef.current = nextMeasurements;
+      lastSentMeasurementsKeyRef.current = null;
+      setMeasurements(nextMeasurements);
+      sendMeasurementsSafe(nextMeasurements);
+
+      // Re-read the live annotation after the event stack has settled so
+      // cached stats and the canonical parent list converge as well.
+      try {
+        setTimeout(() => refreshRef.current(), 0);
+      } catch {}
     },
-    []
+    [element, sendMeasurementsSafe]
   );
 
   return {

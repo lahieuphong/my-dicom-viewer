@@ -8,6 +8,7 @@ import {
   useLayoutEffect,
   useMemo,
 } from 'react';
+import { toast } from 'sonner';
 
 import { imageLoader, utilities as csCoreUtilities } from '@cornerstonejs/core';
 
@@ -61,6 +62,11 @@ import {
   syncMeasurementNativeSelection,
   syncMeasurementSelectionStyles,
 } from '@/lib/cornerstone/measurementStyles';
+import {
+  findMatchingImageIdIndex,
+  normalizeImageIdWithFrame,
+} from '@/lib/cornerstone/helpers';
+import { hasActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 
 
 import { normalizeId, getEnabledElementSafeLocal } from '@/lib/viewer/dom';
@@ -71,6 +77,7 @@ import {
   safeRemoveAnnotationByUID,
 } from '@/lib/viewer/annotationHelpers';
 import { isMeasurementInSeries } from '@/lib/viewer/measurementVisibility';
+import { createMeasurementListFingerprint } from '@/lib/viewer/measurementFingerprint';
 
 
 import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canvasUtils';
@@ -164,7 +171,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const prevMeasurementUIDs = useRef<Set<string>>(new Set());
   const prevSeriesRef = useRef<string | null>(null);
-  const viewSrRef = useRef<((seriesUID: string, instanceUID?: string | null) => Promise<boolean>) | null>(null);
+  const pendingSeriesNavigationRef = useRef<{
+    seriesUID: string;
+    imageIndex: number;
+  } | null>(null);
 
   const [studyMeta, setStudyMeta] = useState<Study>(() => createFallbackStudyMeta(studyUID));
 
@@ -466,6 +476,24 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         if (!selectedSeries) return;
         const ds = createDisplaySetFromSeries(mergedSeriesMap[selectedSeries]);
         if (!ds || !Array.isArray(ds.imageIds) || ds.imageIds.length === 0) return;
+        const pendingNavigation =
+          pendingSeriesNavigationRef.current?.seriesUID === selectedSeries
+            ? pendingSeriesNavigationRef.current
+            : null;
+        const desiredImageIndex = Math.max(
+          0,
+          Math.min(
+            Number.isInteger(pendingNavigation?.imageIndex)
+              ? pendingNavigation!.imageIndex
+              : ds.initialImageIdIndex ?? 0,
+            ds.imageIds.length - 1
+          )
+        );
+        const consumePendingNavigation = () => {
+          if (pendingSeriesNavigationRef.current === pendingNavigation) {
+            pendingSeriesNavigationRef.current = null;
+          }
+        };
 
         const elToCheck = (viewportEl as HTMLElement | null) ?? (viewportInstance as any)?.element ?? elRef.current;
         if (!elToCheck) return;
@@ -483,12 +511,30 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
               vpIds.length === ds.imageIds.length &&
               vpIds.every(
                 (imageId, index) =>
-                  normalizeId(imageId) === normalizeId(ds.imageIds[index])
+                  normalizeImageIdWithFrame(imageId) ===
+                  normalizeImageIdWithFrame(ds.imageIds[index])
               );
 
             if (vpShowsDesired) {
-              // The requested stack is already installed. Preserve its current
-              // frame (for example, one selected from the Measurement panel).
+              let currentIndex = Number(vp.getCurrentImageIdIndex?.() ?? 0);
+              if (
+                pendingNavigation &&
+                currentIndex !== desiredImageIndex &&
+                typeof vp.setImageIdIndex === 'function'
+              ) {
+                await vp.setImageIdIndex(desiredImageIndex);
+                if (shouldAbort()) return;
+                currentIndex = Number(
+                  vp.getCurrentImageIdIndex?.() ?? desiredImageIndex
+                );
+              }
+              if (!Number.isInteger(currentIndex) || currentIndex < 0) {
+                currentIndex = desiredImageIndex;
+              }
+              setCurrentFrame(currentIndex + 1);
+              if (currentIndex === desiredImageIndex) {
+                consumePendingNavigation();
+              }
               // Ensure loading UI is not stuck
               setLoadingStackSafe(false);
               setSidebarLoadingSafe(false);
@@ -520,7 +566,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         if (shouldAbort()) return;
 
         // 3) Warm first image quickly (best-effort)
-        const firstImageId = ds.imageIds[ds.initialImageIdIndex ?? 0];
+        const firstImageId = ds.imageIds[desiredImageIndex];
         try {
           await loadAndCacheImageWithTimeout(firstImageId, 6000).catch(() => {});
         } catch {}
@@ -545,7 +591,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
               viewportEl: elToCheck as HTMLDivElement,
               ensureImageRendered,
               preloadImagesWithTimeoutFn: preloadImagesWithTimeout,
-              desiredIndex: ds.initialImageIdIndex ?? 0,
+              desiredIndex: desiredImageIndex,
               viewportId: VIEWPORT_ID,
             }).catch(() => false);
 
@@ -626,8 +672,27 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         try {
           const evName = (ToolEnums as any)?.Events?.STACK_NEW_IMAGE ?? 'cornerstone-stack-new-image';
           const targetEl = elToCheck ?? (viewportInstance as any)?.element ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
-          const targetImageIndex = Math.max(0, Math.min(ds.initialImageIdIndex ?? 0, ds.imageIds.length - 1));
+          const activeViewport: any =
+            renderingEngineRef.current?.getViewport?.(VIEWPORT_ID) ??
+            viewportInstance;
+          if (
+            activeViewport?.getCurrentImageIdIndex?.() !== desiredImageIndex &&
+            typeof activeViewport?.setImageIdIndex === 'function'
+          ) {
+            await activeViewport.setImageIdIndex(desiredImageIndex);
+            if (shouldAbort()) return;
+          }
+          const runtimeImageIndex = Number(
+            activeViewport?.getCurrentImageIdIndex?.() ?? desiredImageIndex
+          );
+          const targetImageIndex =
+            Number.isInteger(runtimeImageIndex) && runtimeImageIndex >= 0
+              ? runtimeImageIndex
+              : desiredImageIndex;
           setCurrentFrame(targetImageIndex + 1);
+          if (targetImageIndex === desiredImageIndex) {
+            consumePendingNavigation();
+          }
           targetEl?.dispatchEvent?.(new CustomEvent(evName, { detail: { imageIdIndex: targetImageIndex }, bubbles: true }));
         } catch (e) {
         }
@@ -723,13 +788,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   function resolveSeriesFromImageId(refId?: string) {
     if (!refId) return undefined;
-    const normRef = normalizeId(refId);
 
     for (const uid of Object.keys(mergedSeriesMapRef.current || {})) {
       const files = mergedSeriesMapRef.current[uid]?.files ?? [];
-      for (const f of files) {
-        if (normalizeId(f) === normRef) return uid;
-      }
+      if (findMatchingImageIdIndex(files, refId) >= 0) return uid;
     }
 
     const sopMatch = String(refId).replace(/^imageId:/, '').split('/').pop();
@@ -752,12 +814,38 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     } catch {}
 
     setAllMeasurements((prev) => {
+      const currentUIDs = new Set(
+        current.map((measurement) => measurement.annotationUID)
+      );
+      const getAnnotation = (csAnnotation.state as any)
+        ?.getAnnotation;
       const prevMap = new Map(
         prev
           .filter(
             (measurement) =>
               !isAnnotationRemovalTombstoned(measurement.annotationUID)
           )
+          .filter((measurement) => {
+            if (
+              currentUIDs.has(measurement.annotationUID) ||
+              typeof getAnnotation !== 'function'
+            ) {
+              return true;
+            }
+            try {
+              // Cornerstone is the runtime source of truth. This removes
+              // ghost cards after Escape/cancel or an external annotation
+              // removal, while retaining annotations outside the mounted FOR.
+              return Boolean(
+                getAnnotation.call(
+                  csAnnotation.state,
+                  measurement.annotationUID
+                )
+              );
+            } catch {
+              return true;
+            }
+          })
           .map((measurement) => [measurement.annotationUID, measurement])
       );
       const mergedMap = new Map(prevMap);
@@ -774,9 +862,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
             if (!seriesUID) {
               const ref = (m.metadata?.referencedImageId ?? m.metadata?.imageId ?? m.data?.imageId ?? '').toString();
               if (ref) {
-                const normRef = normalizeId(ref);
                 for (const [uid, data] of Object.entries(mergedSeriesMapRef.current || {})) {
-                  if ((data.files || []).some((id) => normalizeId(id) === normRef)) {
+                  if (
+                    findMatchingImageIdIndex(data.files || [], ref) >= 0
+                  ) {
                     seriesUID = uid;
                     break;
                   }
@@ -790,7 +879,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
             if (newFrameIdx === undefined) {
               const ref = (m.metadata?.referencedImageId ?? m.metadata?.imageId ?? m.data?.imageId ?? '').toString();
               if (ref && filesForSeries.length) {
-                const found = filesForSeries.findIndex((id) => normalizeId(id) === normalizeId(ref));
+                const found = findMatchingImageIdIndex(
+                  filesForSeries,
+                  ref,
+                  m.metadata?.frameIndex
+                );
                 if (found >= 0) newFrameIdx = found;
               }
             }
@@ -826,9 +919,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
           } else {
             const ref = (m.metadata?.referencedImageId ?? m.metadata?.imageId ?? m.data?.imageId ?? '').toString();
             if (ref) {
-              const normRef = normalizeId(ref);
               for (const [uid, data] of Object.entries(mergedSeriesMapRef.current || {})) {
-                if ((data.files || []).some((id) => normalizeId(id) === normRef)) {
+                if (
+                  findMatchingImageIdIndex(data.files || [], ref) >= 0
+                ) {
                   finalSeriesUID = uid;
                   break;
                 }
@@ -846,7 +940,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
           ) {
             const ref = (m.metadata?.referencedImageId ?? '').toString();
             if (ref && filesForFinal.length) {
-              const found = filesForFinal.findIndex((id) => normalizeId(id) === normalizeId(ref));
+              const found = findMatchingImageIdIndex(
+                filesForFinal,
+                ref,
+                m.metadata?.frameIndex
+              );
               if (found >= 0) {
                 newFrameIdx = found;
               } else {
@@ -898,28 +996,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         } catch (e) {}
       }, 0);
 
-      // Order-insensitive equality check by annotationUID to avoid false diffs
-      let identical = true;
-      if (prev.length !== next.length) {
-        identical = false;
-      } else {
-        const prevMap = new Map<string, typeof prev[0]>();
-        for (const p of prev) {
-          prevMap.set(p.annotationUID, p);
-        }
-        for (const n of next) {
-          const p = prevMap.get(n.annotationUID);
-          if (!p) {
-            identical = false;
-            break;
-          }
-          // Compare the small set of stabilizing fields only
-          if (p.createdAt !== n.createdAt || p.label !== n.label) {
-            identical = false;
-            break;
-          }
-        }
-      }
+      const identical =
+        createMeasurementListFingerprint(prev) ===
+        createMeasurementListFingerprint(next);
 
       if (identical) {
         // return previous array reference to avoid rerender churn
@@ -1070,6 +1149,24 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const [activeSrId, setActiveSrId] = useState<string | null>(null);
   const [isCreatingSr, setIsCreatingSr] = useState(false);
+  const isCreatingSrRef = useRef(false);
+
+  useEffect(() => {
+    currentAttachSessionRef.current += 1;
+    pendingSeriesNavigationRef.current = null;
+    setExtraSeriesMap({});
+    setLoadedSrList([]);
+    setSrGroups([]);
+    setActiveSrId(null);
+    setAllMeasurements([]);
+    selectedMeasurementUIDRef.current = null;
+    setSelectedMeasurementUID(null);
+    prevMeasurementUIDs.current.clear();
+    measurementDeletionPromisesRef.current.clear();
+    prevLoadedSrRef.current = [];
+    srGroupCounterRef.current = 0;
+    prevSeriesRef.current = null;
+  }, [studyUID]);
 
   // Serialize Measurement-panel navigation and retain the latest pending click.
   const selectionInProgressRef = useRef(false);
@@ -1084,49 +1181,53 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const {
     exportSRAsJSON,
-    exportSRAsDICOMPlaceholder,
+    exportSRAsDICOM,
   } = useSrExport({
     allMeasurements,
     mergedSeriesMap,
-    viewportInstance,
-    viewportEl,
+    mergedSeriesMapRef,
     setExtraSeriesMap,
     setAllMeasurements,
     refreshMeasurements,
     setLoadedSrList,
-    setActiveSrId,
-    setSelectedMeasurementUID: commitSelectedMeasurementUID,
-    setCurrentFrame,
-    renderingEngineRef,
     studyUID,
+    trackedSeriesUID: selectedSeries,
     viewportId,
-    viewSr: async (seriesUID: string, instanceUID?: string | null) => {
-      if (viewSrRef.current) {
-        try {
-          return await viewSrRef.current(seriesUID, instanceUID);
-        } catch (err) {
-          return false;
-        }
-      }
-      return false;
-    },
   });
 
+  const isSR =
+    mergedSeriesMap[selectedSeries]?.metadata?.seriesModality === 'SR';
+
+  const isSeriesReadOnly =
+    isSR ||
+    (typeof selectedSeries === 'string' &&
+      selectedSeries.startsWith?.('SR_'));
+
   const openSrNameDialog = (type: 'json' | 'dicom') => {
+    if (isCreatingSrRef.current || isSeriesReadOnly) return;
+    if (hasActiveAnnotationInteraction()) {
+      toast.error(
+        'Vui lòng hoàn tất thao tác vẽ hoặc chỉnh sửa Measurement trước khi tạo SR.'
+      );
+      return;
+    }
     setPendingSrType(type);
-    setSrNameValue('');
+    setSrNameValue('Measurement Report');
     setSrDialogOpen(true);
   };
 
   const executeSrExportWithName = async (name: string) => {
-    setSrDialogOpen(false);
+    if (isCreatingSrRef.current || !pendingSrType) return;
+
+    const exportType = pendingSrType;
+    isCreatingSrRef.current = true;
     setIsCreatingSr(true);
     try {
       let createdIds: string[] | null = null;
-      if (pendingSrType === 'json') {
+      if (exportType === 'json') {
         createdIds = await exportSRAsJSON(name);
-      } else if (pendingSrType === 'dicom') {
-        createdIds = await exportSRAsDICOMPlaceholder(name);
+      } else {
+        createdIds = await exportSRAsDICOM(name);
       }
 
       if (createdIds && createdIds.length) {
@@ -1151,10 +1252,22 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         });
 
         prevLoadedSrRef.current = Array.from(new Set(createdIds));
+        toast.success(
+          exportType === 'dicom'
+            ? 'Đã tạo và tải xuống DICOM SR.'
+            : 'Đã tạo và tải xuống DICOM JSON SR.'
+        );
       }
-    } catch (e) {
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Không thể tạo Structured Report.'
+      );
     } finally {
+      isCreatingSrRef.current = false;
       setIsCreatingSr(false);
+      setSrDialogOpen(false);
       setPendingSrType(null);
       setSrNameValue('');
     }
@@ -1165,13 +1278,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setPendingSrType(null);
     setSrNameValue('');
   };
-
-  const isSR = seriesMap[selectedSeries]?.metadata?.seriesModality === 'SR';
-
-  const isSeriesReadOnly =
-    isSR ||
-    Boolean(mergedSeriesMap[selectedSeries]?.metadata?.seriesModality === 'SR') ||
-    (typeof selectedSeries === 'string' && selectedSeries.startsWith?.('SR_'));
 
   const handleSelectTool = useCallback((tool: ToolID) => {
     if (!isToolReady) {
@@ -1212,13 +1318,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       (window as any).__CURRENT_SERIES_IS_SR = !!isSeriesReadOnly;
     }
   }, [isSeriesReadOnly]);
-
-  useEffect(() => {
-    if (activeSrId) {
-      setSelectedSeries(activeSrId);
-      if (activeTool !== 'adjust') setActiveTool('adjust');
-    }
-  }, [activeSrId, setSelectedSeries, activeTool]);
 
   useEffect(() => {
     if (!selectedSeries) return;
@@ -1593,6 +1692,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     allMeasurements,
     selectedSeries,
     prevSeriesRef,
+    pendingSeriesNavigationRef,
     setSelectedSeries,
     setSelectedMeasurementUID: setUserSelectedMeasurementUID,
     setCurrentFrame,
@@ -1689,6 +1789,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       selectedSeries={selectedSeries}
       onSelectSeries={(uid) => {
         prevSeriesRef.current = selectedSeries;
+        pendingSeriesNavigationRef.current = {
+          seriesUID: uid,
+          imageIndex: 0,
+        };
         setIsPlaying(false);
         setCurrentFrame(1);
         setVoiRange(null);
@@ -1697,6 +1801,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       }}
       onSelectMobileSeries={(uid) => {
         prevSeriesRef.current = selectedSeries;
+        pendingSeriesNavigationRef.current = {
+          seriesUID: uid,
+          imageIndex: 0,
+        };
         setIsPlaying(false);
         setCurrentFrame(1);
         setVoiRange(null);

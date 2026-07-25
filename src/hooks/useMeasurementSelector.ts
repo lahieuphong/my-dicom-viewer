@@ -4,11 +4,12 @@
 import React from 'react';
 import { useCallback, useRef } from 'react';
 import { annotation as csAnnotation } from '@cornerstonejs/tools';
-import { normalizeId } from '@/lib/viewer/dom';
-import { ensureStackOnViewport } from '@/lib/viewer/stack';
+import {
+  findMatchingImageIdIndex,
+  normalizeImageIdWithFrame,
+} from '@/lib/cornerstone/helpers';
 import { preloadImagesWithTimeout } from '@/lib/viewer/preload';
 import { ensureAnnotationAvailable } from '@/lib/cornerstone/annotations';
-import { enableElement } from '@/lib/cornerstone/element';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import {
   isAnnotationRemovalTombstoned,
@@ -23,7 +24,11 @@ import { ATTEMPTS_ANNOT } from '@/lib/viewer/constants';
 function imageStacksMatch(first: string[], second: string[]): boolean {
   return (
     first.length === second.length &&
-    first.every((imageId, index) => normalizeId(imageId) === normalizeId(second[index]))
+    first.every(
+      (imageId, index) =>
+        normalizeImageIdWithFrame(imageId) ===
+        normalizeImageIdWithFrame(second[index])
+    )
   );
 }
 
@@ -41,16 +46,22 @@ function resolveMeasurementImageIndex(
     measurement?.data?.imageId,
   ].filter((value): value is string => typeof value === 'string' && value.length > 0);
 
+  const storedIndex = Number(measurement?.metadata?.frameIndex);
+  const validStoredIndex =
+    Number.isInteger(storedIndex) && storedIndex >= 0
+      ? storedIndex
+      : undefined;
+
   for (const reference of referenceCandidates) {
-    const normalizedReference = normalizeId(reference);
-    const matchedIndex = imageIds.findIndex(
-      (imageId) => normalizeId(imageId) === normalizedReference
+    const matchedIndex = findMatchingImageIdIndex(
+      imageIds,
+      reference,
+      validStoredIndex
     );
     if (matchedIndex >= 0) return matchedIndex;
   }
 
-  const storedIndex = Number(measurement?.metadata?.frameIndex);
-  if (Number.isInteger(storedIndex) && storedIndex >= 0) {
+  if (typeof validStoredIndex === 'number') {
     return Math.min(storedIndex, Math.max(0, imageIds.length - 1));
   }
 
@@ -94,6 +105,10 @@ export type UseMeasurementSelectorOpts = {
   allMeasurements: any[]; // AnnotationMeasurement[]
   selectedSeries: string;
   prevSeriesRef: React.RefObject<string | null>;
+  pendingSeriesNavigationRef: React.MutableRefObject<{
+    seriesUID: string;
+    imageIndex: number;
+  } | null>;
 
   setSelectedSeries: React.Dispatch<React.SetStateAction<string>>;
   setSelectedMeasurementUID: (uid: string | null) => void;
@@ -118,13 +133,12 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     allMeasurements,
     selectedSeries,
     prevSeriesRef,
+    pendingSeriesNavigationRef,
     setSelectedSeries,
     setSelectedMeasurementUID,
     setCurrentFrame,
     setActiveSrId,
     safeRenderViewport,
-    ensureImageRendered,
-    preloadImagesWithTimeout: preloadHelper,
     selectionInProgressRef,
     selectedMeasurementUIDRef,
   } = opts;
@@ -132,6 +146,30 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
   const selectFlowCounterRef = useRef(0);
   const selectingRef = useRef(false);
   const lastSelectingUIDRef = useRef<string | null>(null);
+  const isSrSeriesUID = useCallback(
+    (seriesUID?: string | null) => {
+      if (!seriesUID) return false;
+      return (
+        mergedSeriesMapRef.current?.[seriesUID]?.metadata
+          ?.seriesModality === 'SR' ||
+        String(seriesUID).startsWith('SR_')
+      );
+    },
+    [mergedSeriesMapRef]
+  );
+
+  const rememberSourceSeriesBeforeSr = useCallback(
+    (targetSeriesUID?: string | null) => {
+      if (
+        isSrSeriesUID(targetSeriesUID) &&
+        selectedSeries &&
+        !isSrSeriesUID(selectedSeries)
+      ) {
+        prevSeriesRef.current = selectedSeries;
+      }
+    },
+    [isSrSeriesUID, prevSeriesRef, selectedSeries]
+  );
 
   const isViewportShowingDesiredImage = useCallback((imageIds: string[], desiredIndex: number) => {
     try {
@@ -265,9 +303,11 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
 
     let selectionConfirmed = false;
     try {
-      ++selectFlowCounterRef.current;
+      const requestId = ++selectFlowCounterRef.current;
+      const isCurrentRequest = () =>
+        requestId === selectFlowCounterRef.current;
 
-      const targetSeriesUID = m.metadata?.seriesUID;
+      const targetSeriesUID = String(m.metadata?.seriesUID ?? '');
       if (!targetSeriesUID) {
         return;
       }
@@ -277,21 +317,42 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
 
       if (!Array.isArray(imageIds) || imageIds.length === 0) {
-        prevSeriesRef.current = selectedSeries;
+        const desiredIndex = Math.max(
+          0,
+          Number.isInteger(Number(m.metadata?.frameIndex))
+            ? Number(m.metadata.frameIndex)
+            : 0
+        );
+        pendingSeriesNavigationRef.current = {
+          seriesUID: targetSeriesUID,
+          imageIndex: desiredIndex,
+        };
+        rememberSourceSeriesBeforeSr(targetSeriesUID);
+        if (selectedSeries !== targetSeriesUID) {
+          setSelectedSeries(targetSeriesUID);
+        }
+        try {
+          setActiveSrId?.(
+            isSrSeriesUID(targetSeriesUID) ? targetSeriesUID : null
+          );
+        } catch {}
 
         try {
           if (viewportEl) {
             const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
             if (inst) {
               const attached = await safeAddAnnotation(inst, viewportEl);
+              if (!isCurrentRequest()) return;
               if (attached) {
                 selectCornerstoneAnnotation(m.annotationUID);
                 selectionConfirmed = true;
               }
             } else {
               const maybe = await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(() => null);
+              if (!isCurrentRequest()) return;
               if (maybe) {
                 const attached = await safeAddAnnotation(maybe, viewportEl);
+                if (!isCurrentRequest()) return;
                 if (attached) {
                   selectCornerstoneAnnotation(m.annotationUID);
                   selectionConfirmed = true;
@@ -303,14 +364,27 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         } catch (error) {
         }
 
-        if (isAnnotationRemovalTombstoned(annotationUID)) return;
-        if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
+        if (
+          !isCurrentRequest() ||
+          isAnnotationRemovalTombstoned(annotationUID)
+        ) {
+          return;
+        }
         if (selectionConfirmed) {
-          await maybeSetSelectedMeasurementUID(m.annotationUID, imageIds, (m.metadata.frameIndex ?? 0));
-          if (isAnnotationRemovalTombstoned(annotationUID)) return;
-          setCurrentFrame((m.metadata.frameIndex ?? 0) + 1);
+          await maybeSetSelectedMeasurementUID(
+            m.annotationUID,
+            imageIds,
+            desiredIndex
+          );
+          if (
+            !isCurrentRequest() ||
+            isAnnotationRemovalTombstoned(annotationUID)
+          ) {
+            return;
+          }
+          setCurrentFrame(desiredIndex + 1);
         } else {
-          setCurrentFrame((m.metadata.frameIndex ?? 0) + 1);
+          setCurrentFrame(desiredIndex + 1);
         }
 
         safeRenderViewport(viewportId);
@@ -318,6 +392,10 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       }
 
       const desiredIndex = resolveMeasurementImageIndex(m, imageIds, liveAnnotation);
+      pendingSeriesNavigationRef.current = {
+        seriesUID: targetSeriesUID,
+        imageIndex: desiredIndex,
+      };
 
       // A measurement click within the current stack is an index navigation,
       // not a stack re-attachment. setImageIdIndex is Cornerstone's public,
@@ -335,6 +413,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           const currentIndex = activeViewport.getCurrentImageIdIndex?.();
           if (currentIndex !== desiredIndex) {
             await activeViewport.setImageIdIndex(desiredIndex);
+            if (!isCurrentRequest()) return;
           }
 
           let confirmedIndex = activeViewport.getCurrentImageIdIndex?.();
@@ -344,16 +423,23 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
             attempt += 1
           ) {
             await new Promise((resolve) => setTimeout(resolve, 25));
+            if (!isCurrentRequest()) return;
             confirmedIndex = activeViewport.getCurrentImageIdIndex?.();
           }
 
-          if (isAnnotationRemovalTombstoned(annotationUID)) return;
+          if (
+            !isCurrentRequest() ||
+            isAnnotationRemovalTombstoned(annotationUID)
+          ) {
+            return;
+          }
           if (confirmedIndex === desiredIndex) {
             const annotation =
               liveAnnotation ??
               (await ensureAnnotationAvailable(m.annotationUID, 800, 40).catch(
                 () => null
               ));
+            if (!isCurrentRequest()) return;
             const targetElement =
               (activeViewport.element as HTMLDivElement | undefined) ?? viewportEl;
 
@@ -363,6 +449,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
                   annotation,
                   targetElement
                 );
+                if (!isCurrentRequest()) return;
               } catch {
                 selectionConfirmed = false;
               }
@@ -371,14 +458,19 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
             if (selectionConfirmed) {
               selectCornerstoneAnnotation(m.annotationUID);
             }
-            if (isAnnotationRemovalTombstoned(annotationUID)) return;
-            prevSeriesRef.current = selectedSeries;
+            if (
+              !isCurrentRequest() ||
+              isAnnotationRemovalTombstoned(annotationUID)
+            ) {
+              return;
+            }
+            rememberSourceSeriesBeforeSr(targetSeriesUID);
             if (selectedSeries !== targetSeriesUID) {
               setSelectedSeries(targetSeriesUID);
             }
             try {
               setActiveSrId?.(
-                String(targetSeriesUID).startsWith('SR_') ? targetSeriesUID : null
+                isSrSeriesUID(targetSeriesUID) ? targetSeriesUID : null
               );
             } catch {}
 
@@ -387,7 +479,19 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
               imageIds,
               desiredIndex
             );
-            if (isAnnotationRemovalTombstoned(annotationUID)) return;
+            if (
+              !isCurrentRequest() ||
+              isAnnotationRemovalTombstoned(annotationUID)
+            ) {
+              return;
+            }
+            const pendingNavigation = pendingSeriesNavigationRef.current;
+            if (
+              pendingNavigation?.seriesUID === targetSeriesUID &&
+              pendingNavigation.imageIndex === desiredIndex
+            ) {
+              pendingSeriesNavigationRef.current = null;
+            }
             setCurrentFrame(desiredIndex + 1);
             safeRenderViewport(viewportId);
             return;
@@ -399,22 +503,31 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
 
       try {
         if (isViewportShowingDesiredImage(imageIds, desiredIndex)) {
-          prevSeriesRef.current = selectedSeries;
+          if (!isCurrentRequest()) return;
+          rememberSourceSeriesBeforeSr(targetSeriesUID);
           if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
+          try {
+            setActiveSrId?.(
+              isSrSeriesUID(targetSeriesUID) ? targetSeriesUID : null
+            );
+          } catch {}
 
           const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
           if (inst) {
             try {
               selectionConfirmed = await safeAddAnnotation(inst, viewportEl);
+              if (!isCurrentRequest()) return;
             } catch {}
             if (selectionConfirmed) {
               selectCornerstoneAnnotation(m.annotationUID);
             }
           } else {
             const maybe = await ensureAnnotationAvailable(m.annotationUID, 600, 30).catch(() => null);
+            if (!isCurrentRequest()) return;
             if (maybe) {
               try {
                 selectionConfirmed = await safeAddAnnotation(maybe, viewportEl);
+                if (!isCurrentRequest()) return;
               } catch {}
               if (selectionConfirmed) {
                 selectCornerstoneAnnotation(m.annotationUID);
@@ -424,11 +537,24 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
             }
           }
 
-          if (isAnnotationRemovalTombstoned(annotationUID)) return;
+          if (
+            !isCurrentRequest() ||
+            isAnnotationRemovalTombstoned(annotationUID)
+          ) {
+            return;
+          }
           if (selectionConfirmed) {
             await maybeSetSelectedMeasurementUID(m.annotationUID, imageIds, desiredIndex);
+            if (!isCurrentRequest()) return;
           }
           if (isAnnotationRemovalTombstoned(annotationUID)) return;
+          const pendingNavigation = pendingSeriesNavigationRef.current;
+          if (
+            pendingNavigation?.seriesUID === targetSeriesUID &&
+            pendingNavigation.imageIndex === desiredIndex
+          ) {
+            pendingSeriesNavigationRef.current = null;
+          }
           setCurrentFrame((desiredIndex ?? 0) + 1);
 
           safeRenderViewport(viewportId);
@@ -438,39 +564,37 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       } catch (error) {
       }
 
-      try {
-        if (viewportEl) {
-          try { enableElement(viewportEl); } catch {}
-          await new Promise((r) => setTimeout(r, 40));
-        }
-      } catch {}
+      if (
+        !isCurrentRequest() ||
+        isAnnotationRemovalTombstoned(annotationUID)
+      ) {
+        return;
+      }
 
-      try {
-        await ensureStackOnViewport({
-          renderingEngineRef: renderingEngineRef as any,
-          viewportInstance,
-          viewportEl,
-          imageIds,
-          desiredIndex,
-          ensureImageRendered,
-          preloadImagesWithTimeout: preloadHelper ?? preloadImagesWithTimeout,
-          viewportId,
-          settleMs: 120,
-        }).catch(() => false);
-      } catch (error) {}
+      // Cross-stack navigation is owned by the selected-series attach effect.
+      // Register/select the annotation here, but never mutate the stack from
+      // this hook; pendingSeriesNavigationRef carries the requested frame.
+      rememberSourceSeriesBeforeSr(targetSeriesUID);
+      if (selectedSeries !== targetSeriesUID) {
+        setSelectedSeries(targetSeriesUID);
+      }
+      if (isSrSeriesUID(targetSeriesUID)) {
+        try { setActiveSrId?.(targetSeriesUID); } catch {}
+      } else {
+        try { setActiveSrId?.(null); } catch {}
+      }
 
-      if (isAnnotationRemovalTombstoned(annotationUID)) return;
-
-      // After attach attempts, try to attach annotation instance
       try {
         const anns = safeGetAnnotations(m.toolName, viewportEl);
         const found = Array.isArray(anns) ? anns.find((a) => a.annotationUID === m.annotationUID) : undefined;
         if (!found) {
           const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
           const maybe = inst ?? (await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(() => null));
+          if (!isCurrentRequest()) return;
           if (maybe) {
             try {
               selectionConfirmed = await safeAddAnnotation(maybe, viewportEl);
+              if (!isCurrentRequest()) return;
             } catch {}
             if (selectionConfirmed) {
               selectCornerstoneAnnotation(m.annotationUID);
@@ -484,24 +608,22 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         }
       } catch {}
 
-      if (isAnnotationRemovalTombstoned(annotationUID)) return;
-      prevSeriesRef.current = selectedSeries;
-      if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
-      if (String(targetSeriesUID).startsWith('SR_')) {
-        try { setActiveSrId?.(targetSeriesUID); } catch {}
-      } else {
-        try { setActiveSrId?.(null); } catch {}
+      if (
+        !isCurrentRequest() ||
+        isAnnotationRemovalTombstoned(annotationUID)
+      ) {
+        return;
       }
 
       if (selectionConfirmed) {
         await maybeSetSelectedMeasurementUID(m.annotationUID, imageIds, desiredIndex);
+        if (!isCurrentRequest()) return;
       } else {
       }
 
       if (isAnnotationRemovalTombstoned(annotationUID)) return;
       setCurrentFrame((desiredIndex ?? 0) + 1);
 
-      await new Promise((r) => setTimeout(r, 40));
       safeRenderViewport(viewportId);
     } finally {
       try {
@@ -519,61 +641,63 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     renderingEngineRef,
     selectedSeries,
     prevSeriesRef,
+    pendingSeriesNavigationRef,
     setSelectedSeries,
     setCurrentFrame,
     setSelectedMeasurementUID,
     setActiveSrId,
     safeRenderViewport,
-    ensureImageRendered,
-    preloadHelper,
     viewportId,
     isViewportShowingDesiredImage,
     selectionInProgressRef,
     selectedMeasurementUIDRef,
     maybeSetSelectedMeasurementUID,
+    isSrSeriesUID,
+    rememberSourceSeriesBeforeSr,
   ]);
 
 
   const handleSelectSr = useCallback(async (srId: string | null) => {
-    ++selectFlowCounterRef.current;
+    const requestId = ++selectFlowCounterRef.current;
     if (srId) {
-      prevSeriesRef.current = selectedSeries;
-      try { setActiveSrId?.(srId); } catch {}
-      const imageIds = mergedSeriesMapRef.current?.[srId]?.files ?? [];
+      if (!isSrSeriesUID(srId)) return;
+      rememberSourceSeriesBeforeSr(srId);
       const srMeasurements = allMeasurements.filter((m) => String(m.metadata?.seriesUID) === String(srId));
       const first = srMeasurements[0];
-      const desiredIndex = typeof first?.metadata?.frameIndex === 'number' ? first!.metadata.frameIndex : 0;
-
-      if (viewportInstance && viewportEl && Array.isArray(imageIds) && imageIds.length > 0) {
+      const imageIds = mergedSeriesMapRef.current?.[srId]?.files ?? [];
+      let firstAnnotation: any = null;
+      if (first) {
         try {
-          try {
-            if (preloadHelper) await preloadHelper(imageIds, { concurrency: 3, perLoadTimeoutMs: 8000, limit: 6 });
-            else await preloadImagesWithTimeout(imageIds, { concurrency: 3, perLoadTimeoutMs: 8000, limit: 6 });
-          } catch {}
-          if (ensureImageRendered && typeof ensureImageRendered === 'function') {
-            await ensureImageRendered(viewportInstance, viewportEl, imageIds, Math.max(0, Math.min(desiredIndex, imageIds.length - 1)), 40, 200);
-          } else {
-            await ensureStackOnViewport({
-              renderingEngineRef: renderingEngineRef as any,
-              viewportInstance,
-              viewportEl,
-              imageIds,
-              desiredIndex,
-              preloadImagesWithTimeout: preloadHelper ?? preloadImagesWithTimeout,
-              viewportId,
-            });
-          }
+          firstAnnotation =
+            (csAnnotation.state as any)?.getAnnotation?.(
+              first.annotationUID
+            ) ?? null;
         } catch {}
       }
+      const desiredIndex = first
+        ? resolveMeasurementImageIndex(first, imageIds, firstAnnotation)
+        : 0;
 
+      /**
+       * selectedSeries is the single owner of stack navigation. Its viewer
+       * effect already has a superseding request token, so View/Close/View
+       * races cannot leave an older SR stack behind.
+       */
+      pendingSeriesNavigationRef.current = {
+        seriesUID: srId,
+        imageIndex: desiredIndex,
+      };
+      try { setActiveSrId?.(srId); } catch {}
       setSelectedSeries(srId);
 
       for (const m of srMeasurements) {
+        if (requestId !== selectFlowCounterRef.current) return;
         try {
           let inst = null;
           try { inst = csAnnotation.state.getAnnotation?.(m.annotationUID); } catch {}
           if (!inst) {
             inst = await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(() => null);
+            if (requestId !== selectFlowCounterRef.current) return;
           }
           if (!inst) {
             const mm = allMeasurements.find((x) => x.annotationUID === m.annotationUID) as any;
@@ -582,41 +706,71 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           if (inst) {
             try {
               await safeAddAnnotation(inst, viewportEl);
+              if (requestId !== selectFlowCounterRef.current) return;
             } catch {}
           } else {
           }
         } catch {}
       }
 
-      if (srMeasurements.length > 0) {
-        const firstM = srMeasurements[0];
-        await maybeSetSelectedMeasurementUID(firstM.annotationUID, imageIds, firstM.metadata.frameIndex ?? 0);
-        setCurrentFrame((firstM.metadata.frameIndex ?? 0) + 1);
+      if (requestId !== selectFlowCounterRef.current) return;
+      if (first) {
+        setSelectedMeasurementUID(first.annotationUID);
+        setCurrentFrame(desiredIndex + 1);
       }
 
       safeRenderViewport(viewportId);
     } else {
       try { setActiveSrId?.(null); } catch {}
-      setSelectedSeries(prevSeriesRef.current ?? Object.keys(mergedSeriesMapRef.current || {})[0] ?? '');
+      const previous = prevSeriesRef.current;
+      const fallback =
+        previous &&
+        mergedSeriesMapRef.current?.[previous] &&
+        !isSrSeriesUID(previous)
+          ? previous
+          : Object.keys(mergedSeriesMapRef.current || {}).find(
+              (seriesUID) => !isSrSeriesUID(seriesUID)
+            ) ?? '';
+      if (fallback) {
+        const fallbackImageIds =
+          mergedSeriesMapRef.current?.[fallback]?.files ?? [];
+        let runtimeIndex = 0;
+        try {
+          runtimeIndex = Number(
+            viewportInstance?.getCurrentImageIdIndex?.() ?? 0
+          );
+        } catch {}
+        const desiredIndex = Number.isInteger(runtimeIndex)
+          ? Math.max(
+              0,
+              Math.min(runtimeIndex, Math.max(0, fallbackImageIds.length - 1))
+            )
+          : 0;
+        pendingSeriesNavigationRef.current = {
+          seriesUID: fallback,
+          imageIndex: desiredIndex,
+        };
+        setCurrentFrame(desiredIndex + 1);
+      } else {
+        pendingSeriesNavigationRef.current = null;
+      }
+      setSelectedSeries(fallback);
     }
   }, [
     mergedSeriesMapRef,
     viewportInstance,
     viewportEl,
-    renderingEngineRef,
-    selectedSeries,
     prevSeriesRef,
+    pendingSeriesNavigationRef,
     setSelectedSeries,
     setSelectedMeasurementUID,
     setCurrentFrame,
     setActiveSrId,
-    ensureImageRendered,
-    preloadHelper,
     safeRenderViewport,
     viewportId,
     allMeasurements,
-    selectedMeasurementUIDRef,
-    maybeSetSelectedMeasurementUID,
+    isSrSeriesUID,
+    rememberSourceSeriesBeforeSr,
   ]);
 
   return {

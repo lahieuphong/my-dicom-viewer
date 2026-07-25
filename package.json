@@ -15,10 +15,10 @@
     "dicom:manifest": "node scripts/generate-dicom-manifest.mjs"
   },
   "dependencies": {
-    "@cornerstonejs/core": "^3.28.0",
-    "@cornerstonejs/dicom-image-loader": "^3.26.0",
-    "@cornerstonejs/streaming-image-volume-loader": "^1.86.1",
-    "@cornerstonejs/tools": "^3.28.0",
+    "@cornerstonejs/adapters": "3.33.5",
+    "@cornerstonejs/core": "3.33.5",
+    "@cornerstonejs/dicom-image-loader": "3.33.5",
+    "@cornerstonejs/tools": "3.33.5",
     "@kitware/vtk.js": "32.12.1",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-checkbox": "^1.3.2",
@@ -40,7 +40,7 @@
     "d3-array": "^3.2.3",
     "d3-interpolate": "^3.0.1",
     "date-fns": "^4.1.0",
-    "dcmjs": "^0.43.1",
+    "dcmjs": "0.43.1",
     "dicom-parser": "^1.8.21",
     "dicomweb-client": "^0.11.2",
     "file-saver": "^2.0.5",
