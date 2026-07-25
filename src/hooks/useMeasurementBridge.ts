@@ -4,20 +4,18 @@ import { annotation as csAnnotation } from '@cornerstonejs/tools';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import { ensureAnnotationAvailable } from '@/lib/cornerstone/annotations';
 import {
-  safeRemoveAnnotation,
   safeSetAnnotationVisibility,
   normalizeImageId,
 } from '@/lib/cornerstone/helpers';
+import { safeAddAnnotation } from '@/lib/viewer/annotationHelpers';
 
 /**
  * useMeasurementBridge
  *
- * - Gắn annotation object từ Cornerstone annotation state vào một viewport DOM element.
+ * - Reconcile annotation objects from Cornerstone state with a viewport element.
  * - Quản lý visibility dựa trên selectedSeries / hiddenMeasurements / mergedSeriesMap.
- * - Khi viewport element bị remove, xoá annotation liên quan và reset cache.
+ * - Reset local caches when the viewport element changes.
  * - Gọi onAutoSelect (nếu có) cho mỗi annotationUID phù hợp, deduplicate.
- *
- * Lưu ý: giữ hành vi "swallow errors" (im lặng) tương tự code gốc để tránh phá vỡ UI.
  */
 export function useMeasurementBridge({
   allMeasurements,
@@ -26,7 +24,6 @@ export function useMeasurementBridge({
   selectedSeries,
   mergedSeriesMap,
   renderingEngineRender,
-  viewportId,
   prevSelectedSeries,
   onAutoSelect,
 }: {
@@ -36,7 +33,6 @@ export function useMeasurementBridge({
   selectedSeries?: string | null;
   mergedSeriesMap?: Record<string, { files: string[]; metadata: any }>;
   renderingEngineRender?: () => void;
-  viewportId?: string;
   prevSelectedSeries?: string | null;
   onAutoSelect?: (annotationUID: string, frameIndex: number) => void;
 }) {
@@ -45,52 +41,41 @@ export function useMeasurementBridge({
 
   // cache visibility to avoid repeated setVisibility calls
   const visibilityCacheRef = useRef<Map<string, boolean>>(new Map());
+  const previousViewportElRef = useRef<HTMLDivElement | null>(null);
 
-  // util: safely obtain the annotation "state" or module object from the imported csAnnotation
-  const getAnnotationState = () => {
-    // the csAnnotation import might be the state object itself or have a .state property
-    return ((csAnnotation as any).state ?? (csAnnotation as any)) as any;
-  };
+  // Measurements are auto-selected only once, when their UID first appears.
+  // Without this persistent set, every parent render selected the whole list
+  // again and the last item kept overwriting an explicit card selection.
+  const autoSelectedUIDsRef = useRef<Set<string>>(new Set());
 
-  // 1) Cleanup when viewportEl is removed: remove attached annotations & clear visibility cache
+  // 1) These annotations are owned by Cornerstone/useMeasurements, not this
+  // bridge. A viewport change only invalidates our local association caches.
   useEffect(() => {
-    if (viewportEl) return;
-
-    // viewport was removed (or not present) -> clear caches and remove annotations
-    const stateAny = getAnnotationState();
-    const toRemove = Array.from(attachedRef.current);
-
-    // Fire-and-forget removals but use Promise.allSettled to attempt them
-    (async () => {
-      try {
-        await Promise.allSettled(
-          toRemove.map(async (uid) => {
-            try {
-              await safeRemoveAnnotation(stateAny, uid);
-            } catch {
-              // swallow
-            }
-          })
-        );
-      } catch {
-        // swallow
-      } finally {
-        attachedRef.current.clear();
-        visibilityCacheRef.current = new Map();
-      }
-    })();
-
-    // nothing to cleanup on unmount here because we are handling immediate removal
+    if (previousViewportElRef.current === viewportEl) return;
+    previousViewportElRef.current = viewportEl;
+    attachedRef.current.clear();
+    visibilityCacheRef.current.clear();
   }, [viewportEl]);
 
   // 2) Ensure annotations are attached to viewport when measurement list changes / viewportEl available
   useEffect(() => {
     if (!viewportEl) return;
 
-    const stateAny = getAnnotationState();
-    const addFn = stateAny?.addAnnotation;
+    const stateAny = csAnnotation.state as any;
     let cancelled = false;
-    const locallyAdded: string[] = [];
+    const currentUIDs = new Set(
+      allMeasurements.map((measurement) => measurement.annotationUID)
+    );
+    const selectedFiles = new Set(
+      (mergedSeriesMap?.[selectedSeries ?? '']?.files ?? []).map(normalizeImageId)
+    );
+
+    for (const uid of Array.from(attachedRef.current)) {
+      if (!currentUIDs.has(uid)) {
+        attachedRef.current.delete(uid);
+        visibilityCacheRef.current.delete(uid);
+      }
+    }
 
     // Read recently removed set (if present on window) to avoid re-attach races.
     const recent = (typeof window !== 'undefined'
@@ -131,67 +116,63 @@ export function useMeasurementBridge({
         }
 
         if (!inst) continue;
+        if (cancelled) break;
 
         try {
-          // call addAnnotation either as promise or sync
-          if (typeof addFn === 'function') {
-            const res = addFn.call(stateAny, inst, viewportEl);
-            if (res && typeof res.then === 'function') {
-              await res;
-            }
-          } else {
-            try {
-              stateAny.addAnnotation?.(inst, viewportEl);
-            } catch {
-              // swallow
-            }
-          }
+          const meta = m.metadata ?? {};
+          const refImg = normalizeImageId(
+            String(
+              meta.referencedImageId ??
+                meta.imageId ??
+                (m.data as any)?.referencedImageId ??
+                (m.data as any)?.imageId ??
+                ''
+            )
+          );
+          const visible =
+            !hiddenMeasurements.has(uid) &&
+            (meta.seriesUID === selectedSeries || selectedFiles.has(refImg));
+          const attached = await safeAddAnnotation(inst, viewportEl, { visible });
 
-          attachedRef.current.add(uid);
-          locallyAdded.push(uid);
-        } catch {
-          // last-resort: try the simple call and mark attached if succeeds
-          try {
-            stateAny.addAnnotation?.(inst, viewportEl);
+          if (!cancelled && attached) {
             attachedRef.current.add(uid);
-            locallyAdded.push(uid);
-          } catch {
-            // swallow
+            if (safeSetAnnotationVisibility(csAnnotation, uid, visible)) {
+              visibilityCacheRef.current.set(uid, visible);
+            }
           }
-        }
+        } catch {}
       }
     })();
 
-    // cleanup for this effect - remove only those we added in this run
     return () => {
       cancelled = true;
-      (async () => {
-        const s = getAnnotationState();
-        await Promise.allSettled(
-          locallyAdded.map(async (uid) => {
-            try {
-              await safeRemoveAnnotation(s, uid);
-            } catch {
-              // swallow
-            } finally {
-              attachedRef.current.delete(uid);
-            }
-          })
-        );
-      })();
     };
-    // Intentionally not including getAnnotationState/addFn; they are derived from csAnnotation module.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allMeasurements, viewportEl]);
+  }, [
+    allMeasurements,
+    hiddenMeasurements,
+    mergedSeriesMap,
+    selectedSeries,
+    viewportEl,
+  ]);
 
   // 3) Sync visibility for each measurement based on selectedSeries / hiddenMeasurements / mergedSeriesMap
   useEffect(() => {
     if (!viewportEl) return;
 
-    const files = mergedSeriesMap?.[selectedSeries ?? '']?.files ?? [];
-    const prevCache = new Map(visibilityCacheRef.current);
+    const files = new Set(
+      (mergedSeriesMap?.[selectedSeries ?? '']?.files ?? []).map(normalizeImageId)
+    );
+    const currentUIDs = new Set(
+      allMeasurements.map((measurement) => measurement.annotationUID)
+    );
     let anyChanged = false;
-    const stateAny = getAnnotationState();
+    const stateAny = csAnnotation.state as any;
+
+    for (const uid of Array.from(visibilityCacheRef.current.keys())) {
+      if (!currentUIDs.has(uid)) {
+        visibilityCacheRef.current.delete(uid);
+      }
+    }
 
     for (const m of allMeasurements) {
       const uid = m.annotationUID;
@@ -207,77 +188,84 @@ export function useMeasurementBridge({
         !hiddenMeasurements.has(uid) &&
         (
           meta?.seriesUID === selectedSeries ||
-          files.some((id: string) => normalizeImageId(id) === normalizeImageId(refImg))
+          files.has(normalizeImageId(refImg))
         );
 
-      const prev = prevCache.get(uid);
+      const prev = visibilityCacheRef.current.get(uid);
       if (prev === undefined || prev !== visible) {
-        // use safe helper to set visibility; swallow errors per-uid
         try {
-          safeSetAnnotationVisibility(stateAny, uid, Boolean(visible));
+          const annotationExists = Boolean(stateAny?.getAnnotation?.(uid));
+          const applied =
+            annotationExists &&
+            safeSetAnnotationVisibility(csAnnotation, uid, Boolean(visible));
+          if (applied) {
+            visibilityCacheRef.current.set(uid, visible);
+            anyChanged = true;
+          } else {
+            // Retry after asynchronous annotation registration.
+            visibilityCacheRef.current.delete(uid);
+          }
         } catch {
-          // swallow
+          visibilityCacheRef.current.delete(uid);
         }
-        visibilityCacheRef.current.set(uid, visible);
-        anyChanged = true;
-      } else {
-        // preserve previous
-        visibilityCacheRef.current.set(uid, prev);
       }
     }
 
     if (anyChanged) {
       try {
         renderingEngineRender?.();
-      } catch {
-        // swallow
-      }
+      } catch {}
     }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allMeasurements, selectedSeries, hiddenMeasurements, mergedSeriesMap, viewportEl, renderingEngineRender]);
 
-  // 4) Auto-select: deduplicate by annotationUID and call onAutoSelect once per UID
+  // 4) Auto-select only a newly-added measurement, once per annotation UID.
   useEffect(() => {
     if (!onAutoSelect || !viewportEl) return;
 
-    const toCall = new Map<string, number>();
-
-    const filesForSelected = (mergedSeriesMap?.[selectedSeries ?? '']?.files ?? []).map((id) =>
-      normalizeImageId(id)
+    const filesForSelected = new Set(
+      (mergedSeriesMap?.[selectedSeries ?? '']?.files ?? []).map(normalizeImageId)
     );
 
-    for (const m of allMeasurements) {
-      const seriesUID = m.metadata?.seriesUID ?? '';
-      const frameIdx =
-        typeof m.metadata?.frameIndex === 'number' ? m.metadata.frameIndex : 0;
+    const newlyAdded = allMeasurements.filter(
+      (measurement) =>
+        !autoSelectedUIDsRef.current.has(measurement.annotationUID)
+    );
 
+    const candidates = newlyAdded.filter((m) => {
+      const seriesUID = m.metadata?.seriesUID ?? '';
       const refImg = normalizeImageId(
         String(m.metadata?.referencedImageId ?? m.metadata?.imageId ?? '')
       );
 
-      const belongs =
+      return (
         seriesUID === selectedSeries ||
         seriesUID === prevSelectedSeries ||
-        filesForSelected.some((norm) => norm === refImg);
+        filesForSelected.has(refImg)
+      );
+    });
 
-      if (belongs) {
-        if (!toCall.has(m.annotationUID)) {
-          toCall.set(m.annotationUID, frameIdx);
-        }
-      }
+    for (const measurement of newlyAdded) {
+      autoSelectedUIDsRef.current.add(measurement.annotationUID);
     }
 
-    if (toCall.size > 0) {
-      for (const [uid, idx] of toCall.entries()) {
-        try {
-          onAutoSelect(uid, idx);
-        } catch {
-          // swallow
-        }
-      }
-    }
+    if (candidates.length === 0) return;
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const newest = candidates.reduce((latest, candidate) => {
+      const latestTime = Date.parse(latest.createdAt ?? latest.metadata?.createdAt ?? '');
+      const candidateTime = Date.parse(
+        candidate.createdAt ?? candidate.metadata?.createdAt ?? ''
+      );
+      if (!Number.isFinite(candidateTime)) return latest;
+      if (!Number.isFinite(latestTime) || candidateTime >= latestTime) return candidate;
+      return latest;
+    });
+
+    const frameIndex =
+      typeof newest.metadata?.frameIndex === 'number' ? newest.metadata.frameIndex : 0;
+    try {
+      onAutoSelect(newest.annotationUID, frameIndex);
+    } catch {
+      autoSelectedUIDsRef.current.delete(newest.annotationUID);
+    }
   }, [allMeasurements, selectedSeries, viewportEl, prevSelectedSeries, mergedSeriesMap, onAutoSelect]);
 }

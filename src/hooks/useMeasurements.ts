@@ -573,7 +573,10 @@ export const useViewportAnnotations = ({
     const handler = () => {
       try {
         if (rafId != null) {
-          cancelAnimationFrame(rafId);
+          // Coalesce an event burst into the already-scheduled refresh.
+          // Cancelling and rescheduling here can starve forever while
+          // Cornerstone emits MODIFIED/stat events on consecutive frames.
+          return;
         }
         rafId = requestAnimationFrame(() => {
           try {
@@ -592,6 +595,10 @@ export const useViewportAnnotations = ({
     // Register the real handler to annotation events
     try {
       eventTarget.addEventListener(ToolEnums.Events.ANNOTATION_ADDED, handler);
+      eventTarget.addEventListener(
+        ToolEnums.Events.ANNOTATION_COMPLETED,
+        handler
+      );
       eventTarget.addEventListener(ToolEnums.Events.ANNOTATION_MODIFIED, handler);
       eventTarget.addEventListener(ToolEnums.Events.ANNOTATION_REMOVED, handler);
     } catch (e) {
@@ -602,6 +609,10 @@ export const useViewportAnnotations = ({
 
       try {
         eventTarget.removeEventListener(ToolEnums.Events.ANNOTATION_ADDED, handler);
+        eventTarget.removeEventListener(
+          ToolEnums.Events.ANNOTATION_COMPLETED,
+          handler
+        );
         eventTarget.removeEventListener(ToolEnums.Events.ANNOTATION_MODIFIED, handler);
         eventTarget.removeEventListener(ToolEnums.Events.ANNOTATION_REMOVED, handler);
       } catch (e) {}

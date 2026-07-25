@@ -89,13 +89,21 @@ export function getRecentlyRemovedSet(): Set<string> {
  * Best-effort: add annotation instance to element only if not already attached there.
  * Records the attachment in the global map.
  */
-export async function safeAddAnnotation(inst: any, el: HTMLDivElement | null): Promise<boolean> {
+export async function safeAddAnnotation(
+  inst: any,
+  el: HTMLDivElement | null,
+  options?: { visible?: boolean }
+): Promise<boolean> {
   if (!inst || !el) return false;
+
+  const annotationUID = String(inst.annotationUID ?? '');
+  if (!annotationUID) return false;
+  const visible = options?.visible ?? true;
 
   // If this annotation was recently removed, avoid re-attaching immediately.
   try {
     const recent = getRecentlyRemovedSet();
-    if (recent.has(inst.annotationUID)) {
+    if (recent.has(annotationUID)) {
       // skip attach for now (caller may retry later)
       return false;
     }
@@ -104,13 +112,36 @@ export async function safeAddAnnotation(inst: any, el: HTMLDivElement | null): P
   }
 
   try {
-    // If annotation already present on that element, skip adding again.
+    // Annotation state is global. If the UID is already registered, calling
+    // addAnnotation again creates a duplicate entry in Cornerstone.
+    let registered: any = null;
     try {
-      const anns = (csAnnotation.state?.getAnnotations?.(inst?.toolName, el) ?? []) as any[];
-      if (Array.isArray(anns) && anns.some((a) => a?.annotationUID === inst.annotationUID)) {
-        // already attached on this element
-        try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(inst.annotationUID, true); } catch {}
-        recordAttachment(inst.annotationUID, el);
+      registered =
+        (csAnnotation.state as any)?.getAnnotation?.(annotationUID) ?? null;
+    } catch {}
+    if (registered) {
+      try {
+        (csAnnotation.visibility as any)?.setAnnotationVisibility?.(
+          annotationUID,
+          visible
+        );
+      } catch {}
+      recordAttachment(annotationUID, el);
+      return true;
+    }
+
+    // Compatibility fallback for state implementations without getAnnotation.
+    try {
+      const toolName = inst?.metadata?.toolName ?? inst?.toolName;
+      const anns = safeGetAnnotations(toolName, el);
+      if (anns.some((annotation) => annotation?.annotationUID === annotationUID)) {
+        try {
+          (csAnnotation.visibility as any)?.setAnnotationVisibility?.(
+            annotationUID,
+            visible
+          );
+        } catch {}
+        recordAttachment(annotationUID, el);
         return true;
       }
     } catch {
@@ -120,10 +151,14 @@ export async function safeAddAnnotation(inst: any, el: HTMLDivElement | null): P
     // Primary preferred API
     const add = (csAnnotation.state as any)?.addAnnotation;
     if (typeof add === 'function') {
-      // add may be async or sync
       await add(inst, el);
-      try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(inst.annotationUID, true); } catch {}
-      recordAttachment(inst.annotationUID, el);
+      try {
+        (csAnnotation.visibility as any)?.setAnnotationVisibility?.(
+          annotationUID,
+          visible
+        );
+      } catch {}
+      recordAttachment(annotationUID, el);
       return true;
     }
 
@@ -131,22 +166,46 @@ export async function safeAddAnnotation(inst: any, el: HTMLDivElement | null): P
     const altAdd = (csAnnotation.state as any)?.add ?? (csAnnotation as any)?.add;
     if (typeof altAdd === 'function') {
       await altAdd(inst, el);
-      try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(inst.annotationUID, true); } catch {}
-      recordAttachment(inst.annotationUID, el);
+      try {
+        (csAnnotation.visibility as any)?.setAnnotationVisibility?.(
+          annotationUID,
+          visible
+        );
+      } catch {}
+      recordAttachment(annotationUID, el);
       return true;
     }
 
-    // Last resort: try calling addAnnotation non-async if available
-    try { (csAnnotation.state as any)?.addAnnotation?.(inst, el); } catch {}
-    try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(inst.annotationUID, true); } catch {}
-    recordAttachment(inst.annotationUID, el);
-    return true;
-  } catch (err) {
-    // swallow - best-effort
-    try { (csAnnotation.state as any)?.addAnnotation?.(inst, el); } catch {}
-    try { recordAttachment(inst.annotationUID, el); } catch {}
+    return false;
+  } catch {
+    // An add can throw after partially mutating state. Verify by UID, but never
+    // retry the mutation here because that can duplicate the annotation.
+    try {
+      const registered =
+        (csAnnotation.state as any)?.getAnnotation?.(annotationUID) ?? null;
+      if (registered) {
+        recordAttachment(annotationUID, el);
+        return true;
+      }
+    } catch {}
     return false;
   }
+}
+
+function normalizeAnnotations(result: any): any[] {
+  if (!result) return [];
+  if (Array.isArray(result)) return result;
+  if (result instanceof Map) {
+    return Array.from(result.values()).flatMap((value) =>
+      Array.isArray(value) ? value : value ? [value] : []
+    );
+  }
+  if (typeof result === 'object') {
+    return Object.values(result).flatMap((value) =>
+      Array.isArray(value) ? value : value ? [value] : []
+    );
+  }
+  return [];
 }
 
 /**
@@ -154,10 +213,14 @@ export async function safeAddAnnotation(inst: any, el: HTMLDivElement | null): P
  */
 export function safeGetAnnotations(toolName: string | undefined, el: HTMLDivElement | null): any[] {
   try {
-    return (csAnnotation.state?.getAnnotations?.(toolName as any, el as any) ?? []) as any[];
+    return normalizeAnnotations(
+      csAnnotation.state?.getAnnotations?.(toolName as any, el as any)
+    );
   } catch {
     try {
-      return (csAnnotation.state?.getAnnotations?.(undefined as any, el as any) ?? []) as any[];
+      return normalizeAnnotations(
+        csAnnotation.state?.getAnnotations?.(undefined as any, el as any)
+      );
     } catch {
       return [];
     }
@@ -205,6 +268,17 @@ export async function safeRemoveAnnotationByUID(annotationUID: string): Promise<
   try {
     const stateAny = csAnnotation.state as any;
     const vis = csAnnotation.visibility as any;
+
+    // Cornerstone does not automatically clear native selection on removal.
+    // Deselect while the annotation still exists to avoid a stale UID.
+    try {
+      if ((csAnnotation.selection as any)?.isAnnotationSelected?.(annotationUID)) {
+        (csAnnotation.selection as any)?.setAnnotationSelected?.(
+          annotationUID,
+          false
+        );
+      }
+    } catch {}
 
     // 0) If we have tracked elements, iterate them first (preferred)
     const attachedEls = listAttachmentElements(annotationUID);

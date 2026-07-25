@@ -19,6 +19,7 @@ import {
 } from '@cornerstonejs/tools';
 
 import { ensureStackScrollWheelActive } from './stackScroll';
+import { configureMeasurementToolGroupStyles } from './measurementStyles';
 
 const TOOL_GROUP_ID = 'toolGroup';
 
@@ -136,6 +137,7 @@ export function registerToolsOnce(): void {
         // Keep native Cornerstone wheel navigation active independently from
         // whichever primary tool the user selects.
         ensureStackScrollWheelActive(TOOL_GROUP_ID);
+        configureMeasurementToolGroupStyles(TOOL_GROUP_ID);
       }
     } catch (e) {
       // swallow additions errors

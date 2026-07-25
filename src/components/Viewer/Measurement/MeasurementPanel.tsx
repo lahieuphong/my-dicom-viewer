@@ -403,7 +403,7 @@ export default function MeasurementPanel({
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') onSelectMeasurement(item);
                               }}
-                              aria-label={`Measurement ${isSRItem ? '(SR)' : ''} #${displayIndex}`}
+                              aria-label={`Measurement${isSRItem ? ' (SR)' : ''} #${displayIndex}`}
                             >
                               <div className="p-3 flex items-start justify-between">
                                 <div className="space-y-0.5">

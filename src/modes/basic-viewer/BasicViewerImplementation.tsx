@@ -56,18 +56,21 @@ import {
 } from '@/extensions/static-dicom-data-source';
 import type { Series, Study } from '@/platform/core';
 
-import { ensureAnnotationAvailable } from '@/lib/cornerstone/annotations';
+import {
+  releaseMeasurementAnnotationStyle,
+  syncMeasurementSelectionStyles,
+} from '@/lib/cornerstone/measurementStyles';
 
 
 import { normalizeId, getEnabledElementSafeLocal } from '@/lib/viewer/dom';
 import { waitForElementVisible, waitForCornerstoneReady, waitForEngineAndViewport, forceRenderCheck } from '@/lib/viewer/polling';
 import { preloadImagesWithTimeout, loadAndCacheImageWithTimeout } from '@/lib/viewer/preload';
-import { safeAddAnnotation, safeGetAnnotations, safeRemoveAnnotationByUID, safeGetAnnotationInstance } from '@/lib/viewer/annotationHelpers';
+import { safeRemoveAnnotationByUID } from '@/lib/viewer/annotationHelpers';
 
 
 import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canvasUtils';
 
-import { ATTEMPTS_ATTACH, ATTEMPTS_ANNOT } from '@/lib/viewer/constants';
+import { ATTEMPTS_ATTACH } from '@/lib/viewer/constants';
 
 function createFallbackStudyMeta(studyUID: string): Study {
   return {
@@ -187,7 +190,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   }, [mergedSeriesMap]);
 
   const selectedMeasurementUIDRef = useRef(selectedMeasurementUID);
-  useEffect(() => {
+  useLayoutEffect(() => {
     selectedMeasurementUIDRef.current = selectedMeasurementUID;
   }, [selectedMeasurementUID]);
 
@@ -461,23 +464,18 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
             // get current ids & index from viewportInstance if possible
             let vpIds: string[] | null = null;
             try { vpIds = typeof vp.getImageIds === 'function' ? vp.getImageIds() ?? null : null; } catch {}
-            let vpIdx: number | null = null;
-            try {
-              if (typeof vp.getCurrentImageIdIndex === 'function') vpIdx = vp.getCurrentImageIdIndex();
-              else if (typeof vp.getImageIdIndex === 'function') vpIdx = vp.getImageIdIndex();
-            } catch {}
-
-            const normalize = (s: any) => normalizeId(s);
-            const desiredIdx = Math.max(0, Math.min(ds.initialImageIdIndex ?? 0, (ds.imageIds || []).length - 1));
-            const desiredIdNorm = normalize(ds.imageIds[desiredIdx]);
 
             const vpShowsDesired =
               Array.isArray(vpIds) &&
-              vpIds.length > 0 &&
-              (typeof vpIdx === 'number' ? vpIdx === desiredIdx : vpIds.some((id) => normalize(id) === desiredIdNorm));
+              vpIds.length === ds.imageIds.length &&
+              vpIds.every(
+                (imageId, index) =>
+                  normalizeId(imageId) === normalizeId(ds.imageIds[index])
+              );
 
             if (vpShowsDesired) {
-              // The viewport already shows the intended image/frame — skip expensive attach.
+              // The requested stack is already installed. Preserve its current
+              // frame (for example, one selected from the Measurement panel).
               // Ensure loading UI is not stuck
               setLoadingStackSafe(false);
               setSidebarLoadingSafe(false);
@@ -922,7 +920,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   // Helper: safe engine/viewport checks + safe render/resize wrappers
   // Helper robust: kiểm tra engine/viewport + safe wrappers
-  function isRenderingEngineAlive(eng: any) {
+  const isRenderingEngineAlive = useCallback((eng: any) => {
     try {
       // if component fully aborted/unmounted, treat engine as dead
       if (abortRef.current) return false;
@@ -934,9 +932,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     } catch {
       return false;
     }
-  }
+  }, []);
 
-  function safeRenderViewport(vpId = VIEWPORT_ID) {
+  const safeRenderViewport = useCallback((vpId = VIEWPORT_ID) => {
     try {
       if (abortRef.current) return;
       const eng = renderingEngineRef.current as any;
@@ -950,9 +948,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       }
     } catch (e) {
     }
-  }
+  }, [isRenderingEngineAlive, renderingEngineRef]);
 
-  function safeResizeAndRender(vpId = VIEWPORT_ID) {
+  const safeResizeAndRender = useCallback((vpId = VIEWPORT_ID) => {
     try {
       if (abortRef.current) return;
       const eng = renderingEngineRef.current as any;
@@ -967,7 +965,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       }
     } catch (e) {
     }
-  }
+  }, [isRenderingEngineAlive, renderingEngineRef]);
 
   function blurViewportActiveElement() {
     try {
@@ -982,99 +980,40 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     } catch {}
   }
 
-  // small helper
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  /**
-   * Try to attach annotation instance (csAnnotation.state) into viewportEl with retries.
-   * Returns true if successfully attached and visible.
-   */
-  async function attachAnnotationWithRetries(annotationUID: string, attempts = ATTEMPTS_ANNOT, intervalMs = 120): Promise<boolean> {
-    if (!annotationUID) return false;
-    try {
-      for (let i = 0; i < attempts; i++) {
-        try {
-          const inst = (csAnnotation.state as any)?.getAnnotation?.(annotationUID) ?? null;
-          if (inst && viewportEl) {
-            // try to add it; safeAddAnnotation above already exists in file
-            try {
-              await safeAddAnnotation(inst, viewportEl);
-            } catch {}
-            // try set visibility
-            try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(annotationUID, true); } catch {}
-            // small pause then verify it is attached
-            await sleep(40);
-            const anns = safeGetAnnotations(inst?.toolName, viewportEl);
-            const found = Array.isArray(anns) ? anns.find((a) => a.annotationUID === annotationUID) : undefined;
-            if (found) return true;
-          } else {
-            // try to ensure annotation available (maybe still being created)
-            const maybe = await ensureAnnotationAvailable(annotationUID, 600, 30).catch(() => null);
-            if (maybe && viewportEl) {
-              try {
-                await safeAddAnnotation(maybe, viewportEl);
-              } catch {}
-              try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(annotationUID, true); } catch {}
-              await sleep(40);
-              const anns = safeGetAnnotations(maybe?.toolName, viewportEl);
-              const found = Array.isArray(anns) ? anns.find((a) => a.annotationUID === annotationUID) : undefined;
-              if (found) return true;
-            }
-          }
-        } catch (e) {
-          // ignore, try again
-        }
-        await sleep(intervalMs);
-      }
-    } catch {}
-    return false;
-  }
-
   /**
    * Wrapper used when user clicks a measurement in UI.
-   * - prevents re-entrancy via selectionInProgressRef
-   * - sets suppression flag so auto-select doesn't race
-   * - ensures annotation attached after selection attempts
+   * Navigation is serialized and only the latest pending card is retained.
+   * This keeps rapid clicks deterministic without dropping the second click.
    */
   async function doUserSelectMeasurement(m: any) {
     if (!m) return;
-    if (selectionInProgressRef.current) {
-      return;
+    pendingUserMeasurementRef.current = m;
+
+    if (userMeasurementSelectionLoopRef.current) {
+      return userMeasurementSelectionLoopRef.current;
     }
 
-    selectionInProgressRef.current = true;
-    // temporarily suppress auto selection churn
-    selectionSuppressedRef.current = true;
-    if (selectionSuppressTimeoutRef.current) {
-      window.clearTimeout(selectionSuppressTimeoutRef.current);
-      selectionSuppressTimeoutRef.current = null;
-    }
-
-    try {
-      try { blurViewportActiveElement(); } catch {}
-      // optimistic set selected (use suppression wrapper)
-      try { setSelectedMeasurementUIDWithSuppression(m.annotationUID, { force: true }); } catch {}
-
-      // call the hook's robust handler
+    const drainSelections = async () => {
+      selectionInProgressRef.current = true;
       try {
-        await handleSelectMeasurement(m);
-      } catch (err) {
+        while (pendingUserMeasurementRef.current) {
+          const nextMeasurement = pendingUserMeasurementRef.current;
+          pendingUserMeasurementRef.current = null;
+          try {
+            blurViewportActiveElement();
+            await handleSelectMeasurement(nextMeasurement);
+          } catch {}
+        }
+      } finally {
+        selectionInProgressRef.current = false;
       }
+    };
 
-      // After main flow: try to ensure annotation is attached/visible
-      try {
-        await attachAnnotationWithRetries(m.annotationUID, 6, 140);
-      } catch (e) {
-        // ignore
-      }
-    } finally {
-      // release flags after short delay to avoid immediate re-entry
-      window.setTimeout(() => {
-        selectionSuppressedRef.current = false;
-      }, 400);
-
-      selectionInProgressRef.current = false;
-    }
+    const running = drainSelections().finally(() => {
+      userMeasurementSelectionLoopRef.current = null;
+    });
+    userMeasurementSelectionLoopRef.current = running;
+    return running;
   }
 
 
@@ -1105,56 +1044,15 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   const [activeSrId, setActiveSrId] = useState<string | null>(null);
   const [isCreatingSr, setIsCreatingSr] = useState(false);
 
-  // Add near other refs/state in Viewer component:
-  const selectionSuppressedRef = useRef(false);
-  const selectionSuppressTimeoutRef = useRef<number | null>(null);
-
-  // NEW: global flag to indicate a selection flow is currently in progress
-  // This will be passed into useMeasurementSelector so the hook can mark it true/false.
+  // Serialize Measurement-panel navigation and retain the latest pending click.
   const selectionInProgressRef = useRef(false);
+  const pendingUserMeasurementRef = useRef<any | null>(null);
+  const userMeasurementSelectionLoopRef = useRef<Promise<void> | null>(null);
 
-
-  // Cleanup suppression timeout on unmount to avoid stray timers
-  useEffect(() => {
-    return () => {
-      try {
-        if (selectionSuppressTimeoutRef.current) {
-          window.clearTimeout(selectionSuppressTimeoutRef.current);
-          selectionSuppressTimeoutRef.current = null;
-        }
-        selectionSuppressedRef.current = false;
-      } catch (e) {
-        // ignore
-      }
-    };
+  const commitSelectedMeasurementUID = useCallback((uid: string | null) => {
+    selectedMeasurementUIDRef.current = uid;
+    setSelectedMeasurementUID((previous) => (previous === uid ? previous : uid));
   }, []);
-
-
-  // wrapped setter that prevents rapid external overrides for a short window
-  const setSelectedMeasurementUIDWithSuppression = useCallback((uid: string | null, opts?: { force?: boolean }) => {
-    try {
-      const bypass = Boolean(opts?.force);
-      if (selectionSuppressedRef.current && !bypass) {
-        // optional: ignore if suppressed, or still set as you prefer
-      }
-
-      // --- IMPORTANT: set suppression BEFORE calling the state setter ---
-      selectionSuppressedRef.current = true;
-      if (selectionSuppressTimeoutRef.current) {
-        window.clearTimeout(selectionSuppressTimeoutRef.current);
-      }
-      // call state setter
-      setSelectedMeasurementUID(uid);
-
-      // keep suppression window (600ms)
-      selectionSuppressTimeoutRef.current = window.setTimeout(() => {
-        selectionSuppressedRef.current = false;
-        selectionSuppressTimeoutRef.current = null;
-      }, 600);
-    } catch (e) {
-      try { setSelectedMeasurementUID(uid); } catch {}
-    }
-  }, [setSelectedMeasurementUID]);
 
 
   const {
@@ -1170,7 +1068,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     refreshMeasurements,
     setLoadedSrList,
     setActiveSrId,
-    setSelectedMeasurementUID: setSelectedMeasurementUIDWithSuppression,
+    setSelectedMeasurementUID: commitSelectedMeasurementUID,
     setCurrentFrame,
     renderingEngineRef,
     studyUID,
@@ -1324,21 +1222,27 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setSidebarLoadingSafe(true);
   }, [selectedSeries, setLoadingStackSafe, setSidebarLoadingSafe]);
 
+  const handleAutoSelectMeasurement = useCallback(
+    (uid: string, frameIndex: number) => {
+      // An explicit card-navigation flow always wins over automatic selection
+      // emitted while the measurement list is reconciling.
+      if (userMeasurementSelectionLoopRef.current) return;
+      commitSelectedMeasurementUID(uid);
+      setCurrentFrame(frameIndex + 1);
+    },
+    [commitSelectedMeasurementUID, setCurrentFrame]
+  );
+
   // Pass a safe renderer into the measurement bridge
   useMeasurementBridge({
     allMeasurements,
     viewportEl,
-    renderingEngineRender: () => safeRenderViewport(VIEWPORT_ID),
-    viewportId: VIEWPORT_ID,
+    renderingEngineRender: safeRenderViewport,
     hiddenMeasurements,
     selectedSeries,
     prevSelectedSeries: prevSeriesRef.current,
     mergedSeriesMap,
-    onAutoSelect: (uid, frameIdx) => {
-      // programmatic auto-select should respect suppression window, so use the wrapper
-      setSelectedMeasurementUIDWithSuppression(uid);
-      setCurrentFrame(frameIdx + 1);
-    },
+    onAutoSelect: handleAutoSelectMeasurement,
   });
 
   useEffect(() => {
@@ -1491,7 +1395,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [renderingEngineRef, viewportId]);
+  }, [safeResizeAndRender, viewportId]);
 
 
   useEffect(() => {
@@ -1586,6 +1490,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   const handleRemoveMeasurement = useCallback(async (uid: string) => {
     if (!uid) return;
     try {
+      releaseMeasurementAnnotationStyle(uid);
+
       // mark + remove via central helper
       await safeRemoveAnnotationByUID(uid).catch(() => null);
 
@@ -1594,13 +1500,15 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
       // Update local state once
       setAllMeasurements((prev) => prev.filter((m) => m.annotationUID !== uid));
-      setSelectedMeasurementUID((prev) => (prev === uid ? null : prev));
+      if (selectedMeasurementUIDRef.current === uid) {
+        commitSelectedMeasurementUID(null);
+      }
 
       // Force redraw
       setTimeout(() => safeRenderViewport(VIEWPORT_ID), 0);
     } catch (err) {
     }
-  }, [safeRenderViewport, refreshMeasurements]);
+  }, [commitSelectedMeasurementUID, safeRenderViewport, refreshMeasurements]);
 
 
 
@@ -1629,6 +1537,13 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
    *  - then attach / show annotation
    */
 
+  const setUserSelectedMeasurementUID = useCallback(
+    (uid: string | null) => {
+      commitSelectedMeasurementUID(uid);
+    },
+    [commitSelectedMeasurementUID]
+  );
+
   // sau khi có các biến / refs trong Viewer (renderingEngineRef, viewportInstance, viewportEl, mergedSeriesMap, allMeasurements, ...)
   // gọi hook:
   const {
@@ -1645,7 +1560,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     selectedSeries,
     prevSeriesRef,
     setSelectedSeries,
-    setSelectedMeasurementUID: setSelectedMeasurementUIDWithSuppression,
+    setSelectedMeasurementUID: setUserSelectedMeasurementUID,
     setCurrentFrame,
     setActiveSrId,
     hiddenMeasurements,
@@ -1680,8 +1595,37 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   }, [imageAvailable, loadingProgress, setLoadingStackSafe, setSidebarLoadingSafe]);
 
 
+  const measurementUIDSignature = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          allMeasurements
+            .map((measurement) => measurement.annotationUID)
+            .filter(Boolean)
+        )
+      )
+        .sort()
+        .join('\u001f'),
+    [allMeasurements]
+  );
+
   useEffect(() => {
-  }, [selectedMeasurementUID]);
+    const annotationUIDs = measurementUIDSignature
+      ? measurementUIDSignature.split('\u001f')
+      : [];
+    syncMeasurementSelectionStyles(
+      annotationUIDs,
+      selectedMeasurementUID
+    );
+    safeRenderViewport(VIEWPORT_ID);
+  }, [measurementUIDSignature, selectedMeasurementUID, safeRenderViewport]);
+
+  useEffect(
+    () => () => {
+      syncMeasurementSelectionStyles([], null);
+    },
+    []
+  );
 
 
   return (
