@@ -130,6 +130,11 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
   }, []);
 
   useEffect(() => {
+    // React Strict Mode intentionally runs effect setup → cleanup → setup once
+    // in development. Restore the mounted flag on every setup so a completed
+    // preview is not mistaken for the result of an unmounted component.
+    mountedRef.current = true;
+
     return () => {
       mountedRef.current = false;
       previewRequestRef.current += 1;
@@ -170,12 +175,26 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
       setWidthPx(dimensions.width);
       setHeightPx(dimensions.height);
     } catch {
+      setIsPreviewing(false);
       setPreviewError('Viewport chưa sẵn sàng để chụp ảnh.');
     }
   }, [open, viewportEl]);
 
   const generatePreview = useCallback(async () => {
-    if (!open || !viewportEl || widthPx == null || heightPx == null) return;
+    if (!open) return;
+
+    if (!viewportEl || widthPx == null || heightPx == null) {
+      previewRequestRef.current += 1;
+      if (mountedRef.current) {
+        setIsPreviewing(false);
+        setPreviewError(
+          viewportEl
+            ? 'Vui lòng nhập kích thước ảnh hợp lệ.'
+            : 'Viewport chưa sẵn sàng để chụp ảnh.'
+        );
+      }
+      return;
+    }
 
     const requestId = ++previewRequestRef.current;
     setIsPreviewing(true);
@@ -220,7 +239,25 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
   ]);
 
   useEffect(() => {
-    if (!open || widthPx == null || heightPx == null) return;
+    if (!open) return;
+
+    if (!viewportEl) {
+      previewRequestRef.current += 1;
+      setIsPreviewing(false);
+      setPreviewError('Viewport chưa sẵn sàng để chụp ảnh.');
+      return;
+    }
+
+    if (widthPx == null || heightPx == null) {
+      // Both values are briefly null while the modal reads the viewport size.
+      // A single null after that means the user entered an invalid dimension.
+      if (widthPx != null || heightPx != null) {
+        previewRequestRef.current += 1;
+        setIsPreviewing(false);
+        setPreviewError('Vui lòng nhập kích thước ảnh hợp lệ.');
+      }
+      return;
+    }
 
     // Invalidate an older render immediately and show feedback during debounce.
     previewRequestRef.current += 1;
@@ -232,7 +269,7 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
     }, PREVIEW_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timer);
-  }, [generatePreview, heightPx, open, widthPx]);
+  }, [generatePreview, heightPx, open, viewportEl, widthPx]);
 
   const handleSave = async () => {
     if (!viewportEl || isSaving || widthPx == null || heightPx == null) return;
