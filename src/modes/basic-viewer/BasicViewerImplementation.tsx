@@ -58,6 +58,7 @@ import type { Series, Study } from '@/platform/core';
 
 import {
   releaseMeasurementAnnotationStyle,
+  syncMeasurementNativeSelection,
   syncMeasurementSelectionStyles,
 } from '@/lib/cornerstone/measurementStyles';
 
@@ -65,7 +66,11 @@ import {
 import { normalizeId, getEnabledElementSafeLocal } from '@/lib/viewer/dom';
 import { waitForElementVisible, waitForCornerstoneReady, waitForEngineAndViewport, forceRenderCheck } from '@/lib/viewer/polling';
 import { preloadImagesWithTimeout, loadAndCacheImageWithTimeout } from '@/lib/viewer/preload';
-import { safeRemoveAnnotationByUID } from '@/lib/viewer/annotationHelpers';
+import {
+  isAnnotationRemovalTombstoned,
+  safeRemoveAnnotationByUID,
+} from '@/lib/viewer/annotationHelpers';
+import { isMeasurementInSeries } from '@/lib/viewer/measurementVisibility';
 
 
 import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canvasUtils';
@@ -122,6 +127,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   const [allMeasurements, setAllMeasurements] = useState<AnnotationMeasurement[]>([]);
   const [selectedMeasurementUID, setSelectedMeasurementUID] = useState<string | null>(null);
   const [hiddenMeasurements, setHiddenMeasurements] = useState<Set<string>>(new Set());
+  const measurementDeletionPromisesRef = useRef<
+    Map<string, Promise<boolean>>
+  >(new Map());
 
   const [mobileSeriesOpen, setMobileSeriesOpen] = useState(false);
   const [mobileMeasurementsOpen, setMobileMeasurementsOpen] = useState(false);
@@ -141,6 +149,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   const setSidebarLoadingSafe = useCallback((v: boolean) => {
     setSidebarLoading((prev) => (prev === v ? prev : v));
   }, []);
+
+  useEffect(() => {
+    // Hidden state belongs to a study, never to the lifetime of the component.
+    setHiddenMeasurements(new Set());
+  }, [studyUID]);
 
 
 
@@ -739,10 +752,18 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     } catch {}
 
     setAllMeasurements((prev) => {
-      const prevMap = new Map(prev.map((m) => [m.annotationUID, m]));
+      const prevMap = new Map(
+        prev
+          .filter(
+            (measurement) =>
+              !isAnnotationRemovalTombstoned(measurement.annotationUID)
+          )
+          .map((measurement) => [measurement.annotationUID, measurement])
+      );
       const mergedMap = new Map(prevMap);
 
       for (const m of current) {
+        if (isAnnotationRemovalTombstoned(m.annotationUID)) continue;
         try {
           const old = prevMap.get(m.annotationUID);
 
@@ -984,9 +1005,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
    * Wrapper used when user clicks a measurement in UI.
    * Navigation is serialized and only the latest pending card is retained.
    * This keeps rapid clicks deterministic without dropping the second click.
-   */
+  */
   async function doUserSelectMeasurement(m: any) {
-    if (!m) return;
+    if (!m || isAnnotationRemovalTombstoned(m.annotationUID)) return;
     pendingUserMeasurementRef.current = m;
 
     if (userMeasurementSelectionLoopRef.current) {
@@ -999,6 +1020,12 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         while (pendingUserMeasurementRef.current) {
           const nextMeasurement = pendingUserMeasurementRef.current;
           pendingUserMeasurementRef.current = null;
+          if (
+            !nextMeasurement ||
+            isAnnotationRemovalTombstoned(nextMeasurement.annotationUID)
+          ) {
+            continue;
+          }
           try {
             blurViewportActiveElement();
             await handleSelectMeasurement(nextMeasurement);
@@ -1166,36 +1193,13 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const measurementsForPanel = useMemo(() => {
     if (!selectedSeries) return [];
-    const currentFiles = mergedSeriesMap[selectedSeries]?.files ?? [];
+    const currentFiles = new Set(
+      (mergedSeriesMap[selectedSeries]?.files ?? []).map(normalizeId)
+    );
 
-    const isSelectedSR = typeof selectedSeries === 'string' && selectedSeries.startsWith('SR_');
-
-    return allMeasurements.filter((m) => {
-      const mSeries = m.metadata?.seriesUID ?? '';
-
-      if (isSelectedSR) {
-        return String(mSeries) === String(selectedSeries);
-      }
-
-      if (String(mSeries).startsWith('SR_')) {
-        return mSeries === selectedSeries;
-      }
-
-      if (mSeries === selectedSeries) return true;
-
-      if (prevSeriesRef.current && mSeries === prevSeriesRef.current) return true;
-
-      const ref =
-        (m.metadata as any)?.referencedImageId ??
-        (m.metadata as any)?.imageId ??
-        (m.data as any)?.imageId ??
-        (m.data as any)?.referencedImageId ??
-        '';
-      const normRef = normalizeId(ref);
-      if (normRef && currentFiles.some((id) => normalizeId(id) === normRef)) return true;
-
-      return false;
-    });
+    return allMeasurements.filter((measurement) =>
+      isMeasurementInSeries(measurement, selectedSeries, currentFiles)
+    );
   }, [allMeasurements, selectedSeries, mergedSeriesMap]);
 
 
@@ -1240,7 +1244,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     renderingEngineRender: safeRenderViewport,
     hiddenMeasurements,
     selectedSeries,
-    prevSelectedSeries: prevSeriesRef.current,
     mergedSeriesMap,
     onAutoSelect: handleAutoSelectMeasurement,
   });
@@ -1413,31 +1416,12 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       return;
     }
 
-    const seriesUID = sel.metadata?.seriesUID ?? '';
-    if (String(seriesUID).startsWith('SR_')) {
-      if (seriesUID !== selectedSeries) {
-        setSelectedMeasurementUID(null);
-      }
-      return;
+    const files = new Set(
+      (mergedSeriesMap[selectedSeries]?.files ?? []).map(normalizeId)
+    );
+    if (!isMeasurementInSeries(sel, selectedSeries, files)) {
+      setSelectedMeasurementUID(null);
     }
-
-    if (seriesUID === selectedSeries) return;
-
-    if (prevSeriesRef.current && seriesUID === prevSeriesRef.current) return;
-
-    const files = mergedSeriesMap[selectedSeries]?.files ?? [];
-
-    const ref =
-      (sel.metadata as any)?.referencedImageId ??
-      (sel.metadata as any)?.imageId ??
-      (sel.data as any)?.imageId ??
-      (sel.data as any)?.referencedImageId ??
-      '';
-    const normRef = normalizeId(ref);
-    const refMatches = Boolean(normRef && files.some((id: string) => normalizeId(id) === normRef));
-    if (refMatches) return;
-
-    setSelectedMeasurementUID(null);
   }, [selectedSeries, allMeasurements, selectedMeasurementUID, mergedSeriesMap, normalizeId]);
 
   useEffect(() => {
@@ -1487,33 +1471,88 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   }, [isSeriesReadOnly, isToolReady, activateTool, activeTool]);
 
 
-  const handleRemoveMeasurement = useCallback(async (uid: string) => {
-    if (!uid) return;
-    try {
-      releaseMeasurementAnnotationStyle(uid);
+  const handleRemoveMeasurement = useCallback(
+    (uid: string): Promise<boolean> => {
+      if (!uid) return Promise.resolve(false);
 
-      // mark + remove via central helper
-      await safeRemoveAnnotationByUID(uid).catch(() => null);
+      const pending = measurementDeletionPromisesRef.current.get(uid);
+      if (pending) return pending;
 
-      // refresh measurement list from annotation.state
-      try { refreshMeasurements?.(); } catch {}
+      const deletion = (async () => {
+        const wasSelected = selectedMeasurementUIDRef.current === uid;
 
-      // Update local state once
-      setAllMeasurements((prev) => prev.filter((m) => m.annotationUID !== uid));
-      if (selectedMeasurementUIDRef.current === uid) {
-        commitSelectedMeasurementUID(null);
-      }
+        try {
+          if (pendingUserMeasurementRef.current?.annotationUID === uid) {
+            pendingUserMeasurementRef.current = null;
+          }
+          if (wasSelected) {
+            commitSelectedMeasurementUID(null);
+          }
 
-      // Force redraw
-      setTimeout(() => safeRenderViewport(VIEWPORT_ID), 0);
-    } catch (err) {
-    }
-  }, [commitSelectedMeasurementUID, safeRenderViewport, refreshMeasurements]);
+          const removed = await safeRemoveAnnotationByUID(uid);
+          if (!removed) {
+            if (
+              wasSelected &&
+              (csAnnotation.state as any)?.getAnnotation?.(uid)
+            ) {
+              commitSelectedMeasurementUID(uid);
+            }
+            return false;
+          }
+
+          releaseMeasurementAnnotationStyle(uid);
+          setAllMeasurements((previous) =>
+            previous.filter(
+              (measurement) => measurement.annotationUID !== uid
+            )
+          );
+          setHiddenMeasurements((previous) => {
+            if (!previous.has(uid)) return previous;
+            const next = new Set(previous);
+            next.delete(uid);
+            return next;
+          });
+
+          try {
+            refreshMeasurements();
+          } catch {}
+          safeRenderViewport(VIEWPORT_ID);
+          return true;
+        } catch {
+          if (
+            wasSelected &&
+            (csAnnotation.state as any)?.getAnnotation?.(uid)
+          ) {
+            commitSelectedMeasurementUID(uid);
+          }
+          return false;
+        }
+      })();
+
+      measurementDeletionPromisesRef.current.set(uid, deletion);
+      void deletion.then(
+        () => {
+          if (measurementDeletionPromisesRef.current.get(uid) === deletion) {
+            measurementDeletionPromisesRef.current.delete(uid);
+          }
+        },
+        () => {
+          if (measurementDeletionPromisesRef.current.get(uid) === deletion) {
+            measurementDeletionPromisesRef.current.delete(uid);
+          }
+        }
+      );
+      return deletion;
+    },
+    [commitSelectedMeasurementUID, refreshMeasurements, safeRenderViewport]
+  );
 
 
 
 
-  function handleToggleVisibility(uid: string) {
+  const handleToggleVisibility = useCallback((uid: string) => {
+    if (!uid || isAnnotationRemovalTombstoned(uid)) return;
+
     setHiddenMeasurements((prev) => {
       const set = new Set(prev);
       if (set.has(uid)) {
@@ -1523,12 +1562,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       }
       return set;
     });
-
-    // đảm bảo redraw
-    setTimeout(() => {
-      safeRenderViewport(VIEWPORT_ID);
-    }, 0);
-  }
+  }, []);
 
   /**
    * Robust select measurement:
@@ -1563,7 +1597,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setSelectedMeasurementUID: setUserSelectedMeasurementUID,
     setCurrentFrame,
     setActiveSrId,
-    hiddenMeasurements,
     safeRenderViewport,
     ensureImageRendered,
     preloadImagesWithTimeout,
@@ -1609,6 +1642,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     [allMeasurements]
   );
 
+  const hiddenMeasurementUIDSignature = useMemo(
+    () => Array.from(hiddenMeasurements).sort().join('\u001f'),
+    [hiddenMeasurements]
+  );
+
   useEffect(() => {
     const annotationUIDs = measurementUIDSignature
       ? measurementUIDSignature.split('\u001f')
@@ -1619,6 +1657,13 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     );
     safeRenderViewport(VIEWPORT_ID);
   }, [measurementUIDSignature, selectedMeasurementUID, safeRenderViewport]);
+
+  useEffect(() => {
+    // Hiding deselects natively inside Cornerstone. Showing the same card must
+    // restore native selection without re-running all annotation style writes.
+    // The same applies when the selected series is hidden and shown again.
+    syncMeasurementNativeSelection(selectedMeasurementUIDRef.current);
+  }, [hiddenMeasurementUIDSignature, selectedSeries]);
 
   useEffect(
     () => () => {

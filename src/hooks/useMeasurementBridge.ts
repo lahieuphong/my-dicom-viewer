@@ -8,6 +8,7 @@ import {
   normalizeImageId,
 } from '@/lib/cornerstone/helpers';
 import { safeAddAnnotation } from '@/lib/viewer/annotationHelpers';
+import { isMeasurementInSeries } from '@/lib/viewer/measurementVisibility';
 
 /**
  * useMeasurementBridge
@@ -24,7 +25,6 @@ export function useMeasurementBridge({
   selectedSeries,
   mergedSeriesMap,
   renderingEngineRender,
-  prevSelectedSeries,
   onAutoSelect,
 }: {
   allMeasurements: AnnotationMeasurement[];
@@ -33,7 +33,6 @@ export function useMeasurementBridge({
   selectedSeries?: string | null;
   mergedSeriesMap?: Record<string, { files: string[]; metadata: any }>;
   renderingEngineRender?: () => void;
-  prevSelectedSeries?: string | null;
   onAutoSelect?: (annotationUID: string, frameIndex: number) => void;
 }) {
   // set of annotationUIDs that we've attached to the viewport
@@ -77,24 +76,12 @@ export function useMeasurementBridge({
       }
     }
 
-    // Read recently removed set (if present on window) to avoid re-attach races.
-    const recent = (typeof window !== 'undefined'
-      ? (window as any).__recentlyRemovedAnnotations
-      : null) as Set<string> | null;
-
     (async () => {
+      let needsRender = false;
+
       for (const m of allMeasurements) {
         if (cancelled) break;
         const uid = m.annotationUID;
-
-        // Skip if UID was just removed (avoid re-attaching a just-removed annotation)
-        try {
-          if (recent && recent.has(uid)) {
-            continue;
-          }
-        } catch {
-          // swallow
-        }
 
         if (attachedRef.current.has(uid)) continue;
 
@@ -119,27 +106,24 @@ export function useMeasurementBridge({
         if (cancelled) break;
 
         try {
-          const meta = m.metadata ?? {};
-          const refImg = normalizeImageId(
-            String(
-              meta.referencedImageId ??
-                meta.imageId ??
-                (m.data as any)?.referencedImageId ??
-                (m.data as any)?.imageId ??
-                ''
-            )
-          );
           const visible =
             !hiddenMeasurements.has(uid) &&
-            (meta.seriesUID === selectedSeries || selectedFiles.has(refImg));
+            isMeasurementInSeries(m, selectedSeries, selectedFiles);
           const attached = await safeAddAnnotation(inst, viewportEl, { visible });
 
           if (!cancelled && attached) {
             attachedRef.current.add(uid);
             if (safeSetAnnotationVisibility(csAnnotation, uid, visible)) {
               visibilityCacheRef.current.set(uid, visible);
+              needsRender = true;
             }
           }
+        } catch {}
+      }
+
+      if (!cancelled && needsRender) {
+        try {
+          renderingEngineRender?.();
         } catch {}
       }
     })();
@@ -151,6 +135,7 @@ export function useMeasurementBridge({
     allMeasurements,
     hiddenMeasurements,
     mergedSeriesMap,
+    renderingEngineRender,
     selectedSeries,
     viewportEl,
   ]);
@@ -176,31 +161,23 @@ export function useMeasurementBridge({
 
     for (const m of allMeasurements) {
       const uid = m.annotationUID;
-      const meta: any = m.metadata ?? {};
-
-      const refImg =
-        meta?.referencedImageId ??
-        meta?.imageId ??
-        (m.data as any)?.imageId ??
-        '';
 
       const visible =
         !hiddenMeasurements.has(uid) &&
-        (
-          meta?.seriesUID === selectedSeries ||
-          files.has(normalizeImageId(refImg))
-        );
+        isMeasurementInSeries(m, selectedSeries, files);
 
       const prev = visibilityCacheRef.current.get(uid);
       if (prev === undefined || prev !== visible) {
         try {
           const annotationExists = Boolean(stateAny?.getAnnotation?.(uid));
+          const previousVisibility =
+            (csAnnotation.visibility as any)?.isAnnotationVisible?.(uid);
           const applied =
             annotationExists &&
             safeSetAnnotationVisibility(csAnnotation, uid, Boolean(visible));
           if (applied) {
             visibilityCacheRef.current.set(uid, visible);
-            anyChanged = true;
+            anyChanged = anyChanged || previousVisibility !== visible;
           } else {
             // Retry after asynchronous annotation registration.
             visibilityCacheRef.current.delete(uid);
@@ -231,18 +208,13 @@ export function useMeasurementBridge({
         !autoSelectedUIDsRef.current.has(measurement.annotationUID)
     );
 
-    const candidates = newlyAdded.filter((m) => {
-      const seriesUID = m.metadata?.seriesUID ?? '';
-      const refImg = normalizeImageId(
-        String(m.metadata?.referencedImageId ?? m.metadata?.imageId ?? '')
-      );
-
-      return (
-        seriesUID === selectedSeries ||
-        seriesUID === prevSelectedSeries ||
-        filesForSelected.has(refImg)
-      );
-    });
+    const candidates = newlyAdded.filter((measurement) =>
+      isMeasurementInSeries(
+        measurement,
+        selectedSeries,
+        filesForSelected
+      )
+    );
 
     for (const measurement of newlyAdded) {
       autoSelectedUIDsRef.current.add(measurement.annotationUID);
@@ -267,5 +239,5 @@ export function useMeasurementBridge({
     } catch {
       autoSelectedUIDsRef.current.delete(newest.annotationUID);
     }
-  }, [allMeasurements, selectedSeries, viewportEl, prevSelectedSeries, mergedSeriesMap, onAutoSelect]);
+  }, [allMeasurements, selectedSeries, viewportEl, mergedSeriesMap, onAutoSelect]);
 }

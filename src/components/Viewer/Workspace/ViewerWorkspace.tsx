@@ -166,7 +166,6 @@ export default function ViewerWorkspace({
     refreshMeasurements,
     currentFrame,
     totalFrames,
-    viewportEl,
     selectedMeasurementUID,
     studyDate,
     onRemoveMeasurement,

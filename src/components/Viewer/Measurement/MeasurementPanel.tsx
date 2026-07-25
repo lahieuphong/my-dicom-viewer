@@ -1,7 +1,7 @@
 // src/components/Viewer/Measurement/MeasurementPanel.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronUp } from 'lucide-react';
 import { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import type { Series } from '@/platform/core';
@@ -13,8 +13,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
-import { safeGetEnabledElement as safeGetEnabled } from '@/lib/cornerstone/helpers';
-
 import EditLabelDialog from './EditLabelDialog';
 import MeasurementStats from './MeasurementStats';
 import PanelScrollArea from '@/components/Viewer/PanelScrollArea';
@@ -57,13 +55,12 @@ interface MeasurementPanelProps {
   setCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   onUpdateLabel: (annotationUID: string, newLabel: string) => void;
   onSelectMeasurement: (m: AnnotationMeasurement) => void;
-  onRemoveMeasurement: (annotationUID: string) => void;
+  onRemoveMeasurement: (annotationUID: string) => Promise<boolean>;
   seriesMap: Record<string, { files: string[]; metadata: Series }>;
   seriesInstanceUID?: string;
   refreshMeasurements?: () => void;
   currentFrame: number;
   totalFrames: number;
-  viewportEl: HTMLDivElement | null;
   selectedMeasurementUID: string | null;
   studyDate: string;
   hiddenMeasurements: Set<string>;
@@ -91,7 +88,6 @@ export default function MeasurementPanel({
   refreshMeasurements,
   currentFrame,
   totalFrames,
-  viewportEl,
   selectedMeasurementUID,
   studyDate,
   hiddenMeasurements,
@@ -113,7 +109,11 @@ export default function MeasurementPanel({
   const [listCollapsed, setListCollapsed] = useState(false);
   const [headerMode, setHeaderMode] = useState<MeasurementHeaderMode>('length');
   const formattedDate = formatStudyDate(studyDate);
-  const [deletedUIDs, setDeletedUIDs] = useState<Set<string>>(new Set());
+  const deletingUIDsRef = useRef<Set<string>>(new Set());
+  const deleteCooldownUntilRef = useRef(0);
+  const deleteCooldownTimerRef = useRef<number | null>(null);
+  const [deletingUIDs, setDeletingUIDs] = useState<Set<string>>(new Set());
+  const [deleteCooldownActive, setDeleteCooldownActive] = useState(false);
 
   useEffect(() => {
     if (measurements.length > 0) {
@@ -125,11 +125,59 @@ export default function MeasurementPanel({
     if (editingLabel) setNewLabel(editingLabel.currentLabel);
   }, [editingLabel]);
 
-  useEffect(() => {
-    setDeletedUIDs(new Set());
-  }, [measurements.length]);
+  useEffect(
+    () => () => {
+      if (deleteCooldownTimerRef.current !== null) {
+        window.clearTimeout(deleteCooldownTimerRef.current);
+      }
+    },
+    []
+  );
 
-  const visible = measurements.filter((m) => !deletedUIDs.has(m.annotationUID));
+  const requestMeasurementDelete = useCallback(
+    async (annotationUID: string) => {
+      const now = Date.now();
+      if (
+        now < deleteCooldownUntilRef.current ||
+        deletingUIDsRef.current.has(annotationUID)
+      ) {
+        return;
+      }
+
+      // Keep a short panel-wide lock so a double-click cannot delete the row
+      // that moves underneath the pointer after the first row disappears.
+      deleteCooldownUntilRef.current = now + 400;
+      setDeleteCooldownActive(true);
+      if (deleteCooldownTimerRef.current !== null) {
+        window.clearTimeout(deleteCooldownTimerRef.current);
+      }
+      deleteCooldownTimerRef.current = window.setTimeout(() => {
+        deleteCooldownTimerRef.current = null;
+        setDeleteCooldownActive(false);
+      }, 400);
+      deletingUIDsRef.current.add(annotationUID);
+      setDeletingUIDs((previous) => {
+        const next = new Set(previous);
+        next.add(annotationUID);
+        return next;
+      });
+
+      try {
+        await onRemoveMeasurement(annotationUID);
+      } finally {
+        deletingUIDsRef.current.delete(annotationUID);
+        setDeletingUIDs((previous) => {
+          if (!previous.has(annotationUID)) return previous;
+          const next = new Set(previous);
+          next.delete(annotationUID);
+          return next;
+        });
+      }
+    },
+    [onRemoveMeasurement]
+  );
+
+  const visible = measurements;
 
   const isSelectedSR =
     typeof seriesInstanceUID === 'string' && seriesInstanceUID?.startsWith('SR_');
@@ -360,6 +408,7 @@ export default function MeasurementPanel({
                       return visible.map((item, idx) => {
                         const isSelected = item.annotationUID === selectedMeasurementUID;
                         const isHidden = hiddenMeasurements.has(item.annotationUID);
+                        const isDeleting = deletingUIDs.has(item.annotationUID);
                         const labelText = item.label || 'Chưa có nhãn';
                         const isDefault = labelText === 'Chưa có nhãn';
                         const seriesUID = item.metadata.seriesUID;
@@ -369,6 +418,10 @@ export default function MeasurementPanel({
                         const isSRItem =
                           Boolean(seriesMetadata && seriesMetadata.seriesModality === 'SR') ||
                           String(item.metadata.seriesUID ?? '').startsWith('SR_');
+                        const isDeleteDisabled =
+                          isSRItem ||
+                          isDeleting ||
+                          deleteCooldownActive;
 
                         const displayIndex = isSRItem ? ++srCounter : ++nonSrCounter;
 
@@ -401,7 +454,11 @@ export default function MeasurementPanel({
                               )}
                               onClick={() => onSelectMeasurement(item)}
                               onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') onSelectMeasurement(item);
+                                if (e.target !== e.currentTarget) return;
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  onSelectMeasurement(item);
+                                }
                               }}
                               aria-label={`Measurement${isSRItem ? ' (SR)' : ''} #${displayIndex}`}
                             >
@@ -451,54 +508,48 @@ export default function MeasurementPanel({
                                         if (isSRItem) return;
                                         onToggleVisibility(item.annotationUID);
                                       }}
+                                      onKeyDown={(e) => e.stopPropagation()}
                                       disabled={isSRItem}
                                       aria-disabled={isSRItem}
                                     >
                                       <i className={`fas fa-eye${isHidden ? '-slash' : ''}`} />
                                     </button>
 
-                                    {/* DELETE BUTTON — simplified: optimistic hide + delegate removal to parent */}
                                     <button
                                       type="button"
-                                      className={cn(isSRItem ? 'opacity-50 cursor-not-allowed' : 'hover:text-destructive')}
-                                      aria-label={isSRItem ? 'Cannot delete SR measurement' : 'Delete'}
-                                      title={isSRItem ? 'SR measurements are read-only' : 'Delete measurement'}
+                                      className={cn(
+                                        isDeleteDisabled
+                                          ? 'opacity-50 cursor-not-allowed'
+                                          : 'hover:text-destructive'
+                                      )}
+                                      aria-label={
+                                        isSRItem
+                                          ? 'Cannot delete SR measurement'
+                                          : isDeleting
+                                          ? 'Deleting measurement'
+                                          : deleteCooldownActive
+                                          ? 'Delete temporarily unavailable'
+                                          : 'Delete'
+                                      }
+                                      title={
+                                        isSRItem
+                                          ? 'SR measurements are read-only'
+                                          : isDeleting
+                                          ? 'Deleting measurement'
+                                          : deleteCooldownActive
+                                          ? 'Please wait before deleting another measurement'
+                                          : 'Delete measurement'
+                                      }
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        if (isSRItem) return;
-                                        if (!viewportEl) return;
-
-                                        // OPTIMISTIC UI: hide immediately for snappy UX
-                                        setDeletedUIDs((prev) => {
-                                          const next = new Set(prev);
-                                          next.add(item.annotationUID);
-                                          return next;
-                                        });
-
-                                        // Delegate actual removal to parent (centralized)
-                                        try {
-                                          onRemoveMeasurement(item.annotationUID);
-                                        } catch (err) {
-                                          // don't break UI
-                                        }
-
-                                        // Parent may update; optionally request refresh (best-effort)
-                                        try {
-                                          refreshMeasurements?.();
-                                        } catch {
-                                          // swallow
-                                        }
-
-                                        // light redraw of enabled viewport, if possible
-                                        try {
-                                          const enabled = safeGetEnabled(viewportEl) ?? null;
-                                          enabled?.viewport?.render();
-                                        } catch {
-                                          // swallow
-                                        }
+                                        if (isDeleteDisabled) return;
+                                        void requestMeasurementDelete(
+                                          item.annotationUID
+                                        );
                                       }}
-                                      disabled={isSRItem}
-                                      aria-disabled={isSRItem}
+                                      onKeyDown={(e) => e.stopPropagation()}
+                                      disabled={isDeleteDisabled}
+                                      aria-disabled={isDeleteDisabled}
                                     >
                                       <i className="fas fa-trash" />
                                     </button>

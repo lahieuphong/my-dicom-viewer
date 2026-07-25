@@ -4,14 +4,14 @@
 import { annotation as csAnnotation } from '@cornerstonejs/tools';
 
 /**
- * Centralized, best-effort annotation helpers.
+ * Centralized annotation lifecycle helpers.
  * - Avoid duplicate adds by checking existing annotations on target element first.
- * - Track attachments globally so a single remove can detach from all elements.
- * - Try multiple API shapes for add/remove to be compatible with different versions.
- * - Set visibility when adding; clear visibility when removing where possible.
+ * - Preserve visibility unless the caller explicitly owns a visibility update.
+ * - Prevent an async attach flow from resurrecting a deleted annotation.
+ * - Verify that Cornerstone actually removed an annotation before reporting success.
  *
  * Note: We use a global map `window.__annotationAttachments` to track which DOM elements (by
- * reference) an annotationUID is attached to. This avoids needing to rely on ambiguous library internals.
+ * reference) an annotationUID was associated with. Cornerstone annotation state itself is global.
  */
 
 /** Global tracking map: uid -> Set<HTMLElement>. Stored on window to survive module reloads. */
@@ -56,38 +56,55 @@ function removeAttachmentRecord(uid: string, el?: HTMLElement | null) {
   } catch {}
 }
 
-function listAttachmentElements(uid: string): HTMLElement[] {
-  try {
-    const map = getAttachmentMap();
-    const s = map.get(uid);
-    return s ? Array.from(s) : [];
-  } catch {
-    return [];
-  }
-}
-
 /**
- * Tiny global set to mark recently removed annotations and avoid immediate re-attachment races.
- * Stored on window so it survives module reloads in dev.
+ * Session tombstones prevent stale async selectors/bridges from re-adding a
+ * deleted UID. Drawing-tool UIDs are unique, so a deleted UID must not be
+ * reused during the current viewer session.
  */
-export function getRecentlyRemovedSet(): Set<string> {
+function getRemovedAnnotationTombstones(): Set<string> {
   try {
     const w: any = typeof window !== 'undefined' ? (window as any) : null;
     if (!w) return new Set();
-    if (!w.__recentlyRemovedAnnotations || !(w.__recentlyRemovedAnnotations instanceof Set)) {
-      w.__recentlyRemovedAnnotations = new Set();
+    if (
+      !w.__removedAnnotationTombstones ||
+      !(w.__removedAnnotationTombstones instanceof Set)
+    ) {
+      w.__removedAnnotationTombstones = new Set();
     }
-    return w.__recentlyRemovedAnnotations as Set<string>;
+    return w.__removedAnnotationTombstones as Set<string>;
   } catch {
-    // fallback ephemeral set
-    if (!(getRecentlyRemovedSet as any)._fallback) (getRecentlyRemovedSet as any)._fallback = new Set();
-    return (getRecentlyRemovedSet as any)._fallback as Set<string>;
+    if (!(getRemovedAnnotationTombstones as any)._fallback) {
+      (getRemovedAnnotationTombstones as any)._fallback = new Set();
+    }
+    return (getRemovedAnnotationTombstones as any)._fallback as Set<string>;
+  }
+}
+
+export function isAnnotationRemovalTombstoned(annotationUID: string): boolean {
+  return Boolean(annotationUID) && getRemovedAnnotationTombstones().has(annotationUID);
+}
+
+function applyVisibilityOverride(
+  annotationUID: string,
+  visible: boolean | undefined
+): void {
+  if (typeof visible !== 'boolean') return;
+  try {
+    (csAnnotation.visibility as any)?.setAnnotationVisibility?.(
+      annotationUID,
+      visible
+    );
+  } catch {
+    // Visibility reconciliation will retry from useMeasurementBridge.
   }
 }
 
 /**
  * Best-effort: add annotation instance to element only if not already attached there.
  * Records the attachment in the global map.
+ *
+ * Visibility is intentionally opt-in. Navigation/selection callers must not
+ * overwrite a newer hide/show decision; useMeasurementBridge is the owner.
  */
 export async function safeAddAnnotation(
   inst: any,
@@ -98,18 +115,8 @@ export async function safeAddAnnotation(
 
   const annotationUID = String(inst.annotationUID ?? '');
   if (!annotationUID) return false;
-  const visible = options?.visible ?? true;
 
-  // If this annotation was recently removed, avoid re-attaching immediately.
-  try {
-    const recent = getRecentlyRemovedSet();
-    if (recent.has(annotationUID)) {
-      // skip attach for now (caller may retry later)
-      return false;
-    }
-  } catch {
-    // ignore
-  }
+  if (isAnnotationRemovalTombstoned(annotationUID)) return false;
 
   try {
     // Annotation state is global. If the UID is already registered, calling
@@ -120,12 +127,7 @@ export async function safeAddAnnotation(
         (csAnnotation.state as any)?.getAnnotation?.(annotationUID) ?? null;
     } catch {}
     if (registered) {
-      try {
-        (csAnnotation.visibility as any)?.setAnnotationVisibility?.(
-          annotationUID,
-          visible
-        );
-      } catch {}
+      applyVisibilityOverride(annotationUID, options?.visible);
       recordAttachment(annotationUID, el);
       return true;
     }
@@ -135,12 +137,7 @@ export async function safeAddAnnotation(
       const toolName = inst?.metadata?.toolName ?? inst?.toolName;
       const anns = safeGetAnnotations(toolName, el);
       if (anns.some((annotation) => annotation?.annotationUID === annotationUID)) {
-        try {
-          (csAnnotation.visibility as any)?.setAnnotationVisibility?.(
-            annotationUID,
-            visible
-          );
-        } catch {}
+        applyVisibilityOverride(annotationUID, options?.visible);
         recordAttachment(annotationUID, el);
         return true;
       }
@@ -152,12 +149,13 @@ export async function safeAddAnnotation(
     const add = (csAnnotation.state as any)?.addAnnotation;
     if (typeof add === 'function') {
       await add(inst, el);
-      try {
-        (csAnnotation.visibility as any)?.setAnnotationVisibility?.(
-          annotationUID,
-          visible
-        );
-      } catch {}
+      if (isAnnotationRemovalTombstoned(annotationUID)) {
+        try {
+          (csAnnotation.state as any)?.removeAnnotation?.(annotationUID);
+        } catch {}
+        return false;
+      }
+      applyVisibilityOverride(annotationUID, options?.visible);
       recordAttachment(annotationUID, el);
       return true;
     }
@@ -166,12 +164,13 @@ export async function safeAddAnnotation(
     const altAdd = (csAnnotation.state as any)?.add ?? (csAnnotation as any)?.add;
     if (typeof altAdd === 'function') {
       await altAdd(inst, el);
-      try {
-        (csAnnotation.visibility as any)?.setAnnotationVisibility?.(
-          annotationUID,
-          visible
-        );
-      } catch {}
+      if (isAnnotationRemovalTombstoned(annotationUID)) {
+        try {
+          (csAnnotation.state as any)?.removeAnnotation?.(annotationUID);
+        } catch {}
+        return false;
+      }
+      applyVisibilityOverride(annotationUID, options?.visible);
       recordAttachment(annotationUID, el);
       return true;
     }
@@ -184,6 +183,13 @@ export async function safeAddAnnotation(
       const registered =
         (csAnnotation.state as any)?.getAnnotation?.(annotationUID) ?? null;
       if (registered) {
+        if (isAnnotationRemovalTombstoned(annotationUID)) {
+          try {
+            (csAnnotation.state as any)?.removeAnnotation?.(annotationUID);
+          } catch {}
+          return false;
+        }
+        applyVisibilityOverride(annotationUID, options?.visible);
         recordAttachment(annotationUID, el);
         return true;
       }
@@ -236,43 +242,54 @@ export function safeGetAnnotationInstance(annotationUID: string): any | null {
 }
 
 /**
- * Comprehensive removal: tries to remove an annotation instance from all known attached elements,
- * tries many API shapes (by uid or by instance), toggles visibility off, and clears the global map.
+ * Idempotently remove an annotation through Cornerstone's public UID API.
  *
- * Additionally: mark the UID as recently removed to avoid immediate re-attachment races.
+ * Showing before removal clears Cornerstone's private hidden-UID registry. If
+ * that registry is left behind, re-importing the same UID can create an
+ * annotation that is permanently invisible.
  */
 export async function safeRemoveAnnotationByUID(annotationUID: string): Promise<boolean> {
   if (!annotationUID) return false;
 
-  // Mark as recently removed to prevent immediate re-attachment attempts from other effects.
-  try {
-    const recent = getRecentlyRemovedSet();
-    recent.add(annotationUID);
+  const tombstones = getRemovedAnnotationTombstones();
+  tombstones.add(annotationUID);
+  const state = csAnnotation.state as any;
+  const visibility = csAnnotation.visibility as any;
+  let wasVisible: boolean | undefined;
+  let wasSelected = false;
 
-    // keep it short — 1500..2500ms is usually enough to avoid re-attach race
-    const timeoutMs = 2000;
-    if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
-      window.setTimeout(() => {
-        try { recent.delete(annotationUID); } catch {}
-      }, timeoutMs);
-    } else {
-      // fallback: clear after a shorter period in non-browser env
-      setTimeout(() => {
-        try { recent.delete(annotationUID); } catch {}
-      }, timeoutMs);
+  try {
+    wasVisible = visibility?.isAnnotationVisible?.(annotationUID);
+  } catch {}
+  try {
+    wasSelected = Boolean(
+      (csAnnotation.selection as any)?.isAnnotationSelected?.(annotationUID)
+    );
+  } catch {}
+
+  const rollbackRemoval = () => {
+    tombstones.delete(annotationUID);
+    if (wasVisible === false) {
+      try {
+        if (state?.getAnnotation?.(annotationUID)) {
+          visibility?.setAnnotationVisibility?.(annotationUID, false);
+        }
+      } catch {}
     }
-  } catch {
-    // swallow
-  }
+    if (wasSelected && wasVisible !== false) {
+      try {
+        (csAnnotation.selection as any)?.setAnnotationSelected?.(
+          annotationUID,
+          true,
+          false
+        );
+      } catch {}
+    }
+  };
 
   try {
-    const stateAny = csAnnotation.state as any;
-    const vis = csAnnotation.visibility as any;
-
-    // Cornerstone does not automatically clear native selection on removal.
-    // Deselect while the annotation still exists to avoid a stale UID.
     try {
-      if ((csAnnotation.selection as any)?.isAnnotationSelected?.(annotationUID)) {
+      if (wasSelected) {
         (csAnnotation.selection as any)?.setAnnotationSelected?.(
           annotationUID,
           false
@@ -280,109 +297,45 @@ export async function safeRemoveAnnotationByUID(annotationUID: string): Promise<
       }
     } catch {}
 
-    // 0) If we have tracked elements, iterate them first (preferred)
-    const attachedEls = listAttachmentElements(annotationUID);
-    for (const el of attachedEls) {
-      try {
-        // Try to remove via state API by instance or uid
-        let inst: any | null = null;
-        try {
-          inst = stateAny?.getAnnotation?.(annotationUID) ?? null;
-        } catch {}
+    // Clear Cornerstone's hidden UID set while the annotation still exists.
+    try {
+      visibility?.setAnnotationVisibility?.(annotationUID, true);
+    } catch {}
 
-        // Try preferred candidate names that may accept instance or uid
-        const candidates = ['removeAnnotation', 'deleteAnnotation', 'remove', 'delete'];
-        let removedHere = false;
-        for (const fnName of candidates) {
-          try {
-            const fn = stateAny?.[fnName];
-            if (typeof fn === 'function') {
-              // prefer passing instance if available
-              const arg = inst ?? annotationUID;
-              const res = fn.call(stateAny, arg);
-              if (res && typeof res.then === 'function') await res;
-              removedHere = true;
-              break;
-            }
-          } catch {
-            // continue trying other fnNames
-          }
-        }
+    const existing = state?.getAnnotation?.(annotationUID) ?? null;
+    if (existing) {
+      const remove = state?.removeAnnotation;
+      if (typeof remove !== 'function') {
+        rollbackRemoval();
+        return false;
+      }
 
-        // If no removal function succeeded, try visibility toggle as soft-remove on that element
-        try {
-          vis?.setAnnotationVisibility?.(annotationUID, false);
-        } catch {}
-
-        // Attempt to remove any attached annotation returned by getAnnotations for that element
-        try {
-          const anns = stateAny?.getAnnotations?.(undefined, el) ?? [];
-          if (Array.isArray(anns)) {
-            for (const a of anns) {
-              try {
-                if (a?.annotationUID === annotationUID) {
-                  for (const fnName of candidates) {
-                    try {
-                      const fn = stateAny?.[fnName];
-                      if (typeof fn === 'function') {
-                        const r = fn.call(stateAny, a);
-                        if (r && typeof r.then === 'function') await r;
-                        removedHere = true;
-                        break;
-                      }
-                    } catch {}
-                  }
-                }
-              } catch {}
-            }
-          }
-        } catch {}
-      } catch {}
+      const result = remove.call(state, annotationUID);
+      if (result && typeof result.then === 'function') {
+        await result;
+      }
     }
 
-    // Clear tracked attachments for this uid (we attempted to remove from them)
-    try { removeAttachmentRecord(annotationUID); } catch {}
+    const removed = !(state?.getAnnotation?.(annotationUID) ?? null);
+    if (!removed) {
+      rollbackRemoval();
+      return false;
+    }
 
-    // 1) Try global state-level removal as a last resort (maybe library stores global list)
-    try {
-      const candidates = ['removeAnnotation', 'deleteAnnotation', 'remove', 'delete'];
-      for (const fnName of candidates) {
-        try {
-          const fn = stateAny?.[fnName];
-          if (typeof fn === 'function') {
-            const res = fn.call(stateAny, annotationUID);
-            if (res && typeof res.then === 'function') await res;
-            try { vis?.setAnnotationVisibility?.(annotationUID, false); } catch {}
-          }
-        } catch {
-          // ignore and continue
-        }
-      }
-    } catch {}
-
-    // 2) Ensure visibility is off anywhere
-    try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(annotationUID, false); } catch {}
-
-    // 3) Final: attempt to remove instance if remaining
-    try {
-      const inst = stateAny?.getAnnotation?.(annotationUID) ?? null;
-      if (inst) {
-        const candidates = ['removeAnnotation', 'deleteAnnotation', 'remove', 'delete'];
-        for (const fnName of candidates) {
-          try {
-            const fn = stateAny?.[fnName];
-            if (typeof fn === 'function') {
-              const res = fn.call(stateAny, inst);
-              if (res && typeof res.then === 'function') await res;
-            }
-          } catch {}
-        }
-      }
-    } catch {}
-
+    removeAttachmentRecord(annotationUID);
     return true;
-  } catch (err) {
-    // swallow errors
+  } catch {
+    // Some managers can mutate state and then throw while dispatching an
+    // event. Trust the postcondition instead of reporting a false failure.
+    try {
+      if (!(state?.getAnnotation?.(annotationUID) ?? null)) {
+        removeAttachmentRecord(annotationUID);
+        return true;
+      }
+    } catch {}
+
+    // A genuine failed removal must remain retryable.
+    rollbackRemoval();
     return false;
   }
 }

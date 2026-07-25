@@ -64,8 +64,15 @@ function syncCornerstoneSelection(annotationUID: string | null): void {
     const selection = csAnnotation.selection as any;
     const selectedUIDs: string[] =
       selection?.getAnnotationsSelected?.() ?? [];
+    const annotationExists =
+      Boolean(annotationUID) &&
+      Boolean((csAnnotation.state as any)?.getAnnotation?.(annotationUID));
+    const annotationVisible =
+      annotationExists &&
+      (csAnnotation.visibility as any)?.isAnnotationVisible?.(annotationUID) !==
+        false;
 
-    if (!annotationUID) {
+    if (!annotationUID || !annotationExists || !annotationVisible) {
       if (selectedUIDs.length > 0) {
         selection?.deselectAnnotation?.();
       }
@@ -82,6 +89,12 @@ function syncCornerstoneSelection(annotationUID: string | null): void {
     // Native selection is an interaction aid; visual selection still works
     // through the annotation-specific styles above.
   }
+}
+
+export function syncMeasurementNativeSelection(
+  annotationUID: string | null
+): void {
+  syncCornerstoneSelection(annotationUID);
 }
 
 export function releaseMeasurementAnnotationStyle(annotationUID: string): void {
@@ -134,6 +147,11 @@ export function configureMeasurementToolGroupStyles(toolGroupId: string): void {
 
 export function selectMeasurementAnnotation(annotationUID: string): void {
   if (!annotationUID) return;
+  try {
+    if (!(csAnnotation.state as any)?.getAnnotation?.(annotationUID)) return;
+  } catch {
+    return;
+  }
 
   if (
     selectedAnnotationUID &&

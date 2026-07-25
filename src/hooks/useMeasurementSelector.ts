@@ -10,7 +10,11 @@ import { preloadImagesWithTimeout } from '@/lib/viewer/preload';
 import { ensureAnnotationAvailable } from '@/lib/cornerstone/annotations';
 import { enableElement } from '@/lib/cornerstone/element';
 import { VIEWPORT_ID } from '@/constants/viewport';
-import { safeAddAnnotation, safeGetAnnotations } from '@/lib/viewer/annotationHelpers';
+import {
+  isAnnotationRemovalTombstoned,
+  safeAddAnnotation,
+  safeGetAnnotations,
+} from '@/lib/viewer/annotationHelpers';
 import { selectMeasurementAnnotation } from '@/lib/cornerstone/measurementStyles';
 
 // import chung constants để thống nhất attempts/timeouts
@@ -63,6 +67,12 @@ function setSelectedMeasurementUIDIfChanged(
   uid: string | null
 ): void {
   try {
+    if (
+      uid &&
+      !(csAnnotation.state as any)?.getAnnotation?.(uid)
+    ) {
+      return;
+    }
     const previous = selectedRef?.current ?? null;
     if (previous !== uid) {
       setter(uid);
@@ -89,7 +99,6 @@ export type UseMeasurementSelectorOpts = {
   setSelectedMeasurementUID: (uid: string | null) => void;
   setCurrentFrame: (frame: number) => void;
   setActiveSrId?: (id: string | null) => void;
-  hiddenMeasurements?: Set<string>;
 
   safeRenderViewport: (vpId?: string) => void;
   ensureImageRendered?: any;
@@ -113,7 +122,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     setSelectedMeasurementUID,
     setCurrentFrame,
     setActiveSrId,
-    hiddenMeasurements,
     safeRenderViewport,
     ensureImageRendered,
     preloadImagesWithTimeout: preloadHelper,
@@ -242,6 +250,9 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
   );
 
   const handleSelectMeasurement = useCallback(async (m: any) => {
+    const annotationUID = String(m?.annotationUID ?? '');
+    if (!annotationUID || isAnnotationRemovalTombstoned(annotationUID)) return;
+
     // Guard: avoid re-entrant selection for same uid
     if (selectingRef.current && lastSelectingUIDRef.current === (m?.annotationUID ?? null)) {
       return;
@@ -272,19 +283,19 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           if (viewportEl) {
             const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
             if (inst) {
-              await safeAddAnnotation(inst, viewportEl, {
-                visible: !hiddenMeasurements?.has(m.annotationUID),
-              });
-              selectCornerstoneAnnotation(m.annotationUID);
-              selectionConfirmed = true;
+              const attached = await safeAddAnnotation(inst, viewportEl);
+              if (attached) {
+                selectCornerstoneAnnotation(m.annotationUID);
+                selectionConfirmed = true;
+              }
             } else {
               const maybe = await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(() => null);
               if (maybe) {
-                await safeAddAnnotation(maybe, viewportEl, {
-                  visible: !hiddenMeasurements?.has(m.annotationUID),
-                });
-                selectCornerstoneAnnotation(m.annotationUID);
-                selectionConfirmed = true;
+                const attached = await safeAddAnnotation(maybe, viewportEl);
+                if (attached) {
+                  selectCornerstoneAnnotation(m.annotationUID);
+                  selectionConfirmed = true;
+                }
               } else {
               }
             }
@@ -292,9 +303,11 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         } catch (error) {
         }
 
+        if (isAnnotationRemovalTombstoned(annotationUID)) return;
         if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
         if (selectionConfirmed) {
           await maybeSetSelectedMeasurementUID(m.annotationUID, imageIds, (m.metadata.frameIndex ?? 0));
+          if (isAnnotationRemovalTombstoned(annotationUID)) return;
           setCurrentFrame((m.metadata.frameIndex ?? 0) + 1);
         } else {
           setCurrentFrame((m.metadata.frameIndex ?? 0) + 1);
@@ -334,6 +347,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
             confirmedIndex = activeViewport.getCurrentImageIdIndex?.();
           }
 
+          if (isAnnotationRemovalTombstoned(annotationUID)) return;
           if (confirmedIndex === desiredIndex) {
             const annotation =
               liveAnnotation ??
@@ -345,14 +359,19 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
 
             if (annotation && targetElement) {
               try {
-                await safeAddAnnotation(annotation, targetElement, {
-                  visible: !hiddenMeasurements?.has(m.annotationUID),
-                });
-              } catch {}
-              selectionConfirmed = true;
+                selectionConfirmed = await safeAddAnnotation(
+                  annotation,
+                  targetElement
+                );
+              } catch {
+                selectionConfirmed = false;
+              }
             }
 
-            selectCornerstoneAnnotation(m.annotationUID);
+            if (selectionConfirmed) {
+              selectCornerstoneAnnotation(m.annotationUID);
+            }
+            if (isAnnotationRemovalTombstoned(annotationUID)) return;
             prevSeriesRef.current = selectedSeries;
             if (selectedSeries !== targetSeriesUID) {
               setSelectedSeries(targetSeriesUID);
@@ -368,6 +387,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
               imageIds,
               desiredIndex
             );
+            if (isAnnotationRemovalTombstoned(annotationUID)) return;
             setCurrentFrame(desiredIndex + 1);
             safeRenderViewport(viewportId);
             return;
@@ -385,30 +405,30 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
           if (inst) {
             try {
-              await safeAddAnnotation(inst, viewportEl, {
-                visible: !hiddenMeasurements?.has(m.annotationUID),
-              });
+              selectionConfirmed = await safeAddAnnotation(inst, viewportEl);
             } catch {}
-            selectCornerstoneAnnotation(m.annotationUID);
-            selectionConfirmed = true;
+            if (selectionConfirmed) {
+              selectCornerstoneAnnotation(m.annotationUID);
+            }
           } else {
             const maybe = await ensureAnnotationAvailable(m.annotationUID, 600, 30).catch(() => null);
             if (maybe) {
               try {
-                await safeAddAnnotation(maybe, viewportEl, {
-                  visible: !hiddenMeasurements?.has(m.annotationUID),
-                });
+                selectionConfirmed = await safeAddAnnotation(maybe, viewportEl);
               } catch {}
-              selectCornerstoneAnnotation(m.annotationUID);
-              selectionConfirmed = true;
+              if (selectionConfirmed) {
+                selectCornerstoneAnnotation(m.annotationUID);
+              }
             } else {
               selectionConfirmed = false;
             }
           }
 
+          if (isAnnotationRemovalTombstoned(annotationUID)) return;
           if (selectionConfirmed) {
             await maybeSetSelectedMeasurementUID(m.annotationUID, imageIds, desiredIndex);
           }
+          if (isAnnotationRemovalTombstoned(annotationUID)) return;
           setCurrentFrame((desiredIndex ?? 0) + 1);
 
           safeRenderViewport(viewportId);
@@ -439,6 +459,8 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         }).catch(() => false);
       } catch (error) {}
 
+      if (isAnnotationRemovalTombstoned(annotationUID)) return;
+
       // After attach attempts, try to attach annotation instance
       try {
         const anns = safeGetAnnotations(m.toolName, viewportEl);
@@ -448,12 +470,11 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           const maybe = inst ?? (await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(() => null));
           if (maybe) {
             try {
-              await safeAddAnnotation(maybe, viewportEl, {
-                visible: !hiddenMeasurements?.has(m.annotationUID),
-              });
+              selectionConfirmed = await safeAddAnnotation(maybe, viewportEl);
             } catch {}
-            selectCornerstoneAnnotation(m.annotationUID);
-            selectionConfirmed = true;
+            if (selectionConfirmed) {
+              selectCornerstoneAnnotation(m.annotationUID);
+            }
           } else {
             selectionConfirmed = false;
           }
@@ -463,6 +484,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         }
       } catch {}
 
+      if (isAnnotationRemovalTombstoned(annotationUID)) return;
       prevSeriesRef.current = selectedSeries;
       if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
       if (String(targetSeriesUID).startsWith('SR_')) {
@@ -476,6 +498,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       } else {
       }
 
+      if (isAnnotationRemovalTombstoned(annotationUID)) return;
       setCurrentFrame((desiredIndex ?? 0) + 1);
 
       await new Promise((r) => setTimeout(r, 40));
@@ -558,11 +581,8 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           }
           if (inst) {
             try {
-              await safeAddAnnotation(inst, viewportEl, {
-                visible: !hiddenMeasurements?.has(m.annotationUID),
-              });
+              await safeAddAnnotation(inst, viewportEl);
             } catch {}
-            try { (csAnnotation.visibility as any)?.setAnnotationVisibility?.(m.annotationUID, !hiddenMeasurements?.has(m.annotationUID)); } catch {}
           } else {
           }
         } catch {}
@@ -572,12 +592,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         const firstM = srMeasurements[0];
         await maybeSetSelectedMeasurementUID(firstM.annotationUID, imageIds, firstM.metadata.frameIndex ?? 0);
         setCurrentFrame((firstM.metadata.frameIndex ?? 0) + 1);
-        try {
-          (csAnnotation.visibility as any)?.setAnnotationVisibility?.(
-            firstM.annotationUID,
-            !hiddenMeasurements?.has(firstM.annotationUID)
-          );
-        } catch {}
       }
 
       safeRenderViewport(viewportId);
@@ -598,7 +612,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     setActiveSrId,
     ensureImageRendered,
     preloadHelper,
-    hiddenMeasurements,
     safeRenderViewport,
     viewportId,
     allMeasurements,

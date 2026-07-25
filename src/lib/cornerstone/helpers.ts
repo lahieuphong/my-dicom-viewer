@@ -146,15 +146,25 @@ export const normalizeId = normalizeImageId;
 export function safeSetAnnotationVisibility(stateAny: any, annotationUID: string, visible: boolean): boolean {
   if (!stateAny || !annotationUID) return false;
   try {
+    const state = stateAny.state ?? stateAny;
+    if (
+      typeof state?.getAnnotation === 'function' &&
+      !state.getAnnotation(annotationUID)
+    ) {
+      return false;
+    }
+
     // prefer .visibility sub-object if present
     const vis = stateAny.visibility ?? stateAny;
     if (vis && typeof vis.setAnnotationVisibility === 'function') {
       vis.setAnnotationVisibility(annotationUID, visible);
-      return true;
+      const actual = vis.isAnnotationVisible?.(annotationUID);
+      return typeof actual === 'boolean' ? actual === visible : true;
     }
     if (typeof stateAny.setAnnotationVisibility === 'function') {
       stateAny.setAnnotationVisibility(annotationUID, visible);
-      return true;
+      const actual = stateAny.isAnnotationVisible?.(annotationUID);
+      return typeof actual === 'boolean' ? actual === visible : true;
     }
   } catch {
     // ignore
