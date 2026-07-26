@@ -58,7 +58,6 @@ export {
   useMeasurementBridge,
   useMeasurementSelector,
   useMeasurements,
-  useViewportAnnotations,
 } from './measurements';
 export type {
   AnnotationMeasurement,

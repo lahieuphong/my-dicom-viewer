@@ -127,7 +127,6 @@ export default function ViewportLoadingOverlay({
         hideTimeoutRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, progress]);
 
   // cleanup on unmount

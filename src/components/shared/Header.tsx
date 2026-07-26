@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useTransition } from 'react';
+import { useTransition } from 'react';
 import { Loading } from '@/components/ui/loading';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';

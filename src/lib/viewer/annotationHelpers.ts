@@ -9,52 +9,7 @@ import { annotation as csAnnotation } from '@cornerstonejs/tools';
  * - Preserve visibility unless the caller explicitly owns a visibility update.
  * - Prevent an async attach flow from resurrecting a deleted annotation.
  * - Verify that Cornerstone actually removed an annotation before reporting success.
- *
- * Note: We use a global map `window.__annotationAttachments` to track which DOM elements (by
- * reference) an annotationUID was associated with. Cornerstone annotation state itself is global.
  */
-
-/** Global tracking map: uid -> Set<HTMLElement>. Stored on window to survive module reloads. */
-function getAttachmentMap(): Map<string, Set<HTMLElement>> {
-  try {
-    const win: any = typeof window !== 'undefined' ? window : (globalThis as any);
-    if (!win.__annotationAttachments || !(win.__annotationAttachments instanceof Map)) {
-      win.__annotationAttachments = new Map();
-    }
-    return win.__annotationAttachments as Map<string, Set<HTMLElement>>;
-  } catch {
-    // fallback ephemeral map (should rarely happen)
-    if (!(getAttachmentMap as any)._fallback) (getAttachmentMap as any)._fallback = new Map();
-    return (getAttachmentMap as any)._fallback;
-  }
-}
-
-function recordAttachment(uid: string, el: HTMLElement | null) {
-  if (!uid || !el) return;
-  try {
-    const map = getAttachmentMap();
-    let s = map.get(uid);
-    if (!s) {
-      s = new Set();
-      map.set(uid, s);
-    }
-    s.add(el);
-  } catch {}
-}
-
-function removeAttachmentRecord(uid: string, el?: HTMLElement | null) {
-  try {
-    const map = getAttachmentMap();
-    const s = map.get(uid);
-    if (!s) return;
-    if (el) {
-      s.delete(el);
-    } else {
-      s.clear();
-    }
-    if (s.size === 0) map.delete(uid);
-  } catch {}
-}
 
 /**
  * Session tombstones prevent stale async selectors/bridges from re-adding a
@@ -128,24 +83,10 @@ export async function safeAddAnnotation(
     } catch {}
     if (registered) {
       applyVisibilityOverride(annotationUID, options?.visible);
-      recordAttachment(annotationUID, el);
       return true;
     }
 
-    // Compatibility fallback for state implementations without getAnnotation.
-    try {
-      const toolName = inst?.metadata?.toolName ?? inst?.toolName;
-      const anns = safeGetAnnotations(toolName, el);
-      if (anns.some((annotation) => annotation?.annotationUID === annotationUID)) {
-        applyVisibilityOverride(annotationUID, options?.visible);
-        recordAttachment(annotationUID, el);
-        return true;
-      }
-    } catch {
-      // ignore getAnnotations failures
-    }
-
-    // Primary preferred API
+    // Cornerstone 3.x public annotation-state API.
     const add = (csAnnotation.state as any)?.addAnnotation;
     if (typeof add === 'function') {
       await add(inst, el);
@@ -156,22 +97,6 @@ export async function safeAddAnnotation(
         return false;
       }
       applyVisibilityOverride(annotationUID, options?.visible);
-      recordAttachment(annotationUID, el);
-      return true;
-    }
-
-    // Fallback shapes
-    const altAdd = (csAnnotation.state as any)?.add ?? (csAnnotation as any)?.add;
-    if (typeof altAdd === 'function') {
-      await altAdd(inst, el);
-      if (isAnnotationRemovalTombstoned(annotationUID)) {
-        try {
-          (csAnnotation.state as any)?.removeAnnotation?.(annotationUID);
-        } catch {}
-        return false;
-      }
-      applyVisibilityOverride(annotationUID, options?.visible);
-      recordAttachment(annotationUID, el);
       return true;
     }
 
@@ -190,54 +115,10 @@ export async function safeAddAnnotation(
           return false;
         }
         applyVisibilityOverride(annotationUID, options?.visible);
-        recordAttachment(annotationUID, el);
         return true;
       }
     } catch {}
     return false;
-  }
-}
-
-function normalizeAnnotations(result: any): any[] {
-  if (!result) return [];
-  if (Array.isArray(result)) return result;
-  if (result instanceof Map) {
-    return Array.from(result.values()).flatMap((value) =>
-      Array.isArray(value) ? value : value ? [value] : []
-    );
-  }
-  if (typeof result === 'object') {
-    return Object.values(result).flatMap((value) =>
-      Array.isArray(value) ? value : value ? [value] : []
-    );
-  }
-  return [];
-}
-
-/**
- * Return annotations attached to a specific element (wrapper).
- */
-export function safeGetAnnotations(toolName: string | undefined, el: HTMLDivElement | null): any[] {
-  try {
-    return normalizeAnnotations(
-      csAnnotation.state?.getAnnotations?.(toolName as any, el as any)
-    );
-  } catch {
-    try {
-      return normalizeAnnotations(
-        csAnnotation.state?.getAnnotations?.(undefined as any, el as any)
-      );
-    } catch {
-      return [];
-    }
-  }
-}
-
-export function safeGetAnnotationInstance(annotationUID: string): any | null {
-  try {
-    return (csAnnotation.state as any)?.getAnnotation?.(annotationUID) ?? null;
-  } catch {
-    return null;
   }
 }
 
@@ -322,14 +203,12 @@ export async function safeRemoveAnnotationByUID(annotationUID: string): Promise<
       return false;
     }
 
-    removeAttachmentRecord(annotationUID);
     return true;
   } catch {
     // Some managers can mutate state and then throw while dispatching an
     // event. Trust the postcondition instead of reporting a false failure.
     try {
       if (!(state?.getAnnotation?.(annotationUID) ?? null)) {
-        removeAttachmentRecord(annotationUID);
         return true;
       }
     } catch {}

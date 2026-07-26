@@ -1,7 +1,4 @@
-export {
-  useMeasurements,
-  useViewportAnnotations,
-} from '@/hooks/useMeasurements';
+export { useMeasurements } from '@/hooks/useMeasurements';
 export type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 
 export { useMeasurementBridge } from '@/hooks/useMeasurementBridge';

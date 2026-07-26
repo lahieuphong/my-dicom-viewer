@@ -18,9 +18,6 @@ type SeriesMapEntry = {
 export function useSeriesLoader(studyUID: string) {
   const [seriesMap, setSeriesMap] = useState<Record<string, SeriesMapEntry>>({});
   const [selectedSeries, setSelectedSeries] = useState<string>('');
-  // giữ 2 state SR để không làm đứt interface (trả về) — hiện không dùng (empty)
-  const [srSeriesUIDs, setSrSeriesUIDs] = useState<string[]>([]);
-  const [srSeriesMeta, setSrSeriesMeta] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [voiDefaults, setVoiDefaults] = useState<Record<string, VoiRange>>({});
 
@@ -81,9 +78,6 @@ export function useSeriesLoader(studyUID: string) {
         setSeriesMap(map);
         setVoiDefaults(voiMap);
         setSelectedSeries(Object.keys(map)[0] || '');
-        // ensure SR lists are empty (no remote SR calls)
-        setSrSeriesUIDs([]);
-        setSrSeriesMeta([]);
       } catch (error) {
       } finally {
         setLoading(false);
@@ -97,8 +91,6 @@ export function useSeriesLoader(studyUID: string) {
     seriesMap,
     selectedSeries,
     setSelectedSeries,
-    srSeriesUIDs,
-    srSeriesMeta,
     loadingSeries: loading,
     voiDefaults,
   } as const;

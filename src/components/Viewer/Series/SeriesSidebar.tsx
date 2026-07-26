@@ -31,9 +31,6 @@ interface SeriesSidebarProps {
   activeSrId?: string | null;
   onSelectSr?: (srId: string | null) => void;
   srGroups?: { id: number; srIds: string[]; label?: string }[];
-
-  studyUID: string;
-  viewportId?: string;
 }
 
 function truncateText(text?: string | null, max = 9) {

@@ -152,9 +152,11 @@ export function getInitialVOIFromSeriesMetadata(metadata?: any): { lower: number
   return null;
 }
 
-export default {
+const voi = {
   computeVOIFromImage,
   applyVOI,
   cacheVOI,
   getInitialVOIFromSeriesMetadata,
 };
+
+export default voi;

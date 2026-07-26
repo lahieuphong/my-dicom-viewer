@@ -4,7 +4,6 @@ import type { ComponentProps, CSSProperties, Dispatch, RefObject, SetStateAction
 
 import { Loading } from '@/components/ui/loading';
 import { Button } from '@/components/ui/button';
-import { VIEWPORT_ID } from '@/constants/viewport';
 import {
   VIEWER_LEFT_PANEL_COLLAPSED,
   VIEWER_RIGHT_PANEL_COLLAPSED,
@@ -36,7 +35,6 @@ type ViewerWorkspaceProps = {
   rightPanelWidth: number;
   setRightPanelWidth: Dispatch<SetStateAction<number>>;
   isSR: boolean;
-  studyUID: string;
   studyDate: string;
   studyDescription: string;
   seriesMap: SeriesSidebarProps['seriesMap'];
@@ -59,7 +57,6 @@ type ViewerWorkspaceProps = {
   onUpdateLabel: MeasurementPanelProps['onUpdateLabel'];
   onSelectMeasurement: (measurement: AnnotationMeasurement) => void;
   onRemoveMeasurement: MeasurementPanelProps['onRemoveMeasurement'];
-  refreshMeasurements: MeasurementPanelProps['refreshMeasurements'];
   hiddenMeasurements: MeasurementPanelProps['hiddenMeasurements'];
   onToggleVisibility: MeasurementPanelProps['onToggleVisibility'];
   onExportJSON: () => void;
@@ -98,7 +95,6 @@ export default function ViewerWorkspace({
   rightPanelWidth,
   setRightPanelWidth,
   isSR,
-  studyUID,
   studyDate,
   studyDescription,
   seriesMap,
@@ -121,7 +117,6 @@ export default function ViewerWorkspace({
   onUpdateLabel,
   onSelectMeasurement,
   onRemoveMeasurement,
-  refreshMeasurements,
   hiddenMeasurements,
   onToggleVisibility,
   onExportJSON,
@@ -163,8 +158,6 @@ export default function ViewerWorkspace({
     onSelectMeasurement,
     seriesMap: measurementSeriesMap,
     seriesInstanceUID: selectedSeriesEntry?.metadata?.seriesInstanceUID,
-    refreshMeasurements,
-    currentFrame,
     totalFrames,
     selectedMeasurementUID,
     studyDate,
@@ -220,8 +213,6 @@ export default function ViewerWorkspace({
           activeSrId={activeSrId}
           onSelectSr={onSelectSr}
           srGroups={srGroups}
-          studyUID={studyUID}
-          viewportId={VIEWPORT_ID}
         />
       )}
 
@@ -261,8 +252,6 @@ export default function ViewerWorkspace({
             activeSrId={activeSrId}
             onSelectSr={onSelectSr}
             srGroups={srGroups}
-            studyUID={studyUID}
-            viewportId={VIEWPORT_ID}
           />
         )}
 

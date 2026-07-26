@@ -1,6 +1,4 @@
 // src/components/Viewer/Measurement/MeasurementStats.tsx
-import React from 'react';
-
 interface MeasurementStatsProps {
   type: string;
   stats: Record<string, any>;

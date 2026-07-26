@@ -85,13 +85,11 @@ export function useEnsureImageRendered(options: {
       // Preload desired image and neighbors
       try {
         if (imageLoader && typeof (imageLoader as any).loadAndCacheImage === 'function') {
-          await (imageLoader as any).loadAndCacheImage(desiredImageId).catch((err: any) => {
-          });
+          await (imageLoader as any).loadAndCacheImage(desiredImageId).catch(() => {});
         } else {
           const csCore = await import('@cornerstonejs/core').catch(() => null);
           if (csCore && csCore.imageLoader && typeof csCore.imageLoader.loadAndCacheImage === 'function') {
-            await csCore.imageLoader.loadAndCacheImage(desiredImageId).catch((err: any) => {
-            });
+            await csCore.imageLoader.loadAndCacheImage(desiredImageId).catch(() => {});
           }
         }
       } catch (e) {

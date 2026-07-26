@@ -242,53 +242,23 @@ async function pointerDrag(start, end) {
 }
 
 async function selectMeasurementTool(toolName) {
-  await evaluate(`(() => {
-    const button = document.querySelector(
-      'button[aria-label="Công cụ đo lường — Measurement Tools"]'
-    );
-    if (!button) return false;
-    button.focus();
-    button.dispatchEvent(new KeyboardEvent('keydown', {
-      bubbles: true,
-      cancelable: true,
-      key: 'Enter',
-      code: 'Enter',
-    }));
-    button.dispatchEvent(new KeyboardEvent('keyup', {
-      bubbles: true,
-      cancelable: true,
-      key: 'Enter',
-      code: 'Enter',
-    }));
-    return true;
-  })()`);
+  await clickElement(
+    `[...document.querySelectorAll(
+      '[role="toolbar"] button[aria-haspopup="menu"]'
+    )][0]`
+  );
   await waitFor(
     `[...document.querySelectorAll('[role="menuitem"]')].some(
       (item) => item.textContent?.trim().toLowerCase() === '${toolName.toLowerCase()}'
     )`
   );
-  await evaluate(`(() => {
-    const item = [...document.querySelectorAll('[role="menuitem"]')].find(
+  await clickElement(
+    `[...document.querySelectorAll('[role="menuitem"]')].find(
       (candidate) =>
         candidate.textContent?.trim().toLowerCase() ===
         '${toolName.toLowerCase()}'
-    );
-    if (!item) return false;
-    item.focus();
-    item.dispatchEvent(new KeyboardEvent('keydown', {
-      bubbles: true,
-      cancelable: true,
-      key: 'Enter',
-      code: 'Enter',
-    }));
-    item.dispatchEvent(new KeyboardEvent('keyup', {
-      bubbles: true,
-      cancelable: true,
-      key: 'Enter',
-      code: 'Enter',
-    }));
-    return true;
-  })()`);
+    )`
+  );
   await waitFor(
     `![...document.querySelectorAll('[role="menuitem"]')].some(
       (item) => item.textContent?.trim().toLowerCase() ===
@@ -298,51 +268,21 @@ async function selectMeasurementTool(toolName) {
 }
 
 async function selectAngleTool() {
-  await evaluate(`(() => {
-    const button = document.querySelector(
-      'button[aria-label="Công cụ khác — More Tools"]'
-    );
-    if (!button) return false;
-    button.focus();
-    button.dispatchEvent(new KeyboardEvent('keydown', {
-      bubbles: true,
-      cancelable: true,
-      key: 'Enter',
-      code: 'Enter',
-    }));
-    button.dispatchEvent(new KeyboardEvent('keyup', {
-      bubbles: true,
-      cancelable: true,
-      key: 'Enter',
-      code: 'Enter',
-    }));
-    return true;
-  })()`);
+  await clickElement(
+    `[...document.querySelectorAll(
+      '[role="toolbar"] button[aria-haspopup="menu"]'
+    )][1]`
+  );
   await waitFor(
     `[...document.querySelectorAll('[role="menuitem"]')].some(
       (item) => item.textContent?.trim() === 'Angle'
     )`
   );
-  await evaluate(`(() => {
-    const item = [...document.querySelectorAll('[role="menuitem"]')].find(
+  await clickElement(
+    `[...document.querySelectorAll('[role="menuitem"]')].find(
       (candidate) => candidate.textContent?.trim() === 'Angle'
-    );
-    if (!item) return false;
-    item.focus();
-    item.dispatchEvent(new KeyboardEvent('keydown', {
-      bubbles: true,
-      cancelable: true,
-      key: 'Enter',
-      code: 'Enter',
-    }));
-    item.dispatchEvent(new KeyboardEvent('keyup', {
-      bubbles: true,
-      cancelable: true,
-      key: 'Enter',
-      code: 'Enter',
-    }));
-    return true;
-  })()`);
+    )`
+  );
   await waitFor(
     `![...document.querySelectorAll('[role="menuitem"]')].some(
       (item) => item.textContent?.trim() === 'Angle'
@@ -355,7 +295,13 @@ async function waitForMeasurementCount(count) {
 }
 
 await waitFor(
-  `document.readyState === 'complete' && !!document.querySelector('[data-viewport-uid="WORKSTATION_VIEWPORT"]')`
+  `document.readyState === 'complete' &&
+    !!document.querySelector('[data-viewport-uid="WORKSTATION_VIEWPORT"]') &&
+    !!document.querySelector('canvas') &&
+    !!document.querySelector(
+      'button[aria-label="Công cụ đo lường — Measurement Tools"]'
+    )`,
+  45000
 );
 await new Promise((resolve) => setTimeout(resolve, 5000));
 const viewport = await evaluate(`(() => {

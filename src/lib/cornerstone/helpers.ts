@@ -3,11 +3,7 @@
  * Helpers liên quan tới Cornerstone / EnabledElement / ImageId normalization
  * và một số wrapper "best-effort" để tương tác an toàn với API annotation.
  *
- * Mục tiêu:
- * - Cung cấp cả wrapper đơn giản (safeGetEnabledElement) và hàm tìm enabled element "mạnh mẽ" hơn (getEnabledElementSafe).
- * - Giữ các hàm không phụ thuộc ngầm vào biến cục bộ của component — truyền param rõ ràng.
- *
- * Ghi chú: hàm getEnabledElement được import từ @cornerstonejs/core để sử dụng khi có sẵn.
+ * Các helper dùng API Cornerstone đã được pin trong ứng dụng.
  */
 
 import { getEnabledElement } from '@cornerstonejs/core';
@@ -29,87 +25,6 @@ export function safeGetEnabledElement(el: HTMLElement | null): any | null {
   }
 }
 
-/**
- * Best-effort: try to obtain a Cornerstone *enabled element* from several candidates.
- * - first tries direct candidate via global cornerstone.getEnabledElement (if present)
- * - tries some typical child selectors (canvas, .viewport-element, data attrs)
- * - finally does a global search for likely elements
- *
- * Returns the enabledElement-like object or null.
- *
- * Note: this function prefers the global (window.cornerstone) getter to allow mixed integration modes,
- * but will also work if you call safeGetEnabledElement on a direct element.
- */
-export function getEnabledElementSafe(el: HTMLElement | null): any | null {
-  if (!el) return null;
-
-  const tryGet = (candidate: Element | null) => {
-    try {
-      // Prefer global cornerstone (works for some integrations)
-      const globalCornerstone = (window as any).cornerstone;
-      if (globalCornerstone && typeof globalCornerstone.getEnabledElement === 'function') {
-        try {
-          return globalCornerstone.getEnabledElement(candidate);
-        } catch {}
-      }
-    } catch {}
-
-    // Fallback to imported getEnabledElement if candidate is the exact element
-    try {
-      return getEnabledElement(candidate as any);
-    } catch {
-      // ignore
-    }
-
-    return null;
-  };
-
-  try {
-    // 1) Try the element itself
-    const direct = tryGet(el);
-    if (direct) return direct;
-  } catch {}
-
-  // 2) Try inner candidate selectors commonly used by DicomViewport implementations
-  const selectors = [
-    '.viewport-element',
-    'canvas.cornerstone-canvas',
-    '[data-viewport-uid]',
-    '[data-viewport-role="content"]',
-  ];
-
-  for (const sel of selectors) {
-    try {
-      const c = el.querySelector?.(sel);
-      if (c) {
-        const en = tryGet(c);
-        if (en) return en;
-      }
-    } catch {
-      // ignore selector errors
-    }
-  }
-
-  // 3) global search as last resort (may be expensive)
-  try {
-    const all = Array.from(
-      document.querySelectorAll('.viewport-element, canvas.cornerstone-canvas, [data-viewport-role="content"]')
-    );
-    for (const c of all) {
-      try {
-        const en = tryGet(c);
-        if (en) return en;
-      } catch {
-        // ignore
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return null;
-}
-
 /* =========================
    ImageId normalization
    ========================= */
@@ -129,11 +44,6 @@ export function normalizeImageId(id?: string): string {
   if (s.endsWith('/')) s = s.slice(0, -1);
   return s;
 }
-
-/**
- * Alias for normalizeImageId for compatibility with older code using `normalizeId`.
- */
-export const normalizeId = normalizeImageId;
 
 function normalizeImageIdQuery(
   id: string,
@@ -166,6 +76,22 @@ export function normalizeImageIdWithFrame(id?: string): string {
   let value = String(id).trim().replace(/^imageId:/, '');
   value = normalizeImageIdQuery(value, true);
   return value.endsWith('/') ? value.slice(0, -1) : value;
+}
+
+export function areImageStacksEqual(
+  first?: readonly unknown[] | null,
+  second?: readonly unknown[] | null
+): boolean {
+  return (
+    Array.isArray(first) &&
+    Array.isArray(second) &&
+    first.length === second.length &&
+    first.every(
+      (imageId, index) =>
+        normalizeImageIdWithFrame(String(imageId ?? '')) ===
+        normalizeImageIdWithFrame(String(second[index] ?? ''))
+    )
+  );
 }
 
 /**
@@ -263,13 +189,9 @@ export function findMatchingImageIdIndex(
 }
 
 /* =========================
-   Annotation helpers (best-effort wrappers)
+   Annotation helper
    ========================= */
 
-/**
- * Best-effort: set annotation visibility using known API shapes.
- * Accepts either the annotation module (annotation or annotation.visibility) or a state-like object.
- */
 export function safeSetAnnotationVisibility(stateAny: any, annotationUID: string, visible: boolean): boolean {
   if (!stateAny || !annotationUID) return false;
   try {
@@ -298,66 +220,3 @@ export function safeSetAnnotationVisibility(stateAny: any, annotationUID: string
   }
   return false;
 }
-
-/**
- * Best-effort: remove an annotation by uid or instance object.
- * Tries a set of likely API names and patterns used across cornerstone-tools versions.
- */
-export async function safeRemoveAnnotation(stateAny: any, annotationUID: string): Promise<boolean> {
-  if (!stateAny || !annotationUID) return false;
-
-  // candidates that might accept uid or instance
-  const candidates = ['removeAnnotation', 'deleteAnnotation', 'remove', 'delete'];
-
-  // 1) Try direct API names (uid)
-  for (const fnName of candidates) {
-    try {
-      const fn = stateAny?.[fnName];
-      if (typeof fn === 'function') {
-        const res = fn.call(stateAny, annotationUID);
-        if (res && typeof res.then === 'function') {
-          await res;
-        }
-        return true;
-      }
-    } catch {
-      // ignore and continue
-    }
-  }
-
-  // 2) Try fetching instance then removing by instance
-  try {
-    const inst = stateAny.getAnnotation?.(annotationUID) ?? null;
-    if (inst) {
-      for (const fnName of candidates) {
-        try {
-          const fn = stateAny?.[fnName];
-          if (typeof fn === 'function') {
-            const res = fn.call(stateAny, inst);
-            if (res && typeof res.then === 'function') await res;
-            return true;
-          }
-        } catch {
-          // continue
-        }
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return false;
-}
-
-/* =========================
-   Exports summary
-   ========================= */
-
-/*
-  Exported functions (available):
-  - safeGetEnabledElement
-  - getEnabledElementSafe
-  - normalizeImageId (alias normalizeId)
-  - safeSetAnnotationVisibility
-  - safeRemoveAnnotation
-*/

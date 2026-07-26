@@ -8,7 +8,7 @@ const cdpOrigin =
 const viewerOrigin =
   process.env.VIEWER_ORIGIN ?? 'http://127.0.0.1:3000';
 const viewerUrl = `${viewerOrigin}/viewer?StudyInstanceUIDs=${studyUID}`;
-const downloadPath = '/tmp/dicom-sr-downloads';
+const downloadPath = `/tmp/dicom-sr-workflow-${Date.now()}`;
 
 fs.mkdirSync(downloadPath, { recursive: true });
 

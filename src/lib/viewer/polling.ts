@@ -19,7 +19,6 @@ export async function waitForElementVisible(el: HTMLElement | null, timeout = 30
   if (typeof ResizeObserver === 'undefined') {
     const start = Date.now();
     while (Date.now() - start < timeout) {
-      // eslint-disable-next-line no-await-in-loop
       await new Promise((r) => setTimeout(r, 80));
       try {
         const r2 = el.getBoundingClientRect();
@@ -105,7 +104,6 @@ export async function waitForEngineAndViewport(
         if (enabled) return true;
       }
     } catch {}
-    // eslint-disable-next-line no-await-in-loop
     await new Promise((r) => setTimeout(r, interval));
   }
   return false;
@@ -123,7 +121,6 @@ function forceRepaint(el: HTMLElement | null) {
     el.style.willChange = 'transform';
     el.style.transform = 'translateZ(0)';
     // force layout
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     void el.offsetHeight;
     el.style.transform = '';
     // restore
@@ -151,7 +148,6 @@ export async function forceRenderCheck(el: HTMLElement | null, vpInstance: any, 
     } catch {}
 
     // small pause to allow browser to flush
-    // eslint-disable-next-line no-await-in-loop
     await new Promise((r) => setTimeout(r, 80));
 
     // Best-effort force a repaint on the element.

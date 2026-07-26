@@ -7,6 +7,7 @@ import { getPreloadWindow, preloadImagesWithTimeout } from './preload';
 import type { DisplaySet } from './displaySet';
 import type { EngineRef } from './stack';
 import { VIEWPORT_ID } from '@/constants/viewport';
+import { areImageStacksEqual } from '@/lib/cornerstone/helpers';
 
 function getEnabledElementSafeLocal(el: HTMLElement | null | undefined): any | null {
   try {
@@ -16,19 +17,6 @@ function getEnabledElementSafeLocal(el: HTMLElement | null | undefined): any | n
     return cornerstone.getEnabledElement(el);
   } catch {
     return null;
-  }
-}
-
-function imageListsEqual(a: any[] | null | undefined, b: any[] | null | undefined): boolean {
-  try {
-    if (!Array.isArray(a) || !Array.isArray(b)) return false;
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (a[i] !== b[i]) return false;
-    }
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -94,22 +82,18 @@ async function forceViewportToIndex(opts: {
         currentIds = typeof vp.getImageIds === 'function' ? vp.getImageIds?.() ?? null : null;
       } catch {}
 
-      if (typeof vp.setStack === 'function' && !imageListsEqual(currentIds, imageIds)) {
-        await Promise.resolve(vp.setStack(imageIds, targetIndex)).catch((err: any) => {
-        });
+      if (typeof vp.setStack === 'function' && !areImageStacksEqual(currentIds, imageIds)) {
+        await Promise.resolve(vp.setStack(imageIds, targetIndex)).catch(() => {});
       }
 
       const currentIndex = readViewportImageIndex(vp, viewportEl);
       if (currentIndex !== targetIndex) {
         if (typeof vp.setImageIndex === 'function') {
-          await Promise.resolve(vp.setImageIndex(targetIndex)).catch((err: any) => {
-          });
+          await Promise.resolve(vp.setImageIndex(targetIndex)).catch(() => {});
         } else if (typeof vp.setImageId === 'function' && targetImageId) {
-          await Promise.resolve(vp.setImageId(targetImageId)).catch((err: any) => {
-          });
+          await Promise.resolve(vp.setImageId(targetImageId)).catch(() => {});
         } else if (typeof vp.setStack === 'function') {
-          await Promise.resolve(vp.setStack(imageIds, targetIndex)).catch((err: any) => {
-          });
+          await Promise.resolve(vp.setStack(imageIds, targetIndex)).catch(() => {});
         }
       }
     } else if (engine && typeof engine.setStacks === 'function') {
@@ -146,7 +130,7 @@ export async function attachDisplaySetToViewport(opts: {
     ensureImageRendered,
     preloadImagesWithTimeoutFn = preloadImagesWithTimeout,
     viewportId = VIEWPORT_ID,
-    lockAfterAttach = true,
+    lockAfterAttach: _lockAfterAttach = true,
     desiredIndex: optDesiredIndex,
   } = opts;
 
@@ -194,7 +178,7 @@ export async function attachDisplaySetToViewport(opts: {
         // Prefer using the enabled element to inspect current stack on the DOM element
         const en = getEnabledElementSafeLocal(viewportEl as any);
         const curIds = en?.viewport?.getImageIds?.() ?? null;
-        if (Array.isArray(curIds) && imageListsEqual(curIds, imageIds)) {
+        if (Array.isArray(curIds) && areImageStacksEqual(curIds, imageIds)) {
           already = true;
         }
       } catch {}
@@ -296,7 +280,7 @@ export async function attachDisplaySetToViewport(opts: {
         preloadImagesWithTimeout: preloadWrapper,
         viewportId,
         settleMs: 120,
-      }).catch((e) => {
+      }).catch(() => {
         return false;
       });
 
@@ -373,12 +357,12 @@ export async function attachDisplaySetToViewport(opts: {
         try {
           const curIdsFromVpInstance =
             (typeof viewportInstance?.getImageIds === 'function' ? viewportInstance.getImageIds?.() : null) ?? null;
-          if (Array.isArray(curIdsFromVpInstance) && imageListsEqual(curIdsFromVpInstance, imageIds)) {
+          if (Array.isArray(curIdsFromVpInstance) && areImageStacksEqual(curIdsFromVpInstance, imageIds)) {
             already = true;
           } else if (!already) {
             const en = getEnabledElementSafeLocal(viewportEl as any);
             const curIds = en?.viewport?.getImageIds?.() ?? null;
-            if (Array.isArray(curIds) && imageListsEqual(curIds, imageIds)) {
+            if (Array.isArray(curIds) && areImageStacksEqual(curIds, imageIds)) {
               already = true;
             }
           }

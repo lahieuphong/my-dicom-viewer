@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { saveAs } from 'file-saver';
 import { Check, LoaderCircle, RefreshCw } from 'lucide-react';
 

@@ -139,7 +139,6 @@ export function useImageReadiness({
         } catch {
           // ignore ephemeral errors
         }
-        // eslint-disable-next-line no-await-in-loop
         await new Promise((r) => setTimeout(r, interval));
       }
 
@@ -230,7 +229,6 @@ export function useImageReadiness({
       mounted = false;
       if (intervalId != null) clearInterval(intervalId);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewportEl, selectedSeries]);
 
   // Listen to common render events (best effort)

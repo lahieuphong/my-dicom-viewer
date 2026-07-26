@@ -78,7 +78,7 @@ export async function loadAndCacheImageWithTimeout(
               try { signal?.removeEventListener?.('abort', onAbort); } catch {}
               resolve(true);
             })
-            .catch((err: any) => {
+            .catch(() => {
               if (done) return;
               done = true;
               clearTimeout(t);
@@ -104,7 +104,7 @@ export async function loadAndCacheImageWithTimeout(
               try { signal?.removeEventListener?.('abort', onAbort); } catch {}
               resolve(true);
             })
-            .catch((err: any) => {
+            .catch(() => {
               if (done) return;
               done = true;
               clearTimeout(t);
@@ -129,7 +129,7 @@ export async function loadAndCacheImageWithTimeout(
               try { signal?.removeEventListener?.('abort', onAbort); } catch {}
               resolve(true);
             })
-            .catch((err: any) => {
+            .catch(() => {
               if (done) return;
               done = true;
               clearTimeout(t);

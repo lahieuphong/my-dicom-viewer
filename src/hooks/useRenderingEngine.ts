@@ -12,6 +12,7 @@ import { enableElement } from '@/lib/cornerstone/element';
 import { getEnabledElementSafeLocal } from '@/lib/viewer/dom';
 import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canvasUtils';
 import { ATTEMPTS_ENGINE, USER_COOLDOWN_MS } from '@/lib/viewer/constants';
+import { areImageStacksEqual } from '@/lib/cornerstone/helpers';
 
 const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 const VIEWPORT_BACKGROUND: [number, number, number] = [0, 0, 0];
@@ -119,27 +120,6 @@ function tryDetachViewportSafely(engine: RenderingEngine | null, viewportId = VI
     }
   } catch (e) {
   }
-}
-
-/** Normalize imageId-like strings for comparisons. */
-function normalizeForCompare(id: any) {
-  try {
-    return String(id ?? '')
-      .replace(/^imageid:/i, '')
-      .split('?')[0]
-      .toLowerCase();
-  } catch {
-    return String(id ?? '');
-  }
-}
-
-function imageListsEqual(a?: any[], b?: any[]) {
-  if (!Array.isArray(a) || !Array.isArray(b)) return false;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (normalizeForCompare(a[i]) !== normalizeForCompare(b[i])) return false;
-  }
-  return true;
 }
 
 export function useRenderingEngine({
@@ -373,7 +353,7 @@ export function useRenderingEngine({
           try {
             const origSetStack = (vp as any).setStack;
             if (typeof origSetStack === 'function') {
-              (vp as any).setStack = async function wrappedVpSetStack(imageIds: string[], idx: number) {
+              (vp as any).setStack = async function wrappedVpSetStack(_imageIds: string[], idx: number) {
                 try {
                   const el = (vp as any).element ?? mountEl ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
                   let lastUserTs = 0;
@@ -446,7 +426,7 @@ export function useRenderingEngine({
         try {
           const currentIds = vpCandidate && typeof vpCandidate.getImageIds === 'function' ? vpCandidate.getImageIds() : null;
           const currentIdx = vpCandidate && typeof vpCandidate.getCurrentImageIdIndex === 'function' ? vpCandidate.getCurrentImageIdIndex() : null;
-          if (Array.isArray(currentIds) && currentIds.length && imageListsEqual(currentIds, ids) && typeof currentIdx === 'number' && currentIdx === idx) {
+          if (Array.isArray(currentIds) && currentIds.length && areImageStacksEqual(currentIds, ids) && typeof currentIdx === 'number' && currentIdx === idx) {
             return true;
           }
         } catch {}
@@ -589,7 +569,7 @@ export function useRenderingEngine({
               : initialIndex;
           const safePreferIdx = Math.max(0, Math.min(preferIdx, (imageIds?.length ?? 1) - 1));
 
-          const ok = await robustSetStack(vp, imageIds, safePreferIdx);
+          await robustSetStack(vp, imageIds, safePreferIdx);
 
           try { vp.reset?.(); } catch {}
           try { renderingEngineRef.current?.resize?.(); } catch {}
@@ -821,7 +801,6 @@ export function useRenderingEngine({
 
     // cleanup
     return () => {
-      const cancelledLocal = true;
       const tokenAtCleanup = initTokenRef.current;
       const delayMs = 120;
 

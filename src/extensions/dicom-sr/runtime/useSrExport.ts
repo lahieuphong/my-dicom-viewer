@@ -34,7 +34,6 @@ type LoadedSrEntry = {
   label: string;
   count: number;
   instances: any[];
-  groupLabel?: string;
 };
 
 type UseSrExportDeps = {

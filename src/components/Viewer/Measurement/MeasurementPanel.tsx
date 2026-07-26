@@ -58,8 +58,6 @@ interface MeasurementPanelProps {
   onRemoveMeasurement: (annotationUID: string) => Promise<boolean>;
   seriesMap: Record<string, { files: string[]; metadata: Series }>;
   seriesInstanceUID?: string;
-  refreshMeasurements?: () => void;
-  currentFrame: number;
   totalFrames: number;
   selectedMeasurementUID: string | null;
   studyDate: string;
@@ -86,8 +84,6 @@ export default function MeasurementPanel({
   onRemoveMeasurement,
   seriesMap,
   seriesInstanceUID,
-  refreshMeasurements,
-  currentFrame,
   totalFrames,
   selectedMeasurementUID,
   studyDate,
@@ -107,7 +103,6 @@ export default function MeasurementPanel({
     annotationUID: string;
     currentLabel: string;
   } | null>(null);
-  const [newLabel, setNewLabel] = useState('');
   const [listCollapsed, setListCollapsed] = useState(false);
   const [headerMode, setHeaderMode] = useState<MeasurementHeaderMode>('length');
   const formattedDate = formatStudyDate(studyDate);
@@ -122,10 +117,6 @@ export default function MeasurementPanel({
       setListCollapsed(false);
     }
   }, [measurements.length]);
-
-  useEffect(() => {
-    if (editingLabel) setNewLabel(editingLabel.currentLabel);
-  }, [editingLabel]);
 
   useEffect(
     () => () => {
@@ -194,14 +185,6 @@ export default function MeasurementPanel({
     const lookupId = activeSrId ?? seriesInstanceUID;
     currentSrEntry = srList.find((s) => s.id === lookupId) ?? srList.find((s) => s.id === seriesInstanceUID);
   }
-
-  const isSR = (m: AnnotationMeasurement) => {
-    const meta = seriesMap[m.metadata.seriesUID]?.metadata;
-    return (
-      Boolean(meta && meta.seriesModality === 'SR') ||
-      String(m.metadata.seriesUID ?? '').startsWith('SR_')
-    );
-  };
 
   return (
     <aside
@@ -603,7 +586,6 @@ export default function MeasurementPanel({
           onCancel={() => setEditingLabel(null)}
           onSave={(label) => {
             onUpdateLabel(editingLabel.annotationUID, label);
-            refreshMeasurements?.();
             setEditingLabel(null);
           }}
         />

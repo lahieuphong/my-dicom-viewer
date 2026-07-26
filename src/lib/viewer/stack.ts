@@ -1,12 +1,15 @@
 // src/lib/viewer/stack.ts
 'use client';
 
-import { getEnabledElementSafeLocal, normalizeId } from './dom';
+import { getEnabledElementSafeLocal } from './dom';
 import { VIEWPORT_ID } from '@/constants/viewport';
+import {
+  areImageStacksEqual,
+  normalizeImageIdWithFrame,
+} from '@/lib/cornerstone/helpers';
 import { forceRenderCheck } from './polling';
 import {
   ATTEMPTS_SETSTACK,
-  ATTEMPTS_POLL,
   DEFAULT_SETTLE_MS,
   USER_COOLDOWN_MS,
 } from './constants'; // hoặc '@/lib/viewer/constants'
@@ -50,15 +53,6 @@ function makeToken(): string {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
   } catch {
     return String(Math.random());
-  }
-}
-
-function safeNormalizeId(s: any): string {
-  try {
-    const n = normalizeId(String(s ?? '')) ?? '';
-    return String(n).replace(/^imageid:/i, '').split('?')[0];
-  } catch {
-    return String(s ?? '');
   }
 }
 
@@ -140,7 +134,7 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
   const requestToken = makeToken();
 
 
-  const devLogFalse = (reason: string) => {
+  const devLogFalse = (_reason: string) => {
   };
 
   if (!Array.isArray(imageIds) || imageIds.length === 0) {
@@ -188,11 +182,7 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
     }
 
     if (Array.isArray(currentIds) && currentIds.length > 0) {
-      const sameLength = currentIds.length === imageIds.length;
-      let listsEqual = false;
-      if (sameLength) {
-        listsEqual = currentIds.every((v, i) => safeNormalizeId(v) === safeNormalizeId(imageIds[i]));
-      }
+      const listsEqual = areImageStacksEqual(currentIds, imageIds);
 
       const idxMatches =
         typeof currentIdx === 'number' &&
@@ -289,8 +279,10 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
 
         if (currentImageId) {
           try {
-            const curNorm = safeNormalizeId(currentImageId);
-            const found = imageIds.findIndex((id) => safeNormalizeId(id) === curNorm);
+            const curNorm = normalizeImageIdWithFrame(currentImageId);
+            const found = imageIds.findIndex(
+              (id) => normalizeImageIdWithFrame(id) === curNorm
+            );
             if (found >= 0) {
               desiredIndex = Math.max(0, Math.min(found, imageIds.length - 1));
             } else {
@@ -553,18 +545,9 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
             enIds = (en as any).getImageIds?.() ?? null;
           }
         } catch {}
-        if (Array.isArray(enIds) && Array.isArray(imageIds) && enIds.length === imageIds.length) {
+        if (Array.isArray(enIds) && Array.isArray(imageIds)) {
           try {
-            const eq = (() => {
-              const normalize = (s: any) =>
-                String(normalizeId(String(s ?? '')) ?? '').replace(/^imageid:/i, '').split('?')[0];
-              for (let i = 0; i < enIds.length; i++) {
-                if (normalize(enIds[i]) !== normalize(imageIds[i])) return false;
-              }
-              return true;
-            })();
-
-            if (eq) {
+            if (areImageStacksEqual(enIds, imageIds)) {
               return true;
             }
           } catch {}
@@ -602,7 +585,9 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
   }
 }
 
-export default {
+const stackHelpers = {
   loadImageSafe,
   ensureStackOnViewport,
 };
+
+export default stackHelpers;

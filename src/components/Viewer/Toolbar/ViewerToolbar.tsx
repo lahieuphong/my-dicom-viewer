@@ -1,6 +1,5 @@
 // src/components/Viewer/Toolbar/ViewerToolbar.tsx
 'use client';
-import React from 'react';
 import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense } from 'react';
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { BasicViewer } from '@/modes/basic-viewer/BasicViewer';
 import { AppFooter, AppHeader } from '@/platform/ui';

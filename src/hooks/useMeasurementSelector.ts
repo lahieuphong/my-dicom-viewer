@@ -5,32 +5,16 @@ import React from 'react';
 import { useCallback, useRef } from 'react';
 import { annotation as csAnnotation } from '@cornerstonejs/tools';
 import {
+  areImageStacksEqual,
   findMatchingImageIdIndex,
-  normalizeImageIdWithFrame,
 } from '@/lib/cornerstone/helpers';
-import { preloadImagesWithTimeout } from '@/lib/viewer/preload';
 import { ensureAnnotationAvailable } from '@/lib/cornerstone/annotations';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import {
   isAnnotationRemovalTombstoned,
   safeAddAnnotation,
-  safeGetAnnotations,
 } from '@/lib/viewer/annotationHelpers';
 import { selectMeasurementAnnotation } from '@/lib/cornerstone/measurementStyles';
-
-// import chung constants để thống nhất attempts/timeouts
-import { ATTEMPTS_ANNOT } from '@/lib/viewer/constants';
-
-function imageStacksMatch(first: string[], second: string[]): boolean {
-  return (
-    first.length === second.length &&
-    first.every(
-      (imageId, index) =>
-        normalizeImageIdWithFrame(imageId) ===
-        normalizeImageIdWithFrame(second[index])
-    )
-  );
-}
 
 function resolveMeasurementImageIndex(
   measurement: any,
@@ -116,10 +100,7 @@ export type UseMeasurementSelectorOpts = {
   setActiveSrId?: (id: string | null) => void;
 
   safeRenderViewport: (vpId?: string) => void;
-  ensureImageRendered?: any;
-  preloadImagesWithTimeout?: typeof preloadImagesWithTimeout;
 
-  selectionInProgressRef?: React.MutableRefObject<boolean>;
   selectedMeasurementUIDRef?: React.RefObject<string | null>;
 };
 
@@ -139,7 +120,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     setCurrentFrame,
     setActiveSrId,
     safeRenderViewport,
-    selectionInProgressRef,
     selectedMeasurementUIDRef,
   } = opts;
 
@@ -180,7 +160,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       if (
         !Array.isArray(vpIds) ||
         vpIds.length === 0 ||
-        !imageStacksMatch(vpIds, imageIds)
+        !areImageStacksEqual(vpIds, imageIds)
       ) {
         return false;
       }
@@ -197,96 +177,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     }
   }, [viewportInstance]);
 
-  // NEW helper: set selectedMeasurementUID only when selection "confirmed" or after retries.
-  const maybeSetSelectedMeasurementUID = useCallback(
-    async function maybeSetSelectedMeasurementUID(
-      uid: string | null,
-      imageIds?: string[],
-      desiredIndex?: number,
-      maxAttempts = ATTEMPTS_ANNOT,
-      attemptDelayMs = 80
-    ) {
-      try {
-        if (!uid) {
-          setSelectedMeasurementUIDIfChanged(
-            setSelectedMeasurementUID,
-            selectedMeasurementUIDRef,
-            null
-          );
-          return;
-        }
-
-        const prev = selectedMeasurementUIDRef && selectedMeasurementUIDRef.current ? selectedMeasurementUIDRef.current : null;
-        if (prev === uid) {
-          return;
-        }
-
-        for (let i = 0; i < maxAttempts; i += 1) {
-          try {
-            if (typeof isViewportShowingDesiredImage === 'function' && Array.isArray(imageIds) && typeof desiredIndex === 'number') {
-              try {
-                const ok = isViewportShowingDesiredImage(imageIds, desiredIndex);
-                if (ok) {
-                  setSelectedMeasurementUIDIfChanged(
-                    setSelectedMeasurementUID,
-                    selectedMeasurementUIDRef,
-                    uid
-                  );
-                  return;
-                }
-              } catch (e) {
-              }
-            }
-          } catch {}
-
-          try {
-            const anns = safeGetAnnotations(undefined, viewportEl);
-            if (Array.isArray(anns) && anns.some((a) => a?.annotationUID === uid)) {
-              setSelectedMeasurementUIDIfChanged(
-                setSelectedMeasurementUID,
-                selectedMeasurementUIDRef,
-                uid
-              );
-              return;
-            }
-
-            try {
-              const inst = (csAnnotation.state as any)?.getAnnotation?.(uid) ?? null;
-              if (inst) {
-                setSelectedMeasurementUIDIfChanged(
-                  setSelectedMeasurementUID,
-                  selectedMeasurementUIDRef,
-                  uid
-                );
-                return;
-              }
-            } catch (e) {
-            }
-          } catch {}
-
-          await new Promise((r) => setTimeout(r, attemptDelayMs));
-        }
-        setSelectedMeasurementUIDIfChanged(
-          setSelectedMeasurementUID,
-          selectedMeasurementUIDRef,
-          uid
-        );
-      } catch (e) {
-        setSelectedMeasurementUIDIfChanged(
-          setSelectedMeasurementUID,
-          selectedMeasurementUIDRef,
-          uid
-        );
-      }
-    },
-    [
-      isViewportShowingDesiredImage,
-      viewportEl,
-      selectedMeasurementUIDRef,
-      setSelectedMeasurementUID,
-    ]
-  );
-
   const handleSelectMeasurement = useCallback(async (m: any) => {
     const annotationUID = String(m?.annotationUID ?? '');
     if (!annotationUID || isAnnotationRemovalTombstoned(annotationUID)) return;
@@ -297,9 +187,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     }
     selectingRef.current = true;
     lastSelectingUIDRef.current = m?.annotationUID ?? null;
-    if (selectionInProgressRef && typeof selectionInProgressRef === 'object' && 'current' in selectionInProgressRef) {
-      try { (selectionInProgressRef as any).current = true; } catch {}
-    }
 
     let selectionConfirmed = false;
     try {
@@ -371,10 +258,10 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           return;
         }
         if (selectionConfirmed) {
-          await maybeSetSelectedMeasurementUID(
+          setSelectedMeasurementUIDIfChanged(
+            setSelectedMeasurementUID,
+            selectedMeasurementUIDRef,
             m.annotationUID,
-            imageIds,
-            desiredIndex
           );
           if (
             !isCurrentRequest() ||
@@ -407,7 +294,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         const isCurrentStack =
           Array.isArray(activeImageIds) &&
           activeImageIds.length > 0 &&
-          imageStacksMatch(activeImageIds, imageIds);
+          areImageStacksEqual(activeImageIds, imageIds);
 
         if (isCurrentStack && typeof activeViewport?.setImageIdIndex === 'function') {
           const currentIndex = activeViewport.getCurrentImageIdIndex?.();
@@ -474,10 +361,10 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
               );
             } catch {}
 
-            await maybeSetSelectedMeasurementUID(
+            setSelectedMeasurementUIDIfChanged(
+              setSelectedMeasurementUID,
+              selectedMeasurementUIDRef,
               m.annotationUID,
-              imageIds,
-              desiredIndex
             );
             if (
               !isCurrentRequest() ||
@@ -544,7 +431,11 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
             return;
           }
           if (selectionConfirmed) {
-            await maybeSetSelectedMeasurementUID(m.annotationUID, imageIds, desiredIndex);
+            setSelectedMeasurementUIDIfChanged(
+              setSelectedMeasurementUID,
+              selectedMeasurementUIDRef,
+              m.annotationUID
+            );
             if (!isCurrentRequest()) return;
           }
           if (isAnnotationRemovalTombstoned(annotationUID)) return;
@@ -585,26 +476,18 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       }
 
       try {
-        const anns = safeGetAnnotations(m.toolName, viewportEl);
-        const found = Array.isArray(anns) ? anns.find((a) => a.annotationUID === m.annotationUID) : undefined;
-        if (!found) {
-          const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
-          const maybe = inst ?? (await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(() => null));
+        const inst =
+          (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ??
+          (await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(
+            () => null
+          ));
+        if (!isCurrentRequest()) return;
+        if (inst) {
+          selectionConfirmed = await safeAddAnnotation(inst, viewportEl);
           if (!isCurrentRequest()) return;
-          if (maybe) {
-            try {
-              selectionConfirmed = await safeAddAnnotation(maybe, viewportEl);
-              if (!isCurrentRequest()) return;
-            } catch {}
-            if (selectionConfirmed) {
-              selectCornerstoneAnnotation(m.annotationUID);
-            }
-          } else {
-            selectionConfirmed = false;
-          }
-        } else {
+        }
+        if (selectionConfirmed) {
           selectCornerstoneAnnotation(m.annotationUID);
-          selectionConfirmed = true;
         }
       } catch {}
 
@@ -616,9 +499,12 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       }
 
       if (selectionConfirmed) {
-        await maybeSetSelectedMeasurementUID(m.annotationUID, imageIds, desiredIndex);
+        setSelectedMeasurementUIDIfChanged(
+          setSelectedMeasurementUID,
+          selectedMeasurementUIDRef,
+          m.annotationUID
+        );
         if (!isCurrentRequest()) return;
-      } else {
       }
 
       if (isAnnotationRemovalTombstoned(annotationUID)) return;
@@ -626,11 +512,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
 
       safeRenderViewport(viewportId);
     } finally {
-      try {
-        if (selectionInProgressRef && typeof selectionInProgressRef === 'object' && 'current' in selectionInProgressRef) {
-          try { (selectionInProgressRef as any).current = false; } catch {}
-        }
-      } catch {}
       selectingRef.current = false;
       lastSelectingUIDRef.current = null;
     }
@@ -649,16 +530,14 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     safeRenderViewport,
     viewportId,
     isViewportShowingDesiredImage,
-    selectionInProgressRef,
     selectedMeasurementUIDRef,
-    maybeSetSelectedMeasurementUID,
     isSrSeriesUID,
     rememberSourceSeriesBeforeSr,
   ]);
 
 
   const handleSelectSr = useCallback(async (srId: string | null) => {
-    const requestId = ++selectFlowCounterRef.current;
+    ++selectFlowCounterRef.current;
     if (srId) {
       if (!isSrSeriesUID(srId)) return;
       rememberSourceSeriesBeforeSr(srId);
@@ -690,30 +569,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       try { setActiveSrId?.(srId); } catch {}
       setSelectedSeries(srId);
 
-      for (const m of srMeasurements) {
-        if (requestId !== selectFlowCounterRef.current) return;
-        try {
-          let inst = null;
-          try { inst = csAnnotation.state.getAnnotation?.(m.annotationUID); } catch {}
-          if (!inst) {
-            inst = await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(() => null);
-            if (requestId !== selectFlowCounterRef.current) return;
-          }
-          if (!inst) {
-            const mm = allMeasurements.find((x) => x.annotationUID === m.annotationUID) as any;
-            if (mm && mm.__rawInstance) inst = mm.__rawInstance;
-          }
-          if (inst) {
-            try {
-              await safeAddAnnotation(inst, viewportEl);
-              if (requestId !== selectFlowCounterRef.current) return;
-            } catch {}
-          } else {
-          }
-        } catch {}
-      }
-
-      if (requestId !== selectFlowCounterRef.current) return;
       if (first) {
         setSelectedMeasurementUID(first.annotationUID);
         setCurrentFrame(desiredIndex + 1);
@@ -759,7 +614,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
   }, [
     mergedSeriesMapRef,
     viewportInstance,
-    viewportEl,
     prevSeriesRef,
     pendingSeriesNavigationRef,
     setSelectedSeries,
@@ -776,6 +630,5 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
   return {
     handleSelectMeasurement,
     handleSelectSr,
-    isViewportShowingDesiredImage,
   };
 }

@@ -63,8 +63,8 @@ import {
   syncMeasurementSelectionStyles,
 } from '@/lib/cornerstone/measurementStyles';
 import {
+  areImageStacksEqual,
   findMatchingImageIdIndex,
-  normalizeImageIdWithFrame,
 } from '@/lib/cornerstone/helpers';
 import { hasActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 
@@ -100,9 +100,6 @@ function createFallbackStudyMeta(studyUID: string): Study {
 }
 
 const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
-  // cooldown (ms) sau khi attach hoàn tất: watchdog/fallback sẽ tôn trọng khoảng này
-  const COOLDOWN_AFTER_ATTACH_MS = 3000;
-
   const viewportId = VIEWPORT_ID;
 
   // ==============================
@@ -127,7 +124,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setCurrentFrameBatched,
   } = useBatchedFrameState(1);
 
-  const [voiRange, setVoiRange] = useState<{ lower: number; upper: number } | null>(null);
   const [fps, setFps] = useState(24);
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -142,8 +138,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   const [mobileMeasurementsOpen, setMobileMeasurementsOpen] = useState(false);
 
   const [loadingStack, setLoadingStack] = useState(false);
-  const [sidebarLoading, setSidebarLoading] = useState(false);
-  // thêm sau dòng khai báo sidebarLoading
   const [loadingProgress, setLoadingProgress] = useState<number | null>(null);
 
 
@@ -151,10 +145,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   const setLoadingStackSafe = useCallback((v: boolean) => {
     // only change when different
     setLoadingStack((prev) => (prev === v ? prev : v));
-  }, []);
-
-  const setSidebarLoadingSafe = useCallback((v: boolean) => {
-    setSidebarLoading((prev) => (prev === v ? prev : v));
   }, []);
 
   useEffect(() => {
@@ -169,7 +159,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   // ==============================
   const currentAttachSessionRef = useRef<number>(0);
 
-  const prevMeasurementUIDs = useRef<Set<string>>(new Set());
   const prevSeriesRef = useRef<string | null>(null);
   const pendingSeriesNavigationRef = useRef<{
     seriesUID: string;
@@ -301,40 +290,30 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     stackKey: selectedSeries,
   });
 
-  // đặt gần các useEffect khác, trong body Viewer component
   useEffect(() => {
     if (!viewportInstance) return;
 
     let cancelled = false;
-
-    (async () => {
+    const viewportElement = (viewportInstance as any).element as
+      | HTMLDivElement
+      | null;
+    if (viewportElement) {
       try {
-        const vpEl = (viewportInstance as any).element as HTMLElement | null;
-        if (vpEl) {
-          try {
-            enableElement(vpEl as HTMLDivElement);
-          } catch (e) {
-            // ignore
-          }
-        }
+        enableElement(viewportElement);
+      } catch {}
+    }
 
-        // small delay then resize + render
-        await new Promise((r) => setTimeout(r, 60));
-        try { renderingEngineRef.current?.resize?.(); } catch {}
-        try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      try { renderingEngineRef.current?.resize?.(); } catch {}
+      try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
+    }, 60);
 
-        // final readiness check
-        try {
-          const csCore: any = await import('@cornerstonejs/core').catch(() => null);
-          const en = csCore?.getEnabledElement ? csCore.getEnabledElement(vpEl) : null;
-        } catch {}
-      } catch (e) {
-        // ignore
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [viewportInstance]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [renderingEngineRef, viewportInstance]);
 
   // --- Robust runtime check of enabled element presence (safe, effect-based)
   const [runtimeHasImage, setRuntimeHasImage] = useState<boolean>(false);
@@ -408,16 +387,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   useEffect(() => {
     if (imageAvailable) {
       setLoadingStackSafe(false);
-      setSidebarLoadingSafe(false);
     }
-  }, [imageAvailable, setLoadingStackSafe, setSidebarLoadingSafe]);
-
-  useEffect(() => {
-    if (imageAvailable) {
-      setLoadingStackSafe(false);
-      setSidebarLoadingSafe(false);
-    }
-  }, [hookImageReady, enabledHasImage, runtimeHasImage, viewportRenderedSignal, imageAvailable, setLoadingStackSafe, setSidebarLoadingSafe]);
+  }, [imageAvailable, setLoadingStackSafe]);
 
 
   const rotate = useRotate(viewportInstance);
@@ -445,11 +416,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     resizeSignal: `${leftPanelWidth}:${rightPanelWidth}:${sidebarCollapsed}:${measurementCollapsed}`,
   });
 
-  const attachCounterRef = useRef(0);
-  // Remember last successful attach to avoid duplicate re-attaches
-  const lastAttachedSeriesRef = useRef<string | null>(null);
-  const lastAttachedViewportElRef = useRef<HTMLElement | null>(null);
-
   // ---------- Unified attach-displaySet effect (OHIF-like) ----------
   // NOTE: This effect intentionally avoids depending on volatile refs like viewportInstance/viewportEl
   // to reduce spurious re-triggers. We gate on viewportReady and remember the last successful attach
@@ -467,8 +433,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     const thisSession = (currentAttachSessionRef.current = (currentAttachSessionRef.current || 0) + 1);
 
     async function attachSelectedSeries() {
-      attachCounterRef.current += 1;
-
       const sessionAtStart = thisSession;
       const shouldAbort = () => sessionAtStart !== currentAttachSessionRef.current || cancelled;
 
@@ -506,14 +470,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
             let vpIds: string[] | null = null;
             try { vpIds = typeof vp.getImageIds === 'function' ? vp.getImageIds() ?? null : null; } catch {}
 
-            const vpShowsDesired =
-              Array.isArray(vpIds) &&
-              vpIds.length === ds.imageIds.length &&
-              vpIds.every(
-                (imageId, index) =>
-                  normalizeImageIdWithFrame(imageId) ===
-                  normalizeImageIdWithFrame(ds.imageIds[index])
-              );
+            const vpShowsDesired = areImageStacksEqual(vpIds, ds.imageIds);
 
             if (vpShowsDesired) {
               let currentIndex = Number(vp.getCurrentImageIdIndex?.() ?? 0);
@@ -537,13 +494,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
               }
               // Ensure loading UI is not stuck
               setLoadingStackSafe(false);
-              setSidebarLoadingSafe(false);
               setLoadingProgress?.(null);
-              // mark lastAttached so future triggers skip quickly
-              try {
-                lastAttachedSeriesRef.current = selectedSeries;
-                lastAttachedViewportElRef.current = elToCheck;
-              } catch {}
               return;
             }
           }
@@ -553,7 +504,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
         // ===== END QUICK GUARD =====
         setLoadingStackSafe(true);
-        setSidebarLoadingSafe(true);
 
         // 1) Wait for cornerstone readiness (cancellable)
         await waitForCornerstoneReady(5000).catch(() => false);
@@ -708,7 +658,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
             try {
               if (!shouldAbort()) {
                 setLoadingStackSafe(false);
-                setSidebarLoadingSafe(false);
                 setLoadingProgress(null); // reset after hiding
               }
             } catch {}
@@ -719,20 +668,12 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
             try {
               if (!shouldAbort()) {
                 setLoadingStackSafe(false);
-                setSidebarLoadingSafe(false);
                 setLoadingProgress?.(null);
               }
             } catch {}
           }, 80);
         }
 
-        // remember last successful attach signature (series + element) so we don't reattach unnecessarily
-        if (!shouldAbort()) {
-          try {
-            lastAttachedSeriesRef.current = selectedSeries;
-            lastAttachedViewportElRef.current = elToCheck;
-          } catch {}
-        }
       } catch (err) {
       } finally {
         if (!shouldAbort()) {
@@ -741,14 +682,12 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
               try {
                 if (!shouldAbort()) {
                   setLoadingStackSafe(false);
-                  setSidebarLoadingSafe(false);
                 }
               } catch {}
             }, 80);
           } catch {
             if (!shouldAbort()) {
               setLoadingStackSafe(false);
-              setSidebarLoadingSafe(false);
             }
           }
         } else {
@@ -782,7 +721,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     renderingEngineRef,
     ensureImageRendered,
     preloadImagesWithTimeout,
-    voiDefaults,
     viewportReady,
   ]);
 
@@ -806,49 +744,43 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   }
   // -------------------------------------------------
 
-  // ---------------- Stable measurements handler ----------------
-  const handleMeasurementsChangeImplRef = useRef<((current: AnnotationMeasurement[]) => void) | null>(null);
-
-  handleMeasurementsChangeImplRef.current = (current) => {
-    try {
-    } catch {}
-
-    setAllMeasurements((prev) => {
-      const currentUIDs = new Set(
-        current.map((measurement) => measurement.annotationUID)
-      );
-      const getAnnotation = (csAnnotation.state as any)
-        ?.getAnnotation;
-      const prevMap = new Map(
-        prev
-          .filter(
-            (measurement) =>
-              !isAnnotationRemovalTombstoned(measurement.annotationUID)
-          )
-          .filter((measurement) => {
-            if (
-              currentUIDs.has(measurement.annotationUID) ||
-              typeof getAnnotation !== 'function'
-            ) {
-              return true;
-            }
-            try {
-              // Cornerstone is the runtime source of truth. This removes
-              // ghost cards after Escape/cancel or an external annotation
-              // removal, while retaining annotations outside the mounted FOR.
-              return Boolean(
-                getAnnotation.call(
-                  csAnnotation.state,
-                  measurement.annotationUID
-                )
-              );
-            } catch {
-              return true;
-            }
-          })
-          .map((measurement) => [measurement.annotationUID, measurement])
-      );
-      const mergedMap = new Map(prevMap);
+  const handleMeasurementsChange = useCallback(
+    (current: AnnotationMeasurement[]) => {
+      setAllMeasurements((prev) => {
+        const currentUIDs = new Set(
+          current.map((measurement) => measurement.annotationUID)
+        );
+        const getAnnotation = (csAnnotation.state as any)?.getAnnotation;
+        const prevMap = new Map(
+          prev
+            .filter(
+              (measurement) =>
+                !isAnnotationRemovalTombstoned(measurement.annotationUID)
+            )
+            .filter((measurement) => {
+              if (
+                currentUIDs.has(measurement.annotationUID) ||
+                typeof getAnnotation !== 'function'
+              ) {
+                return true;
+              }
+              try {
+                // Cornerstone is the runtime source of truth. This removes
+                // ghost cards after Escape/cancel or an external annotation
+                // removal, while retaining annotations outside the mounted FOR.
+                return Boolean(
+                  getAnnotation.call(
+                    csAnnotation.state,
+                    measurement.annotationUID
+                  )
+                );
+              } catch {
+                return true;
+              }
+            })
+            .map((measurement) => [measurement.annotationUID, measurement])
+        );
+        const mergedMap = new Map(prevMap);
 
       for (const m of current) {
         if (isAnnotationRemovalTombstoned(m.annotationUID)) continue;
@@ -977,46 +909,31 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         }
       }
 
-      const uniqueByUID = new Map<string, any>();
-      for (const it of Array.from(mergedMap.values())) {
-        uniqueByUID.set(it.annotationUID, it);
-      }
-      const next = Array.from(uniqueByUID.values());
+        const next = Array.from(mergedMap.values());
 
-      try {
-      } catch (e) {}
+        // If selectedMeasurementUID no longer present, clear it (defer)
+        setTimeout(() => {
+          try {
+            const selUid = selectedMeasurementUIDRef.current;
+            if (selUid && !next.some((x) => x.annotationUID === selUid)) {
+              setSelectedMeasurementUID(null);
+            }
+          } catch {}
+        }, 0);
 
-      // If selectedMeasurementUID no longer present, clear it (defer)
-      setTimeout(() => {
-        try {
-          const selUid = selectedMeasurementUIDRef.current;
-          if (selUid && !next.some((x) => x.annotationUID === selUid)) {
-            setSelectedMeasurementUID(null);
-          }
-        } catch (e) {}
-      }, 0);
+        const identical =
+          createMeasurementListFingerprint(prev) ===
+          createMeasurementListFingerprint(next);
 
-      const identical =
-        createMeasurementListFingerprint(prev) ===
-        createMeasurementListFingerprint(next);
-
-      if (identical) {
-        // return previous array reference to avoid rerender churn
-        return prev;
-      }
-      return next;
-
-    });
-  };
-
-  const handleMeasurementsChange = useCallback((current: AnnotationMeasurement[]) => {
-    // stable wrapper - forward to impl
-    try {
-      handleMeasurementsChangeImplRef.current?.(current);
-    } catch (e) {
-    }
-  }, []);
-  // ---------------------------------------------------------------
+        if (identical) {
+          // return previous array reference to avoid rerender churn
+          return prev;
+        }
+        return next;
+      });
+    },
+    []
+  );
 
   // Helper: safe engine/viewport checks + safe render/resize wrappers
   // Helper robust: kiểm tra engine/viewport + safe wrappers
@@ -1040,23 +957,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       const eng = renderingEngineRef.current as any;
       if (!eng) return;
       if (!isRenderingEngineAlive(eng)) return;
-      try {
-        eng.renderViewport?.(vpId);
-      } catch (err: any) {
-        const msg = String(err || '').toLowerCase();
-        if (msg.includes('destroy')) return;
-      }
-    } catch (e) {
-    }
-  }, [isRenderingEngineAlive, renderingEngineRef]);
-
-  const safeResizeAndRender = useCallback((vpId = VIEWPORT_ID) => {
-    try {
-      if (abortRef.current) return;
-      const eng = renderingEngineRef.current as any;
-      if (!eng) return;
-      if (!isRenderingEngineAlive(eng)) return;
-      try { eng.resize?.(); } catch (e) { /* ignore */ }
       try {
         eng.renderViewport?.(vpId);
       } catch (err: any) {
@@ -1094,24 +994,19 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     }
 
     const drainSelections = async () => {
-      selectionInProgressRef.current = true;
-      try {
-        while (pendingUserMeasurementRef.current) {
-          const nextMeasurement = pendingUserMeasurementRef.current;
-          pendingUserMeasurementRef.current = null;
-          if (
-            !nextMeasurement ||
-            isAnnotationRemovalTombstoned(nextMeasurement.annotationUID)
-          ) {
-            continue;
-          }
-          try {
-            blurViewportActiveElement();
-            await handleSelectMeasurement(nextMeasurement);
-          } catch {}
+      while (pendingUserMeasurementRef.current) {
+        const nextMeasurement = pendingUserMeasurementRef.current;
+        pendingUserMeasurementRef.current = null;
+        if (
+          !nextMeasurement ||
+          isAnnotationRemovalTombstoned(nextMeasurement.annotationUID)
+        ) {
+          continue;
         }
-      } finally {
-        selectionInProgressRef.current = false;
+        try {
+          blurViewportActiveElement();
+          await handleSelectMeasurement(nextMeasurement);
+        } catch {}
       }
     };
 
@@ -1125,7 +1020,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
 
   // Now we can call useMeasurements and pass stable handler
-  const { measurements, refreshMeasurements, updateLabel } = useMeasurements({
+  const { refreshMeasurements, updateLabel } = useMeasurements({
     element: viewportEl,
     viewportId,
     seriesInstanceUID: mergedSeriesMap[selectedSeries]?.metadata?.seriesInstanceUID,
@@ -1140,12 +1035,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   // ---------------- SR / measurement lists --------------
   const [loadedSrList, setLoadedSrList] = useState<
-    { id: string; label: string; count: number; instances: any[]; groupLabel?: string }[]
+    { id: string; label: string; count: number; instances: any[] }[]
   >([]);
 
   const [srGroups, setSrGroups] = useState<{ id: number; srIds: string[]; label?: string }[]>([]);
-  const prevLoadedSrRef = useRef<string[]>([]);
-  const srGroupCounterRef = useRef<number>(0);
 
   const [activeSrId, setActiveSrId] = useState<string | null>(null);
   const [isCreatingSr, setIsCreatingSr] = useState(false);
@@ -1161,15 +1054,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setAllMeasurements([]);
     selectedMeasurementUIDRef.current = null;
     setSelectedMeasurementUID(null);
-    prevMeasurementUIDs.current.clear();
     measurementDeletionPromisesRef.current.clear();
-    prevLoadedSrRef.current = [];
-    srGroupCounterRef.current = 0;
     prevSeriesRef.current = null;
   }, [studyUID]);
 
   // Serialize Measurement-panel navigation and retain the latest pending click.
-  const selectionInProgressRef = useRef(false);
   const pendingUserMeasurementRef = useRef<any | null>(null);
   const userMeasurementSelectionLoopRef = useRef<Promise<void> | null>(null);
 
@@ -1231,15 +1120,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       }
 
       if (createdIds && createdIds.length) {
-        setLoadedSrList((prev) =>
-          prev.map((item) => {
-            if (createdIds!.includes(item.id)) {
-              return { ...item, groupLabel: name };
-            }
-            return item;
-          })
-        );
-
         setSrGroups((prev) => {
           const maxId = prev.reduce((max, g) => Math.max(max, Number(g.id ?? 0)), 0);
           const grpId = maxId + 1;
@@ -1247,11 +1127,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
             .map((g) => ({ ...g, srIds: g.srIds.filter((id) => !createdIds!.includes(id)) }))
             .filter((g) => g.srIds && g.srIds.length > 0);
           const newGroup = { id: grpId, srIds: createdIds, label: `Group ${grpId} — ${name}` };
-          srGroupCounterRef.current = grpId;
           return [...cleaned, newGroup];
         });
 
-        prevLoadedSrRef.current = Array.from(new Set(createdIds));
         toast.success(
           exportType === 'dicom'
             ? 'Đã tạo và tải xuống DICOM SR.'
@@ -1279,19 +1157,25 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setSrNameValue('');
   };
 
+  const lastActivatedToolRef = useRef<ToolID | null>(null);
+
   const handleSelectTool = useCallback((tool: ToolID) => {
     if (!isToolReady) {
+      lastActivatedToolRef.current = null;
       setActiveTool(tool);
       return;
     }
     try {
       const ok = activateTool(tool, { isSeriesSR: isSeriesReadOnly });
       if (ok) {
+        lastActivatedToolRef.current = tool;
         setActiveTool(tool);
       } else {
+        lastActivatedToolRef.current = null;
         setActiveTool('adjust');
       }
     } catch (e) {
+      lastActivatedToolRef.current = null;
       setActiveTool('adjust');
     }
   }, [isToolReady, activateTool, isSeriesReadOnly]);
@@ -1322,8 +1206,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   useEffect(() => {
     if (!selectedSeries) return;
     setLoadingStackSafe(true);
-    setSidebarLoadingSafe(true);
-  }, [selectedSeries, setLoadingStackSafe, setSidebarLoadingSafe]);
+  }, [selectedSeries, setLoadingStackSafe]);
 
   const handleAutoSelectMeasurement = useCallback(
     (uid: string, frameIndex: number) => {
@@ -1346,14 +1229,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     mergedSeriesMap,
     onAutoSelect: handleAutoSelectMeasurement,
   });
-
-  useEffect(() => {
-    setVoiRange(selectedSeries && voiDefaults[selectedSeries] ? voiDefaults[selectedSeries] : null);
-  }, [selectedSeries, voiDefaults]);
-
-
-  // tránh gọi activateTool nhiều lần nếu cùng tool đã active trước đó
-  const lastActivatedToolRef = useRef<ToolID | null>(null);
 
   useEffect(() => {
     if (!isToolReady) return;
@@ -1490,22 +1365,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     };
   }, [viewportEl]);
 
-
-  useEffect(() => {
-    const onResize = () => {
-      safeResizeAndRender(viewportId);
-    };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [safeResizeAndRender, viewportId]);
-
-
-  useEffect(() => {
-    if (measurements.length === 0) {
-      setSelectedMeasurementUID(null);
-      prevMeasurementUIDs.current.clear();
-    }
-  }, [measurements]);
 
   useEffect(() => {
     if (!selectedMeasurementUID) return;
@@ -1663,26 +1522,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     });
   }, []);
 
-  /**
-   * Robust select measurement:
-   *  - wait for engine/viewport
-   *  - ensure image(s) rendered (ensureImageRendered does setStack + polling)
-   *  - then attach / show annotation
-   */
-
-  const setUserSelectedMeasurementUID = useCallback(
-    (uid: string | null) => {
-      commitSelectedMeasurementUID(uid);
-    },
-    [commitSelectedMeasurementUID]
-  );
-
-  // sau khi có các biến / refs trong Viewer (renderingEngineRef, viewportInstance, viewportEl, mergedSeriesMap, allMeasurements, ...)
-  // gọi hook:
   const {
     handleSelectMeasurement,
     handleSelectSr,
-    isViewportShowingDesiredImage,
   } = useMeasurementSelector({
     renderingEngineRef,
     viewportInstance,
@@ -1694,16 +1536,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     prevSeriesRef,
     pendingSeriesNavigationRef,
     setSelectedSeries,
-    setSelectedMeasurementUID: setUserSelectedMeasurementUID,
+    setSelectedMeasurementUID: commitSelectedMeasurementUID,
     setCurrentFrame,
     setActiveSrId,
     safeRenderViewport,
-    ensureImageRendered,
-    preloadImagesWithTimeout,
-    // <-- pass ref so hook can mark selection in progress
-    selectionInProgressRef,
-    // <-- NEW: allow selector to compare current selection and avoid redundant sets
-    selectedMeasurementUIDRef,   // <<-- đây là dòng mới
+    selectedMeasurementUIDRef,
   });
 
   // --- Auto-clear loading overlay when image becomes available OR when preload reaches 100% ---
@@ -1712,7 +1549,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     if (imageAvailable) {
       try { setLoadingProgress(null); } catch {}
       setLoadingStackSafe(false);
-      setSidebarLoadingSafe(false);
       return;
     }
     // If loadingProgress reached 100% but imageAvailable not yet true, still hide overlay after small delay
@@ -1721,11 +1557,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       const t = window.setTimeout(() => {
         try { setLoadingProgress(null); } catch {}
         setLoadingStackSafe(false);
-        setSidebarLoadingSafe(false);
       }, 300);
       return () => window.clearTimeout(t);
     }
-  }, [imageAvailable, loadingProgress, setLoadingStackSafe, setSidebarLoadingSafe]);
+  }, [imageAvailable, loadingProgress, setLoadingStackSafe]);
 
 
   const measurementUIDSignature = useMemo(
@@ -1782,7 +1617,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       rightPanelWidth={rightPanelWidth}
       setRightPanelWidth={setRightPanelWidth}
       isSR={isSR}
-      studyUID={studyUID}
       studyDate={studyMeta.studyDate}
       studyDescription={studyMeta.studyDescription}
       seriesMap={mergedSeriesMap}
@@ -1795,8 +1629,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         };
         setIsPlaying(false);
         setCurrentFrame(1);
-        setVoiRange(null);
-        setSidebarLoadingSafe(true);
         setSelectedSeries(uid);
       }}
       onSelectMobileSeries={(uid) => {
@@ -1807,8 +1639,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         };
         setIsPlaying(false);
         setCurrentFrame(1);
-        setVoiRange(null);
-        setSidebarLoadingSafe(true);
         setSelectedSeries(uid);
         setMobileSeriesOpen(false);
       }}
@@ -1830,7 +1660,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         void doUserSelectMeasurement(m);
       }}
       onRemoveMeasurement={handleRemoveMeasurement}
-      refreshMeasurements={refreshMeasurements}
       hiddenMeasurements={hiddenMeasurements}
       onToggleVisibility={handleToggleVisibility}
       onExportJSON={() => openSrNameDialog('json')}

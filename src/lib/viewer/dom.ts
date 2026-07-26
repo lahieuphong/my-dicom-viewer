@@ -148,7 +148,3 @@ export function getEnabledElementSafeLocal(vpEl: HTMLElement | null): any | null
 
   return null;
 }
-
-export function getEnabledElementSafe(vpEl: HTMLElement | null): any | null {
-  return getEnabledElementSafeLocal(vpEl);
-}

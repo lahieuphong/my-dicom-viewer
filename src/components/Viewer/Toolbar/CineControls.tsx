@@ -1,5 +1,4 @@
 'use client';
-import React from 'react';
 import { Button } from '@/components/ui/button';
 import ToolbarTooltip from './ToolbarTooltip';
 import { getCineTooltip, getFpsTooltip } from './tooltips';

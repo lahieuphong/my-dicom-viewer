@@ -1,7 +1,7 @@
 // src/hooks/useMeasurements.ts
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { eventTarget } from '@cornerstonejs/core';
 import type { StackViewport } from '@cornerstonejs/core';
 import {
@@ -30,108 +30,6 @@ import type { AnnotationMeasurement as CoreAnnotationMeasurement } from '@/platf
 /** Compatibility alias; the canonical measurement shape lives in platform/core. */
 export type AnnotationMeasurement = CoreAnnotationMeasurement<any>;
 
-function parseNumberArrayFromDicomJson(meta: any, tag: string): number[] | null {
-  if (!meta) return null;
-  const entry = meta?.[tag];
-  if (!entry) return null;
-  const vals = entry.Value ?? entry;
-  if (!Array.isArray(vals)) return null;
-  return vals.map((v: any) => Number(v));
-}
-
-function pixelToPatientCoords(pointPx: number[], meta: any): number[] | null {
-  if (!meta) return null;
-  const ipp = parseNumberArrayFromDicomJson(meta, '00200032');
-  const iop = parseNumberArrayFromDicomJson(meta, '00200037');
-  const pxSp = parseNumberArrayFromDicomJson(meta, '00280030');
-
-  if (!ipp || !iop || !pxSp) return null;
-  if (iop.length < 6 || pxSp.length < 2) return null;
-
-  const rowCosine = [iop[0], iop[1], iop[2]];
-  const colCosine = [iop[3], iop[4], iop[5]];
-  const rowSpacing = Number(pxSp[0]);
-  const colSpacing = Number(pxSp[1]);
-
-  const x = Number(pointPx[0]); // column
-  const y = Number(pointPx[1]); // row
-
-  const patient: number[] = [0, 0, 0];
-  for (let i = 0; i < 3; i++) {
-    patient[i] =
-      Number(ipp[i]) +
-      colCosine[i] * x * colSpacing +
-      rowCosine[i] * y * rowSpacing;
-  }
-  return patient;
-}
-
-function euclidean(a: number[], b: number[]) {
-  let s = 0;
-  const n = Math.max(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    const da = a[i] ?? 0;
-    const db = b[i] ?? 0;
-    s += (da - db) * (da - db);
-  }
-  return Math.sqrt(s);
-}
-
-function extractPointsFromInst(inst: any): number[][] | undefined {
-  const d = inst?.data ?? inst;
-  const handles = d?.handles ?? d;
-
-  if (Array.isArray(handles?.points) && handles.points.length) {
-    const p = handles.points
-      .map((pt: any) => {
-        if (Array.isArray(pt) && pt.length >= 2) return [Number(pt[0]), Number(pt[1])];
-        if (pt && typeof pt.x === 'number' && typeof pt.y === 'number') return [Number(pt.x), Number(pt.y)];
-        if (pt && Array.isArray(pt.position) && pt.position.length >= 2) return [Number(pt.position[0]), Number(pt.position[1])];
-        return null;
-      })
-      .filter(Boolean);
-    if (p.length) return p as number[][];
-  }
-
-  if (handles?.start && handles?.end) {
-    const s = handles.start;
-    const e = handles.end;
-    const p1 = Array.isArray(s) && s.length >= 2 ? [Number(s[0]), Number(s[1])] : (s && s.x != null ? [Number(s.x), Number(s.y)] : null);
-    const p2 = Array.isArray(e) && e.length >= 2 ? [Number(e[0]), Number(e[1])] : (e && e.x != null ? [Number(e.x), Number(e.y)] : null);
-    if (p1 && p2) return [p1, p2];
-  }
-
-  if (Array.isArray(handles?.controlPoints) && handles.controlPoints.length) {
-    const p = handles.controlPoints
-      .map((pt: any) => {
-        if (Array.isArray(pt) && pt.length >= 2) return [Number(pt[0]), Number(pt[1])];
-        if (pt && typeof pt.x === 'number') return [Number(pt.x), Number(pt.y)];
-        return null;
-      })
-      .filter(Boolean);
-    if (p.length) return p as number[][];
-  }
-
-  if (handles && typeof handles === 'object' && !Array.isArray(handles)) {
-    for (const k of Object.keys(handles)) {
-      const v = handles[k];
-      if (Array.isArray(v) && v.length) {
-        const p = v
-          .map((pt: any) => {
-            if (Array.isArray(pt) && pt.length >= 2) return [Number(pt[0]), Number(pt[1])];
-            if (pt && typeof pt.x === 'number') return [Number(pt.x), Number(pt.y)];
-            if (pt && Array.isArray(pt.position) && pt.position.length >= 2) return [Number(pt.position[0]), Number(pt.position[1])];
-            return null;
-          })
-          .filter(Boolean);
-        if (p.length) return p as number[][];
-      }
-    }
-  }
-
-  return undefined;
-}
-
 function cloneMeasurementData<T>(value: T): T {
   try {
     return structuredClone(value);
@@ -145,15 +43,15 @@ function cloneMeasurementData<T>(value: T): T {
 }
 
 /**
- * Main hook: collect annotation instances from cornerstone (robustly),
- * convert them to AnnotationMeasurement[] and provide refresh/updateLabel.
+ * Collect Cornerstone annotations, publish immutable measurement snapshots,
+ * and expose refresh/updateLabel commands.
  *
  * Key fixes:
  * - Avoid using resolveSeriesUID directly as dependency by storing into ref.
  * - Calls onMeasurementsChange OUTSIDE of setState and defers it
  * - Avoids calling the external callback when nothing meaningful changed
  */
-export const useViewportAnnotations = ({
+export const useMeasurements = ({
   element,
   onMeasurementsChange,
   seriesInstanceUID,
@@ -168,7 +66,6 @@ export const useViewportAnnotations = ({
   viewportId?: string;
   resolveSeriesUID?: (referencedImageId: string) => string | undefined;
 }) => {
-  const [measurements, setMeasurements] = useState<AnnotationMeasurement[]>([]);
   const createdAtByAnnotationUIDRef = useRef<Map<string, string>>(
     new Map()
   );
@@ -188,90 +85,9 @@ export const useViewportAnnotations = ({
     resolveSeriesUIDRef.current = resolveSeriesUID;
   }, [resolveSeriesUID]);
 
-  // normalize different return shapes from annotation.state.getAnnotations(...)
-  function normalizeGetAnnotationsResult(annsRaw: any): any[] {
-    if (!annsRaw) return [];
-    if (Array.isArray(annsRaw)) return annsRaw;
-    try {
-      if (annsRaw instanceof Map) {
-        const out: any[] = [];
-        annsRaw.forEach((v: any) => {
-          if (Array.isArray(v)) out.push(...v);
-          else if (v) out.push(v);
-        });
-        return out;
-      }
-      if (typeof annsRaw === 'object') {
-        const out: any[] = [];
-        Object.values(annsRaw).forEach((v: any) => {
-          if (Array.isArray(v)) out.push(...v);
-          else if (v) out.push(v);
-        });
-        return out;
-      }
-    } catch (e) {
-      // swallow and fallthrough
-    }
-    return [];
-  }
-
-  // robust getter: try element-scoped and global-scoped variants
-  function getAnnotationsRobust(toolName: string | undefined, el: HTMLDivElement | null) {
-    let anns: any[] = [];
-    try {
-      const annStateAny: any = annotation.state;
-
-      // 1) element + tool
-      try {
-        const r = annStateAny.getAnnotations?.(toolName ?? undefined, el ?? null);
-        anns = normalizeGetAnnotationsResult(r);
-        if (anns.length) return anns;
-      } catch (e) { /* continue */ }
-
-      // 2) element + all
-      try {
-        const r = annStateAny.getAnnotations?.(undefined, el ?? null);
-        anns = normalizeGetAnnotationsResult(r);
-        if (anns.length) return anns;
-      } catch (e) { /* continue */ }
-
-      // 3) global + tool
-      try {
-        const r = annStateAny.getAnnotations?.(toolName ?? undefined, undefined);
-        anns = normalizeGetAnnotationsResult(r);
-        if (anns.length) return anns;
-      } catch (e) { /* continue */ }
-
-      // 4) global all
-      try {
-        const r = annStateAny.getAnnotations?.(undefined, undefined);
-        anns = normalizeGetAnnotationsResult(r);
-        if (anns.length) return anns;
-      } catch (e) { /* continue */ }
-    } catch (e) {
-      // fallback empty
-      anns = [];
-    }
-    return anns;
-  }
-
   const collectAnnotations = useCallback((): AnnotationMeasurement[] => {
     if (!element) return [];
-    let enabled;
-    try {
-      // Use safe helper that gracefully handles missing/broken cornerstone exports
-      enabled = safeGetEnabledElement(element);
-    } catch {
-      // fallback: attempt to call global cornerstone if present
-      try {
-        const globalCornerstone = (globalThis as any).cornerstone;
-        if (typeof globalCornerstone?.getEnabledElement === 'function') {
-          enabled = globalCornerstone.getEnabledElement(element);
-        }
-      } catch {
-        enabled = null;
-      }
-    }
+    const enabled = safeGetEnabledElement(element);
     if (!enabled) return [];
 
     const result: AnnotationMeasurement[] = [];
@@ -279,14 +95,15 @@ export const useViewportAnnotations = ({
     const collect = (toolName: string, type: AnnotationMeasurement['type']) => {
       let anns: any[] = [];
       try {
-        anns = getAnnotationsRobust(toolName, element) || [];
-      } catch (e) {
+        const annotationsForTool = (annotation.state as any).getAnnotations?.(
+          toolName,
+          element
+        );
+        anns = Array.isArray(annotationsForTool)
+          ? annotationsForTool
+          : [];
+      } catch {
         anns = [];
-      }
-
-      // If getAnnotations returned mixed tool types, try to filter by toolName
-      if (anns.length && anns.some((a) => (a?.toolName ?? a?.metadata?.toolName) !== toolName)) {
-        anns = anns.filter((a) => (a?.toolName ?? a?.metadata?.toolName ?? '') === toolName);
       }
 
       // ANNOTATION_ADDED fires at draw start. Keep draft geometry out of the
@@ -295,11 +112,14 @@ export const useViewportAnnotations = ({
         const annotationUID = String(
           annotationInstance?.annotationUID ?? ''
         );
-        return !isAnnotationCreationInProgress(annotationUID);
+        return (
+          Boolean(annotationUID) &&
+          !isAnnotationCreationInProgress(annotationUID)
+        );
       });
 
       return anns.map((a: any) => {
-        const uid = a.annotationUID ?? a.uid ?? a.id ?? String(Math.random());
+        const uid = String(a.annotationUID);
 
         const refId =
           a.metadata?.referencedImageId ||
@@ -401,54 +221,6 @@ export const useViewportAnnotations = ({
         // immutable snapshot so the change fingerprint can observe geometry
         // changes instead of comparing two references to the same object.
         flat.handles = cloneMeasurementData(handles);
-
-        // try convert px->mm where possible
-        try {
-          if ((type === 'length' || type === 'bidirectional' || type === 'arrowAnnotate' || type === 'angle')) {
-            if (flat.unit !== 'mm') {
-              const metaManager = (typeof window !== 'undefined' && (window as any).wadorsMetaDataManager)
-                ? (window as any).wadorsMetaDataManager
-                : null;
-
-              let meta: any = null;
-              if (metaManager && refId) {
-                try {
-                  meta = metaManager.get?.(refId) ?? null;
-                } catch {
-                  try {
-                    meta = metaManager.get?.(String(refId).replace(/^imageId:/, '')) ?? null;
-                  } catch {
-                    meta = null;
-                  }
-                }
-              }
-
-              const pts = extractPointsFromInst(a);
-              if (pts && pts.length >= 2) {
-                const p0 = meta ? pixelToPatientCoords(pts[0], meta) : null;
-                const p1 = meta ? pixelToPatientCoords(pts[1], meta) : null;
-
-                if (p0 && p1) {
-                  const lenmm = euclidean(p0, p1);
-                  flat.length = Number(lenmm);
-                  flat.unit = 'mm';
-                } else if (meta) {
-                  const pxSp = parseNumberArrayFromDicomJson(meta, '00280030');
-                  if (pxSp && Array.isArray(pxSp) && pxSp.length >= 2) {
-                    const avg = (Number(pxSp[0]) + Number(pxSp[1])) / 2;
-                    const lenpx = flat.length ?? stats.length ?? null;
-                    if (typeof lenpx === 'number') {
-                      flat.length = Number((lenpx * avg).toFixed(3));
-                      flat.unit = 'mm';
-                    }
-                  }
-                }
-              }
-            }
-          }
-        } catch {
-          // noop
-        }
 
         return {
           annotationUID: uid,
@@ -568,22 +340,6 @@ export const useViewportAnnotations = ({
     if (!equal) {
       // update ref first so future comparisons are consistent
       lastCollectedRef.current = next;
-
-      // Defer actual setState to avoid synchronous reentrancy inside Cornerstone event stack
-      try {
-        setTimeout(() => {
-          try {
-            setMeasurements(next);
-          } catch (e) {
-            // swallow
-          }
-        }, 0);
-      } catch (e) {
-        // fallback to direct set
-        try {
-          setMeasurements(next);
-        } catch {}
-      }
 
       // Only call external callback if there was a meaningful change
       try {
@@ -710,7 +466,6 @@ export const useViewportAnnotations = ({
       );
       lastCollectedRef.current = nextMeasurements;
       lastSentMeasurementsKeyRef.current = null;
-      setMeasurements(nextMeasurements);
       sendMeasurementsSafe(nextMeasurements);
 
       // Re-read the live annotation after the event stack has settled so
@@ -723,10 +478,7 @@ export const useViewportAnnotations = ({
   );
 
   return {
-    measurements,
     refreshMeasurements: () => refreshRef.current(),
     updateLabel,
   };
 };
-
-export const useMeasurements = useViewportAnnotations;
