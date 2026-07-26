@@ -296,50 +296,11 @@ await waitFor(
   `!!document.querySelector('button[aria-label="Show measurement"]')`
 );
 
-await evaluate(`(() => {
-  const button = [...document.querySelectorAll('button')].find(
-    (candidate) => candidate.textContent?.trim() === 'Create SR'
-  );
-  button?.dispatchEvent(
-    new PointerEvent('pointerdown', {
-      bubbles: true,
-      cancelable: true,
-      pointerId: 1,
-      pointerType: 'mouse',
-      isPrimary: true,
-      button: 0,
-      buttons: 1,
-    })
-  );
-  button?.click();
-})()`);
-await waitFor(
-  `[...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent?.trim() === 'DICOM SR')`
+await clickElement(
+  `[...document.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Create SR'
+  )`
 );
-await evaluate(`(() => {
-  const item = [...document.querySelectorAll('[role="menuitem"]')].find(
-    (candidate) => candidate.textContent?.trim() === 'DICOM SR'
-  );
-  item?.dispatchEvent(new PointerEvent('pointerdown', {
-    bubbles: true,
-    cancelable: true,
-    pointerId: 33,
-    pointerType: 'mouse',
-    isPrimary: true,
-    button: 0,
-    buttons: 1,
-  }));
-  item?.dispatchEvent(new PointerEvent('pointerup', {
-    bubbles: true,
-    cancelable: true,
-    pointerId: 33,
-    pointerType: 'mouse',
-    isPrimary: true,
-    button: 0,
-    buttons: 0,
-  }));
-  item?.click();
-})()`);
 await waitFor(`!!document.querySelector('input[aria-label="Tên SR"]')`);
 await evaluate(`(() => {
   const input = document.querySelector('input[aria-label="Tên SR"]');
@@ -428,55 +389,6 @@ const sourceStateAfterClose = await evaluate(`(() => {
   };
 })()`);
 
-await evaluate(`(() => {
-  const button = [...document.querySelectorAll('button')].find(
-    (candidate) => candidate.textContent?.trim() === 'Create SR'
-  );
-  button?.dispatchEvent(
-    new PointerEvent('pointerdown', {
-      bubbles: true,
-      cancelable: true,
-      pointerId: 2,
-      pointerType: 'mouse',
-      isPrimary: true,
-      button: 0,
-      buttons: 1,
-    })
-  );
-  button?.click();
-})()`);
-await waitFor(
-  `[...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent?.trim() === 'JSON SR')`
-);
-await evaluate(
-  `[...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.trim() === 'JSON SR')?.click()`
-);
-await waitFor(`!!document.querySelector('input[aria-label="Tên SR"]')`);
-await evaluate(`(() => {
-  const input = document.querySelector('input[aria-label="Tên SR"]');
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    'value'
-  ).set;
-  setter.call(input, 'Runtime OHIF JSON');
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-})()`);
-await clickElement(
-  `[...document.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Tạo SR')`
-);
-await waitFor(
-  `document.body.innerText.includes('Đã tạo và tải xuống DICOM JSON SR.')`,
-  60000
-);
-await new Promise((resolve) => setTimeout(resolve, 1000));
-const jsonExportState = await evaluate(`({
-  measurementCountText: document.body.innerText.match(/Measurement \\(\\d+\\)/)?.[0],
-  reportCount: [...document.querySelectorAll('span[title]')].filter(
-    (span) => ['Runtime OHIF SR', 'Runtime OHIF JSON'].includes(
-      span.getAttribute('title')
-    )
-  ).length,
-})`);
 await evaluate(
   `document.querySelector('button[title="Delete measurement"]')?.click()`
 );
@@ -534,7 +446,6 @@ console.log(
       sourceStateAfterExport,
       srViewState,
       sourceStateAfterClose,
-      jsonExportState,
       afterDeleteState,
     },
     null,
@@ -623,48 +534,4 @@ if (String(dataset.ContentTemplateSequence?.TemplateIdentifier) !== '1500') {
 }
 if (measurementGroups.length !== 1) {
   throw new Error('Downloaded SR does not contain exactly one measurement.');
-}
-
-const downloadedJson = fs
-  .readdirSync(downloadPath)
-  .filter((name) => name.endsWith('.json'))
-  .map((name) => ({
-    name,
-    path: path.join(downloadPath, name),
-    modifiedAt: fs.statSync(path.join(downloadPath, name)).mtimeMs,
-  }))
-  .sort((a, b) => b.modifiedAt - a.modifiedAt)[0];
-if (!downloadedJson) throw new Error('No DICOM JSON SR file was downloaded.');
-
-const dicomJson = JSON.parse(fs.readFileSync(downloadedJson.path, 'utf8'));
-const jsonDataset =
-  dcmjs.data.DicomMetaDictionary.naturalizeDataset(dicomJson);
-const jsonImagingMeasurements = toArray(
-  jsonDataset.ContentSequence
-).find((item) => codeMeaning(item) === 'Imaging Measurements');
-const jsonMeasurementGroups = toArray(
-  jsonImagingMeasurements?.ContentSequence
-).filter((item) => codeMeaning(item) === 'Measurement Group');
-console.log(
-  JSON.stringify(
-    {
-      downloadedJson: downloadedJson.path,
-      studyInstanceUID: jsonDataset.StudyInstanceUID,
-      sopClassUID: jsonDataset.SOPClassUID,
-      templateIdentifier:
-        jsonDataset.ContentTemplateSequence?.TemplateIdentifier,
-      measurementGroupCount: jsonMeasurementGroups.length,
-      seriesDescription: jsonDataset.SeriesDescription,
-    },
-    null,
-    2
-  )
-);
-if (
-  jsonDataset.StudyInstanceUID !== studyUID ||
-  String(jsonDataset.ContentTemplateSequence?.TemplateIdentifier) !==
-    '1500' ||
-  jsonMeasurementGroups.length !== 1
-) {
-  throw new Error('Downloaded DICOM JSON SR failed validation.');
 }

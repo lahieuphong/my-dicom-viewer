@@ -41,16 +41,3 @@ export async function datasetToDicomPart10Blob(dataset: any): Promise<Blob> {
 
   return new Blob([buffer], { type: 'application/dicom' });
 }
-
-/**
- * Produce the standard tag/VR/Value DICOM JSON representation.  Runtime-only
- * dcmjs fields are deliberately excluded.
- */
-export async function datasetToDicomJson(dataset: any): Promise<Record<string, any>> {
-  const dcmjs = await getDcmjs();
-  const naturalized = { ...dataset };
-  delete naturalized._meta;
-  delete naturalized._vrMap;
-
-  return dcmjs.data.DicomMetaDictionary.denaturalizeDataset(naturalized);
-}

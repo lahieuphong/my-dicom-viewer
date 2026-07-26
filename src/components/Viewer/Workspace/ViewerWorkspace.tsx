@@ -59,8 +59,7 @@ type ViewerWorkspaceProps = {
   onRemoveMeasurement: MeasurementPanelProps['onRemoveMeasurement'];
   hiddenMeasurements: MeasurementPanelProps['hiddenMeasurements'];
   onToggleVisibility: MeasurementPanelProps['onToggleVisibility'];
-  onExportJSON: () => void;
-  onExportDICOMSR: () => void;
+  onCreateSR: () => void;
   currentFrame: number;
   onFrameChange: (frame: number) => boolean | void | Promise<boolean | void>;
   viewportEl: HTMLDivElement | null;
@@ -119,8 +118,7 @@ export default function ViewerWorkspace({
   onRemoveMeasurement,
   hiddenMeasurements,
   onToggleVisibility,
-  onExportJSON,
-  onExportDICOMSR,
+  onCreateSR,
   currentFrame,
   onFrameChange,
   viewportEl,
@@ -164,8 +162,7 @@ export default function ViewerWorkspace({
     onRemoveMeasurement,
     hiddenMeasurements,
     onToggleVisibility,
-    onExportJSON,
-    onExportDICOMSR,
+    onCreateSR,
     isExportDisabled:
       isSeriesToolbarReadOnly || measurements.length === 0,
     srList: loadedSrList,

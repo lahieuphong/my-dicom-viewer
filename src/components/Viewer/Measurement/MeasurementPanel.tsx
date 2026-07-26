@@ -7,12 +7,6 @@ import { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import type { Series } from '@/platform/core';
 import { cn, formatStudyDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
 import EditLabelDialog from './EditLabelDialog';
 import MeasurementStats from './MeasurementStats';
 import PanelScrollArea from '@/components/Viewer/PanelScrollArea';
@@ -66,8 +60,7 @@ interface MeasurementPanelProps {
   mobileSidebarOpen?: boolean;
   onCloseMobile?: () => void;
   className?: string;
-  onExportJSON?: () => void;
-  onExportDICOMSR?: () => void;
+  onCreateSR?: () => void;
   isExportDisabled?: boolean;
 
   srList?: { id: string; label: string; count: number; instances?: any[] }[];
@@ -92,8 +85,7 @@ export default function MeasurementPanel({
   mobileSidebarOpen = false,
   onCloseMobile,
   className = '',
-  onExportJSON,
-  onExportDICOMSR,
+  onCreateSR,
   isExportDisabled = false,
   srList,
   activeSrId,
@@ -372,36 +364,15 @@ export default function MeasurementPanel({
           >
             <div className="viewer-panel-collapsible-content">
               <div className="flex items-center justify-center px-4 py-2 border-b border-border">
-                {(onExportJSON || onExportDICOMSR) && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={isExportDisabled}
-                      >
-                        Create SR <i className="fas fa-caret-down ml-2" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      {onExportJSON && (
-                        <DropdownMenuItem
-                          disabled={isExportDisabled}
-                          onClick={onExportJSON}
-                        >
-                          JSON SR
-                        </DropdownMenuItem>
-                      )}
-                      {onExportDICOMSR && (
-                        <DropdownMenuItem
-                          disabled={isExportDisabled}
-                          onClick={onExportDICOMSR}
-                        >
-                          DICOM SR
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                {onCreateSR && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isExportDisabled}
+                    onClick={onCreateSR}
+                  >
+                    Create SR
+                  </Button>
                 )}
               </div>
 

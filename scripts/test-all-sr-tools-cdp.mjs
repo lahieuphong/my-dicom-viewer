@@ -446,49 +446,11 @@ if (!measurementCount) {
   throw new Error(`Unsupported SR_SINGLE_TOOL value: ${singleToolName}`);
 }
 
-await evaluate(`(() => {
-  const button = [...document.querySelectorAll('button')].find(
-    (candidate) => candidate.textContent?.trim() === 'Create SR'
-  );
-  button?.dispatchEvent(new PointerEvent('pointerdown', {
-    bubbles: true,
-    pointerId: 9,
-    pointerType: 'mouse',
-    isPrimary: true,
-    button: 0,
-    buttons: 1,
-  }));
-  button?.click();
-})()`);
-await waitFor(
-  `[...document.querySelectorAll('[role="menuitem"]')].some(
-    (item) => item.textContent?.trim() === 'DICOM SR'
+await clickElement(
+  `[...document.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === 'Create SR'
   )`
 );
-await evaluate(`(() => {
-  const item = [...document.querySelectorAll('[role="menuitem"]')].find(
-    (candidate) => candidate.textContent?.trim() === 'DICOM SR'
-  );
-  item?.dispatchEvent(new PointerEvent('pointerdown', {
-    bubbles: true,
-    cancelable: true,
-    pointerId: 40,
-    pointerType: 'mouse',
-    isPrimary: true,
-    button: 0,
-    buttons: 1,
-  }));
-  item?.dispatchEvent(new PointerEvent('pointerup', {
-    bubbles: true,
-    cancelable: true,
-    pointerId: 40,
-    pointerType: 'mouse',
-    isPrimary: true,
-    button: 0,
-    buttons: 0,
-  }));
-  item?.click();
-})()`);
 await waitFor(`!!document.querySelector('input[aria-label="Tên SR"]')`);
 await evaluate(`(() => {
   const input = document.querySelector('input[aria-label="Tên SR"]');

@@ -14,10 +14,7 @@ import {
   type GeneratedStructuredReport,
   type SRMeasurement,
 } from './generator';
-import {
-  datasetToDicomJson,
-  datasetToDicomPart10Blob,
-} from './dicomWriter';
+import { datasetToDicomPart10Blob } from './dicomWriter';
 import {
   hydrateStructuredReportForLocalViewer,
   type HydratedLocalSrMeasurement,
@@ -62,8 +59,6 @@ type UseSrExportDeps = {
   trackedSeriesUID: string;
   viewportId: string;
 };
-
-type ExportFormat = 'json' | 'dicom';
 
 function assertExportIsCurrent(
   generationRef: { current: number },
@@ -386,11 +381,8 @@ export function useSrExport({
     ]
   );
 
-  const runExport = useCallback(
-    async (
-      format: ExportFormat,
-      documentTitle?: string
-    ): Promise<string[] | null> => {
+  const exportSRAsDICOM = useCallback(
+    async (documentTitle?: string): Promise<string[] | null> => {
       if (exportInFlightRef.current) {
         throw new Error('A Structured Report is already being created.');
       }
@@ -491,30 +483,14 @@ export function useSrExport({
         }
 
         const safeTitle = sanitizeFileName(title) || 'report';
-        let downloadBlob: Blob;
-        let downloadFileName: string;
-        if (format === 'dicom') {
-          downloadBlob = await datasetToDicomPart10Blob(report.dataset);
-          assertExportIsCurrent(
-            lifecycleGenerationRef,
-            expectedGeneration,
-            activeStudyUIDRef,
-            expectedStudyUID
-          );
-          downloadFileName = `SR_${expectedStudyUID}_${safeTitle}.dcm`;
-        } else {
-          const dicomJson = await datasetToDicomJson(report.dataset);
-          assertExportIsCurrent(
-            lifecycleGenerationRef,
-            expectedGeneration,
-            activeStudyUIDRef,
-            expectedStudyUID
-          );
-          downloadBlob = new Blob([JSON.stringify(dicomJson, null, 2)], {
-            type: 'application/dicom+json',
-          });
-          downloadFileName = `SR_${expectedStudyUID}_${safeTitle}.json`;
-        }
+        const downloadBlob = await datasetToDicomPart10Blob(report.dataset);
+        assertExportIsCurrent(
+          lifecycleGenerationRef,
+          expectedGeneration,
+          activeStudyUIDRef,
+          expectedStudyUID
+        );
+        const downloadFileName = `SR_${expectedStudyUID}_${safeTitle}.dcm`;
 
         const createdIds = registerLocalReport(
           report,
@@ -563,17 +539,5 @@ export function useSrExport({
     ]
   );
 
-  const exportSRAsJSON = useCallback(
-    (documentTitle?: string) => runExport('json', documentTitle),
-    [runExport]
-  );
-  const exportSRAsDICOM = useCallback(
-    (documentTitle?: string) => runExport('dicom', documentTitle),
-    [runExport]
-  );
-
-  return {
-    exportSRAsJSON,
-    exportSRAsDICOM,
-  };
+  return { exportSRAsDICOM };
 }

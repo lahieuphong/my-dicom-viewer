@@ -1042,6 +1042,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const [activeSrId, setActiveSrId] = useState<string | null>(null);
   const [isCreatingSr, setIsCreatingSr] = useState(false);
+  const [srDialogOpen, setSrDialogOpen] = useState(false);
+  const [srNameValue, setSrNameValue] = useState('');
   const isCreatingSrRef = useRef(false);
 
   useEffect(() => {
@@ -1068,10 +1070,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   }, []);
 
 
-  const {
-    exportSRAsJSON,
-    exportSRAsDICOM,
-  } = useSrExport({
+  const { exportSRAsDICOM } = useSrExport({
     allMeasurements,
     mergedSeriesMap,
     mergedSeriesMapRef,
@@ -1092,7 +1091,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     (typeof selectedSeries === 'string' &&
       selectedSeries.startsWith?.('SR_'));
 
-  const openSrNameDialog = (type: 'json' | 'dicom') => {
+  const openSrNameDialog = () => {
     if (isCreatingSrRef.current || isSeriesReadOnly) return;
     if (hasActiveAnnotationInteraction()) {
       toast.error(
@@ -1100,41 +1099,34 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       );
       return;
     }
-    setPendingSrType(type);
     setSrNameValue('Measurement Report');
     setSrDialogOpen(true);
   };
 
   const executeSrExportWithName = async (name: string) => {
-    if (isCreatingSrRef.current || !pendingSrType) return;
+    if (isCreatingSrRef.current) return;
 
-    const exportType = pendingSrType;
     isCreatingSrRef.current = true;
     setIsCreatingSr(true);
     try {
-      let createdIds: string[] | null = null;
-      if (exportType === 'json') {
-        createdIds = await exportSRAsJSON(name);
-      } else {
-        createdIds = await exportSRAsDICOM(name);
-      }
+      const createdIds = await exportSRAsDICOM(name);
 
       if (createdIds && createdIds.length) {
+        const createdIdSet = new Set(createdIds);
         setSrGroups((prev) => {
           const maxId = prev.reduce((max, g) => Math.max(max, Number(g.id ?? 0)), 0);
           const grpId = maxId + 1;
           const cleaned = prev
-            .map((g) => ({ ...g, srIds: g.srIds.filter((id) => !createdIds!.includes(id)) }))
+            .map((g) => ({
+              ...g,
+              srIds: g.srIds.filter((id) => !createdIdSet.has(id)),
+            }))
             .filter((g) => g.srIds && g.srIds.length > 0);
           const newGroup = { id: grpId, srIds: createdIds, label: `Group ${grpId} — ${name}` };
           return [...cleaned, newGroup];
         });
 
-        toast.success(
-          exportType === 'dicom'
-            ? 'Đã tạo và tải xuống DICOM SR.'
-            : 'Đã tạo và tải xuống DICOM JSON SR.'
-        );
+        toast.success('Đã tạo và tải xuống DICOM SR.');
       }
     } catch (error) {
       toast.error(
@@ -1146,14 +1138,12 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       isCreatingSrRef.current = false;
       setIsCreatingSr(false);
       setSrDialogOpen(false);
-      setPendingSrType(null);
       setSrNameValue('');
     }
   };
 
   const cancelSrDialog = () => {
     setSrDialogOpen(false);
-    setPendingSrType(null);
     setSrNameValue('');
   };
 
@@ -1191,11 +1181,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       isMeasurementInSeries(measurement, selectedSeries, currentFiles)
     );
   }, [allMeasurements, selectedSeries, mergedSeriesMap]);
-
-
-  const [srDialogOpen, setSrDialogOpen] = useState(false);
-  const [pendingSrType, setPendingSrType] = useState<'json' | 'dicom' | null>(null);
-  const [srNameValue, setSrNameValue] = useState<string>('');
 
   useLayoutEffect(() => {
     if (typeof window !== 'undefined') {
@@ -1662,8 +1647,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       onRemoveMeasurement={handleRemoveMeasurement}
       hiddenMeasurements={hiddenMeasurements}
       onToggleVisibility={handleToggleVisibility}
-      onExportJSON={() => openSrNameDialog('json')}
-      onExportDICOMSR={() => openSrNameDialog('dicom')}
+      onCreateSR={openSrNameDialog}
       currentFrame={currentFrame}
       onFrameChange={handleViewportFrameChange}
       viewportEl={viewportEl}
