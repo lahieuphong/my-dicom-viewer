@@ -7,7 +7,7 @@ import { annotation as csAnnotation } from '@cornerstonejs/tools';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import { releaseMeasurementAnnotationStyle } from '@/lib/cornerstone/measurementStyles';
 import { safeRemoveAnnotationByUID } from '@/lib/viewer/annotationHelpers';
-import type { Series } from '@/platform/core';
+import type { LocalStructuredReport, Series } from '@/platform/core';
 
 import {
   buildStructuredReport,
@@ -26,24 +26,9 @@ import {
 
 type SeriesMapEntry = { files: string[]; metadata: Series };
 
-type LoadedSrEntry = {
-  id: string;
-  label: string;
-  count: number;
-  instances: any[];
-};
-
 type UseSrExportDeps = {
   allMeasurements: AnnotationMeasurement[];
   mergedSeriesMap: Record<string, SeriesMapEntry>;
-  mergedSeriesMapRef?: {
-    current: Record<string, SeriesMapEntry>;
-  };
-  setExtraSeriesMap: (
-    updater: (
-      previous: Record<string, SeriesMapEntry>
-    ) => Record<string, SeriesMapEntry>
-  ) => void;
   setAllMeasurements: (
     measurements:
       | AnnotationMeasurement[]
@@ -53,7 +38,9 @@ type UseSrExportDeps = {
   ) => void;
   refreshMeasurements?: () => void;
   setLoadedSrList: (
-    updater: (previous: LoadedSrEntry[]) => LoadedSrEntry[]
+    updater: (
+      previous: LocalStructuredReport[]
+    ) => LocalStructuredReport[]
   ) => void;
   studyUID: string;
   trackedSeriesUID: string;
@@ -89,22 +76,6 @@ function sanitizeFileName(value: string): string {
     .replace(/[\\/:*?"<>|]/g, '-')
     .replace(/\s+/g, ' ')
     .slice(0, 120);
-}
-
-function getNextSrSeriesNumber(
-  seriesMap: Record<string, SeriesMapEntry>
-): number {
-  // OHIF reserves 3000 as the new-report sentinel and writes the first SR as
-  // 3001 (`SeriesNumber = 1 + priorSeriesNumber`).
-  let highest = 3000;
-
-  for (const entry of Object.values(seriesMap)) {
-    if (entry?.metadata?.seriesModality !== 'SR') continue;
-    const parsed = Number(entry.metadata.seriesNumber);
-    if (Number.isFinite(parsed)) highest = Math.max(highest, parsed);
-  }
-
-  return highest + 1;
 }
 
 function createReferencedImageStack(
@@ -154,8 +125,6 @@ function addHydratedAnnotations(
 export function useSrExport({
   allMeasurements,
   mergedSeriesMap,
-  mergedSeriesMapRef,
-  setExtraSeriesMap,
   setAllMeasurements,
   refreshMeasurements,
   setLoadedSrList,
@@ -163,16 +132,18 @@ export function useSrExport({
   trackedSeriesUID,
   viewportId,
 }: UseSrExportDeps) {
-  const exportInFlightRef = useRef<Promise<string[] | null> | null>(null);
+  const exportInFlightRef = useRef<Promise<string> | null>(null);
   const localSrAnnotationsBySeriesRef = useRef<
     Map<string, Set<string>>
   >(new Map());
   const lifecycleGenerationRef = useRef(0);
+  const nextSrSeriesNumberRef = useRef(3001);
   const activeStudyUIDRef = useRef(studyUID);
   activeStudyUIDRef.current = studyUID;
 
   useEffect(() => {
     const generation = ++lifecycleGenerationRef.current;
+    nextSrSeriesNumberRef.current = 3001;
 
     return () => {
       if (lifecycleGenerationRef.current === generation) {
@@ -215,7 +186,7 @@ export function useSrExport({
       hydrated: HydratedLocalSrMeasurement[],
       expectedGeneration: number,
       expectedStudyUID: string
-    ): string[] => {
+    ): string => {
       assertExportIsCurrent(
         lifecycleGenerationRef,
         expectedGeneration,
@@ -224,10 +195,16 @@ export function useSrExport({
       );
       const dataset = report.dataset;
       const reportSeriesUID = String(dataset.SeriesInstanceUID);
+      const sourceSeriesInstanceUID =
+        report.sourceSeriesInstanceUIDs[0];
       const reportImageIds = createReferencedImageStack(
         report,
         mergedSeriesMap
       );
+
+      if (!sourceSeriesInstanceUID) {
+        throw new Error('The SR report has no referenced source series.');
+      }
 
       if (!reportImageIds.length) {
         throw new Error('The SR report has no resolvable source images.');
@@ -239,49 +216,9 @@ export function useSrExport({
         );
       }
 
-      const seriesEntry: SeriesMapEntry = {
-        files: reportImageIds,
-        metadata: {
-          seriesDescription:
-            String(dataset.SeriesDescription ?? '').trim() || title,
-          seriesInstanceUID: reportSeriesUID,
-          seriesNumber: String(dataset.SeriesNumber ?? ''),
-          seriesModality: 'SR',
-          seriesRelatedInstanceCount: '1',
-          instances: [
-            {
-              sopInstanceUID: String(dataset.SOPInstanceUID),
-              instanceNumber: Number(dataset.InstanceNumber ?? 1),
-              url: '',
-            },
-          ],
-        },
-      };
-
-      const previousRefValue = mergedSeriesMapRef?.current;
-      if (mergedSeriesMapRef) {
-        mergedSeriesMapRef.current = {
-          ...mergedSeriesMapRef.current,
-          [reportSeriesUID]: seriesEntry,
-        };
-      }
-
-      let addedAnnotationUIDs: string[] = [];
-      try {
-        addedAnnotationUIDs = addHydratedAnnotations(hydrated);
-      } catch (error) {
-        if (mergedSeriesMapRef && previousRefValue) {
-          mergedSeriesMapRef.current = previousRefValue;
-        }
-        throw error;
-      }
+      const addedAnnotationUIDs = addHydratedAnnotations(hydrated);
 
       try {
-        setExtraSeriesMap((previous) => ({
-          ...previous,
-          [reportSeriesUID]: seriesEntry,
-        }));
-
         setLoadedSrList((previous) => [
           ...previous.filter((item) => item.id !== reportSeriesUID),
           {
@@ -289,12 +226,13 @@ export function useSrExport({
             label:
               String(dataset.SeriesDescription ?? '').trim() || title,
             count: hydrated.length,
+            seriesNumber: String(dataset.SeriesNumber ?? ''),
+            sourceSeriesInstanceUID,
             instances: [
               {
                 sopInstanceUID: String(dataset.SOPInstanceUID),
-                SOPInstanceUID: dataset.SOPInstanceUID,
-                SOPClassUID: dataset.SOPClassUID,
-                SeriesInstanceUID: reportSeriesUID,
+                sopClassUID: String(dataset.SOPClassUID),
+                seriesInstanceUID: reportSeriesUID,
               },
             ],
           },
@@ -319,24 +257,17 @@ export function useSrExport({
         );
       } catch (error) {
         disposeLocalAnnotations(addedAnnotationUIDs);
-        if (mergedSeriesMapRef && previousRefValue) {
-          mergedSeriesMapRef.current = previousRefValue;
-        }
         throw error;
       }
 
       refreshMeasurements?.();
-      return [reportSeriesUID];
+      return reportSeriesUID;
     },
     [
       mergedSeriesMap,
-      mergedSeriesMapRef,
       refreshMeasurements,
       setAllMeasurements,
-      setExtraSeriesMap,
       setLoadedSrList,
-      studyUID,
-      viewportId,
     ]
   );
 
@@ -353,17 +284,6 @@ export function useSrExport({
       localSrAnnotationsBySeriesRef.current.delete(reportSeriesUID);
       disposeLocalAnnotations(annotationUIDs);
 
-      if (mergedSeriesMapRef) {
-        const next = { ...mergedSeriesMapRef.current };
-        delete next[reportSeriesUID];
-        mergedSeriesMapRef.current = next;
-      }
-      setExtraSeriesMap((previous) => {
-        if (!previous[reportSeriesUID]) return previous;
-        const next = { ...previous };
-        delete next[reportSeriesUID];
-        return next;
-      });
       setLoadedSrList((previous) =>
         previous.filter((item) => item.id !== reportSeriesUID)
       );
@@ -374,15 +294,13 @@ export function useSrExport({
       );
     },
     [
-      mergedSeriesMapRef,
       setAllMeasurements,
-      setExtraSeriesMap,
       setLoadedSrList,
     ]
   );
 
   const exportSRAsDICOM = useCallback(
-    async (documentTitle?: string): Promise<string[] | null> => {
+    async (documentTitle?: string): Promise<string> => {
       if (exportInFlightRef.current) {
         throw new Error('A Structured Report is already being created.');
       }
@@ -418,7 +336,7 @@ export function useSrExport({
           studyInstanceUID: expectedStudyUID,
           measurements,
           seriesDescription: title,
-          seriesNumber: getNextSrSeriesNumber(mergedSeriesMap),
+          seriesNumber: nextSrSeriesNumberRef.current,
           instanceNumber: 1,
         });
         assertExportIsCurrent(
@@ -467,6 +385,8 @@ export function useSrExport({
           reportSeriesInstanceUID: String(
             report.dataset.SeriesInstanceUID
           ),
+          sourceSeriesInstanceUID:
+            expectedSourceSeriesInstanceUID,
           studyInstanceUID: expectedStudyUID,
           viewportId,
         });
@@ -499,7 +419,6 @@ export function useSrExport({
           expectedGeneration,
           expectedStudyUID
         );
-
         try {
           assertExportIsCurrent(
             lifecycleGenerationRef,
@@ -515,6 +434,10 @@ export function useSrExport({
           );
           throw error;
         }
+        nextSrSeriesNumberRef.current = Math.max(
+          nextSrSeriesNumberRef.current,
+          Number(report.dataset.SeriesNumber ?? 3000) + 1
+        );
         return createdIds;
       })();
 

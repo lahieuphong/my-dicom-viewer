@@ -450,12 +450,14 @@ export async function hydrateStructuredReportForLocalViewer({
   dataset,
   reportImageIds,
   reportSeriesInstanceUID,
+  sourceSeriesInstanceUID,
   studyInstanceUID,
   viewportId,
 }: {
   dataset: any;
   reportImageIds: string[];
   reportSeriesInstanceUID: string;
+  sourceSeriesInstanceUID: string;
   studyInstanceUID: string;
   viewportId: string;
 }): Promise<HydratedLocalSrMeasurement[]> {
@@ -504,6 +506,9 @@ export async function hydrateStructuredReportForLocalViewer({
       }
 
       const annotationUID = String(sourceAnnotation.annotationUID);
+      const trackingUID = String(
+        toolData?.TrackingUniqueIdentifier ?? annotationUID
+      );
       const label = readHydratedLabel(toolData);
       const data = {
         ...(sourceAnnotation.data ?? {}),
@@ -520,8 +525,11 @@ export async function hydrateStructuredReportForLocalViewer({
           toolName,
           referencedImageId,
           imageId: referencedImageId,
-          seriesInstanceUID: reportSeriesInstanceUID,
-          seriesUID: reportSeriesInstanceUID,
+          seriesInstanceUID: sourceSeriesInstanceUID,
+          seriesUID: sourceSeriesInstanceUID,
+          reportSeriesInstanceUID,
+          reportSeriesUID: reportSeriesInstanceUID,
+          trackingUID,
           studyInstanceUID,
           createdAt,
         },
@@ -547,7 +555,9 @@ export async function hydrateStructuredReportForLocalViewer({
           type: domainType,
           data: createFlatStats(toolName, data, label),
           metadata: {
-            seriesUID: reportSeriesInstanceUID,
+            seriesUID: sourceSeriesInstanceUID,
+            reportSeriesUID: reportSeriesInstanceUID,
+            trackingUID,
             studyUID: studyInstanceUID,
             viewportId,
             frameIndex,

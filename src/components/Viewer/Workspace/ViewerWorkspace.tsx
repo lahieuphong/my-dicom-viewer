@@ -34,7 +34,6 @@ type ViewerWorkspaceProps = {
   setLeftPanelWidth: Dispatch<SetStateAction<number>>;
   rightPanelWidth: number;
   setRightPanelWidth: Dispatch<SetStateAction<number>>;
-  isSR: boolean;
   studyDate: string;
   studyDescription: string;
   seriesMap: SeriesSidebarProps['seriesMap'];
@@ -48,7 +47,6 @@ type ViewerWorkspaceProps = {
   loadedSrList: SeriesSidebarProps['loadedSrList'];
   activeSrId: SeriesSidebarProps['activeSrId'];
   onSelectSr: SeriesSidebarProps['onSelectSr'];
-  srGroups: SeriesSidebarProps['srGroups'];
   mobileMeasurementsOpen: boolean;
   setMobileMeasurementsOpen: Dispatch<SetStateAction<boolean>>;
   measurements: MeasurementPanelProps['measurements'];
@@ -93,7 +91,6 @@ export default function ViewerWorkspace({
   setLeftPanelWidth,
   rightPanelWidth,
   setRightPanelWidth,
-  isSR,
   studyDate,
   studyDescription,
   seriesMap,
@@ -107,7 +104,6 @@ export default function ViewerWorkspace({
   loadedSrList,
   activeSrId,
   onSelectSr,
-  srGroups,
   mobileMeasurementsOpen,
   setMobileMeasurementsOpen,
   measurements,
@@ -155,7 +151,6 @@ export default function ViewerWorkspace({
     onUpdateLabel,
     onSelectMeasurement,
     seriesMap: measurementSeriesMap,
-    seriesInstanceUID: selectedSeriesEntry?.metadata?.seriesInstanceUID,
     totalFrames,
     selectedMeasurementUID,
     studyDate,
@@ -209,7 +204,6 @@ export default function ViewerWorkspace({
           loadedSrList={loadedSrList}
           activeSrId={activeSrId}
           onSelectSr={onSelectSr}
-          srGroups={srGroups}
         />
       )}
 
@@ -248,98 +242,95 @@ export default function ViewerWorkspace({
             loadedSrList={loadedSrList}
             activeSrId={activeSrId}
             onSelectSr={onSelectSr}
-            srGroups={srGroups}
           />
         )}
 
         <main className="flex flex-col w-full h-full min-h-0">
-          {!isSR && (
-            <>
-              <div
-                className="
-                  flex items-center justify-between md:hidden w-full p-2
-                  bg-background dark:bg-background-dark
-                  border-b border-border dark:border-border-dark
-                  z-10
-                "
+          <>
+            <div
+              className="
+                flex items-center justify-between md:hidden w-full p-2
+                bg-background dark:bg-background-dark
+                border-b border-border dark:border-border-dark
+                z-10
+              "
+            >
+              <Button
+                variant="ghost"
+                size="icon"
+                className="border border-border dark:border-border-dark"
+                onClick={() => {
+                  blurViewportActiveElement();
+                  setMobileSeriesOpen(true);
+                }}
+                aria-label="Open studies"
               >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="border border-border dark:border-border-dark"
-                  onClick={() => {
-                    blurViewportActiveElement();
-                    setMobileSeriesOpen(true);
-                  }}
-                  aria-label="Open studies"
-                >
-                  <i className="fas fa-bars text-foreground dark:text-foreground-dark" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="border border-border dark:border-border-dark"
-                  onClick={() => {
-                    blurViewportActiveElement();
-                    setMobileMeasurementsOpen(true);
-                  }}
-                  aria-label="Open measurements"
-                >
-                  <i className="fas fa-ruler text-foreground dark:text-foreground-dark" />
-                </Button>
-              </div>
+                <i className="fas fa-bars text-foreground dark:text-foreground-dark" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="border border-border dark:border-border-dark"
+                onClick={() => {
+                  blurViewportActiveElement();
+                  setMobileMeasurementsOpen(true);
+                }}
+                aria-label="Open measurements"
+              >
+                <i className="fas fa-ruler text-foreground dark:text-foreground-dark" />
+              </Button>
+            </div>
 
-              <div className="sticky top-0 z-20 h-[52px] min-h-[52px] w-full bg-card border-b border-border">
-                <Toolbar
-                  activeTool={activeTool}
-                  onSelectTool={onSelectTool}
-                  onReset={onReset}
-                  onRotate90={onRotate90}
-                  onFlipHorizontal={onFlipHorizontal}
-                  isPlaying={isPlaying}
-                  fps={fps}
-                  onTogglePlay={onTogglePlay}
-                  onFpsChange={onFpsChange}
-                  isLoading={loadingStack}
-                  viewportEl={viewportEl}
-                  isSeriesSR={isSeriesToolbarReadOnly}
-                />
-              </div>
+            <div className="sticky top-0 z-20 h-[52px] min-h-[52px] w-full bg-card border-b border-border">
+              <Toolbar
+                activeTool={activeTool}
+                onSelectTool={onSelectTool}
+                onReset={onReset}
+                onRotate90={onRotate90}
+                onFlipHorizontal={onFlipHorizontal}
+                isPlaying={isPlaying}
+                fps={fps}
+                onTogglePlay={onTogglePlay}
+                onFpsChange={onFpsChange}
+                isLoading={loadingStack}
+                viewportEl={viewportEl}
+                isSeriesSR={isSeriesToolbarReadOnly}
+              />
+            </div>
 
-              <div className="relative flex-1 min-h-0 w-full">
-                {!loadingSeries && (
-                  <ViewportLoadingOverlay
-                    visible={loadingStack || !imageAvailable}
-                    progress={loadingProgress}
-                  />
-                )}
+            <div className="relative flex-1 min-h-0 w-full">
+              {!loadingSeries && (
+                <ViewportLoadingOverlay
+                  visible={loadingStack || !imageAvailable}
+                  progress={loadingProgress}
+                />
+              )}
 
-                <DicomViewport
-                  elementRef={elementRef}
-                  crosshair={activeTool !== 'adjust'}
-                />
-                <ViewportOverlay
-                  studyDate={studyDate}
-                  seriesDescription={selectedSeriesEntry?.metadata?.seriesDescription}
-                  viewportEl={viewportEl}
-                  currentFrame={currentFrame}
-                  totalFrames={totalFrames}
-                  seriesMap={seriesMap}
-                  selectedSeriesUID={selectedSeries}
-                  onSelectSeries={(seriesUID) => {
-                    onSelectSr?.(null);
-                    onSelectSeries(seriesUID);
-                  }}
-                />
-                <ViewportStackScrollbar
-                  currentFrame={currentFrame}
-                  totalFrames={totalFrames}
-                  onFrameChange={onFrameChange}
-                  disabled={loadingStack || !imageAvailable}
-                />
-              </div>
-            </>
-          )}
+              <DicomViewport
+                elementRef={elementRef}
+                crosshair={activeTool !== 'adjust'}
+              />
+              <ViewportOverlay
+                studyDate={studyDate}
+                seriesDescription={selectedSeriesEntry?.metadata?.seriesDescription}
+                viewportEl={viewportEl}
+                currentFrame={currentFrame}
+                totalFrames={totalFrames}
+                seriesMap={seriesMap}
+                selectedSeriesUID={selectedSeries}
+                onSelectSeries={(seriesUID) => {
+                  onSelectSr?.(null);
+                  onSelectSeries(seriesUID);
+                }}
+              />
+              <ViewportStackScrollbar
+                currentFrame={currentFrame}
+                totalFrames={totalFrames}
+                onFrameChange={onFrameChange}
+                disabled={loadingStack || !imageAvailable}
+              />
+            </div>
+          </>
         </main>
 
         {!loadingSeries && (

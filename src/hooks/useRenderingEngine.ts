@@ -274,24 +274,27 @@ export function useRenderingEngine({
       }
     } catch {}
 
-    const cancelled = false;
+    let cancelled = false;
     let engine: any = null;
     let vp: any = null;
+    const isStale = () => cancelled || initTokenRef.current !== myToken;
 
     (async () => {
       try {
         await initCornerstone();
       } catch (err) {}
+      if (isStale()) return;
 
       try {
         engine = getRenderingEngine(RENDERER_ID);
         renderingEngineRef.current = engine;
       } catch (err) {}
+      if (isStale()) return;
 
       tryDetachViewportSafely(renderingEngineRef.current);
 
       const container = (elRef.current ?? (await waitForElement(elRef, 5000))) as HTMLDivElement | null;
-      if (!container || cancelled) return;
+      if (!container || isStale()) return;
 
       try {
         container.setAttribute('data-viewport-uid', VIEWPORT_ID);
@@ -310,12 +313,14 @@ export function useRenderingEngine({
 
       const viewportType = (CoreEnums as any)?.ViewportType?.STACK ?? (CoreEnums as any)?.ViewportType?.Stack ?? (CoreEnums as any)?.ViewportType?.stack ?? 'stack';
 
-      const visible = await waitForVisibleSize(mountEl, 2000);
-      if (!visible && cancelled) return;
+      await waitForVisibleSize(mountEl, 2000);
+      if (isStale()) return;
 
       try {
+        if (isStale()) return;
         tryDetachViewportSafely(renderingEngineRef.current);
         await sleep(80);
+        if (isStale()) return;
 
         try {
           await engine.setViewports?.([{
@@ -327,6 +332,7 @@ export function useRenderingEngine({
             },
           }]);
         } catch (err) {}
+        if (isStale()) return;
 
         try { normalizeCanvasAndContext(mountEl); } catch {}
         try { ensureCanvasSizing(mountEl); } catch {}
@@ -334,6 +340,7 @@ export function useRenderingEngine({
         try { removeStrayCornerstoneCanvases(mountEl); } catch {}
 
         await sleep(60);
+        if (isStale()) return;
 
         try { renderingEngineRef.current?.resize?.(); } catch {}
         try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
@@ -341,11 +348,12 @@ export function useRenderingEngine({
 
       try { vp = engine.getViewport?.(VIEWPORT_ID); } catch {}
       if (!vp) {
-        for (let i = 0; i < 6 && !vp && !cancelled; i++) {
+        for (let i = 0; i < 6 && !vp && !isStale(); i++) {
           await sleep(80);
           try { vp = engine.getViewport?.(VIEWPORT_ID); } catch {}
         }
       }
+      if (isStale()) return;
 
       // --- wrap setStack / setImageId to avoid stomping after recent user interaction ---
       try {
@@ -441,7 +449,7 @@ export function useRenderingEngine({
         } catch {}
 
         const attempts = ATTEMPTS_ENGINE;
-        for (let i = 0; i < attempts && !cancelled; i++) {
+        for (let i = 0; i < attempts && !isStale(); i++) {
           try {
             if (vpCandidate && typeof vpCandidate.setStack === 'function') {
               await vpCandidate.setStack(ids, idx);
@@ -592,6 +600,7 @@ export function useRenderingEngine({
 
           try {
             setTimeout(async () => {
+              if (isStale()) return;
               try {
                 const polling = await import('@/lib/viewer/polling');
                 if (polling?.forceRenderCheck) {
@@ -603,6 +612,7 @@ export function useRenderingEngine({
 
           try {
             setTimeout(async () => {
+              if (isStale()) return;
               try {
                 const polling = await import('@/lib/viewer/polling');
                 if (polling?.forceRenderCheck) {
@@ -619,6 +629,7 @@ export function useRenderingEngine({
               let lastReattachTs = 0;
 
               const id = window.setInterval(async () => {
+                if (isStale()) return;
                 try {
                   const elToCheck = (vp?.element ?? (document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`))) as HTMLDivElement | null;
                   if (!elToCheck) { missCount = 0; return; }
@@ -793,7 +804,7 @@ export function useRenderingEngine({
         }
       } catch (e) {}
 
-      if (!cancelled && initTokenRef.current === myToken) {
+      if (!isStale()) {
         setViewportInstance(vp ?? null);
         setViewportEl((vp?.element as HTMLDivElement) ?? mountEl);
       }
@@ -801,6 +812,7 @@ export function useRenderingEngine({
 
     // cleanup
     return () => {
+      cancelled = true;
       const tokenAtCleanup = initTokenRef.current;
       const delayMs = 120;
 

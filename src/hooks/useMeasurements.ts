@@ -230,6 +230,10 @@ export const useMeasurements = ({
           data: { ...flat },
           metadata: {
             seriesUID: finalFoundSeriesUID,
+            reportSeriesUID:
+              a.metadata?.reportSeriesUID ??
+              a.metadata?.reportSeriesInstanceUID,
+            trackingUID: a.metadata?.trackingUID,
             studyUID: studyInstanceUID || '',
             viewportId,
             frameIndex,

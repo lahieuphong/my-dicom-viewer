@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import { ChevronUp, Copy } from 'lucide-react';
-import type { Series } from '@/platform/core';
+import type { LocalStructuredReport, Series } from '@/platform/core';
 import { Button } from '@/components/ui/button';
 import { cn, formatStudyDate } from '@/lib/utils';
 import PanelScrollArea from '@/components/Viewer/PanelScrollArea';
@@ -22,15 +22,9 @@ interface SeriesSidebarProps {
   onCloseMobile?: () => void;
   className?: string;
 
-  loadedSrList?: {
-    id: string;
-    label: string;
-    count: number;
-    instances?: any[];
-  }[];
+  loadedSrList?: LocalStructuredReport[];
   activeSrId?: string | null;
   onSelectSr?: (srId: string | null) => void;
-  srGroups?: { id: number; srIds: string[]; label?: string }[];
 }
 
 function truncateText(text?: string | null, max = 9) {
@@ -38,76 +32,6 @@ function truncateText(text?: string | null, max = 9) {
   const s = String(text);
   if (s.length <= max) return s;
   return s.slice(0, max) + '…';
-}
-
-function SRGroup({
-  group,
-  loadedSrList,
-  activeSrId,
-  onSelectSr,
-}: {
-  group: { id: number; srIds: string[]; label?: string };
-  loadedSrList?: { id: string; label: string; count: number; instances?: any[] }[];
-  activeSrId?: string | null;
-  onSelectSr?: (id: string | null) => void;
-}) {
-  const [open, setOpen] = useState<boolean>(true);
-  const label = group.label ?? `Group ${group.id}`;
-
-  return (
-    <div key={`grp-${group.id}`} className="space-y-1">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 rounded-md bg-background hover:bg-muted text-sm font-semibold"
-        aria-expanded={open}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <i className="fas fa-layer-group" />
-          <span className="flex-1 min-w-0 truncate" title={label}>
-            {truncateText(label, 9)}
-          </span>
-        </div>
-        <div className="text-xs opacity-70">{open ? '▾' : '▸'}</div>
-      </button>
-
-      {open && (
-        <div className="pl-3 space-y-1">
-          {group.srIds.map((srId) => {
-            const srEntry = loadedSrList?.find((s) => s.id === srId);
-            if (!srEntry) return null;
-            const isActiveSr = srId === activeSrId;
-
-            return (
-              <button
-                type="button"
-                key={srId}
-                onClick={() => onSelectSr?.(srId)}
-                aria-label={`View SR ${srEntry.label}`}
-                aria-pressed={isActiveSr}
-                className={cn(
-                  'flex flex-col w-full text-left px-3 py-2 rounded-md transition-shadow duration-150 overflow-hidden',
-                  isActiveSr
-                    ? 'bg-muted border-l-4 border-primary shadow-lg text-foreground'
-                    : 'bg-background hover:bg-muted text-foreground'
-                )}
-              >
-                <div className="text-sm font-sans mb-1 flex items-center gap-2">
-                  <i className="fas fa-file-medical" />
-                  <span className="flex-1 min-w-0 truncate" title={srEntry.label}>
-                    {truncateText(srEntry.label, 9)}
-                  </span>
-                </div>
-                <div className="flex items-center text-xs opacity-80 gap-4">
-                  <span>{`${srEntry.count} item(s)`}</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export default function SeriesSidebar({
@@ -124,7 +48,6 @@ export default function SeriesSidebar({
   loadedSrList,
   activeSrId,
   onSelectSr,
-  srGroups,
 }: SeriesSidebarProps) {
   const [listCollapsed, setListCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<SeriesViewMode>('list');
@@ -351,48 +274,39 @@ export default function SeriesSidebar({
                   </div>
                 )}
 
-                <hr className="my-2" />
-
-                {srGroups && srGroups.length > 0 ? (
-                  srGroups.map((group) => (
-                    <SRGroup
-                      key={`group-${group.id}`}
-                      group={group}
-                      loadedSrList={loadedSrList}
-                      activeSrId={activeSrId}
-                      onSelectSr={onSelectSr}
-                    />
-                  ))
-                ) : (
-                  loadedSrList?.map((sr) => {
-                    const isActiveSr = sr.id === activeSrId;
-
-                    return (
-                      <button
-                        key={sr.id}
-                        onClick={() => {
-                          onSelectSr?.(sr.id);
-                        }}
-                        className={cn(
-                          'flex flex-col w-full text-left px-3 py-2 rounded-md transition-shadow duration-150 overflow-hidden',
-                          isActiveSr
-                            ? 'bg-muted border-l-4 border-primary shadow-lg text-foreground'
-                            : 'bg-background hover:bg-muted text-foreground'
-                        )}
-                      >
-                        <div className="text-sm font-sans mb-1 flex items-center gap-2">
-                          <i className="fas fa-file-medical" />
-                          <span className="flex-1 min-w-0 truncate" title={sr.label}>
-                            {truncateText(sr.label, 9)}
-                          </span>
-                        </div>
-                        <div className="flex items-center text-xs opacity-80 gap-4">
-                          <span>{`${sr.count} item(s)`}</span>
-                        </div>
-                      </button>
-                    );
-                  })
+                {Boolean(loadedSrList?.length) && (
+                  <hr className="my-2" />
                 )}
+
+                {loadedSrList?.map((sr) => {
+                  const isActiveSr = sr.id === activeSrId;
+
+                  return (
+                    <button
+                      type="button"
+                      key={sr.id}
+                      onClick={() => onSelectSr?.(sr.id)}
+                      aria-label={`View SR ${sr.label}`}
+                      aria-pressed={isActiveSr}
+                      className={cn(
+                        'flex flex-col w-full text-left px-3 py-2 rounded-md transition-shadow duration-150 overflow-hidden',
+                        isActiveSr
+                          ? 'bg-muted border-l-4 border-primary shadow-lg text-foreground'
+                          : 'bg-background hover:bg-muted text-foreground'
+                      )}
+                    >
+                      <div className="text-sm font-sans mb-1 flex items-center gap-2">
+                        <i className="fas fa-file-medical" />
+                        <span className="flex-1 min-w-0 truncate" title={sr.label}>
+                          {truncateText(sr.label, 18)}
+                        </span>
+                      </div>
+                      <div className="flex items-center text-xs opacity-80 gap-4">
+                        <span>{`${sr.count} item(s)`}</span>
+                      </div>
+                    </button>
+                  );
+                })}
               </PanelScrollArea>
             </div>
           </div>

@@ -39,7 +39,8 @@ socket.addEventListener('message', (event) => {
   }
   if (
     message.method === 'Runtime.exceptionThrown' ||
-    message.method === 'Log.entryAdded'
+    (message.method === 'Log.entryAdded' &&
+      message.params?.entry?.level === 'error')
   ) {
     runtimeErrors.push(message.params);
   }
@@ -65,8 +66,12 @@ function send(method, params = {}, sessionId) {
   });
 }
 
+const { browserContextId } = await send('Target.createBrowserContext', {
+  disposeOnDetach: true,
+});
 const { targetId } = await send('Target.createTarget', {
   url: `${viewerOrigin}/viewer?StudyInstanceUIDs=${studyUID}`,
+  browserContextId,
 });
 const attached = await send('Target.attachToTarget', {
   targetId,
@@ -83,6 +88,7 @@ await Promise.all([
       behavior: 'allow',
       downloadPath,
       eventsEnabled: true,
+      browserContextId,
     }
   ),
 ]);
@@ -401,6 +407,7 @@ if (testGhostCancellation) {
     )
   );
   await send('Target.closeTarget', { targetId });
+  await send('Target.disposeBrowserContext', { browserContextId });
   socket.close();
   process.exit(0);
 }
@@ -603,4 +610,5 @@ console.log(
 );
 
 await send('Target.closeTarget', { targetId });
+await send('Target.disposeBrowserContext', { browserContextId });
 socket.close();

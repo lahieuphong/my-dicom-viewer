@@ -121,6 +121,7 @@ export function collectSrMeasurementSnapshot({
     if (
       !annotationUID ||
       isAnnotationRemovalTombstoned(annotationUID) ||
+      Boolean(measurement.metadata?.reportSeriesUID) ||
       measurement.metadata?.studyUID !== studyInstanceUID ||
       seriesInstanceUID !== trackedSeriesInstanceUID ||
       !series ||

@@ -15,9 +15,10 @@ import {
   safeAddAnnotation,
 } from '@/lib/viewer/annotationHelpers';
 import { selectMeasurementAnnotation } from '@/lib/cornerstone/measurementStyles';
+import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 
 function resolveMeasurementImageIndex(
-  measurement: any,
+  measurement: AnnotationMeasurement,
   imageIds: string[],
   annotationInstance?: any
 ): number {
@@ -85,10 +86,11 @@ export type UseMeasurementSelectorOpts = {
   viewportEl: HTMLDivElement | null;
   viewportId?: string;
 
-  mergedSeriesMapRef: React.RefObject<Record<string, { files: string[]; metadata?: any }>>;
-  allMeasurements: any[]; // AnnotationMeasurement[]
+  mergedSeriesMapRef: React.RefObject<
+    Record<string, { files: string[]; metadata?: unknown }>
+  >;
+  allMeasurements: AnnotationMeasurement[];
   selectedSeries: string;
-  prevSeriesRef: React.RefObject<string | null>;
   pendingSeriesNavigationRef: React.MutableRefObject<{
     seriesUID: string;
     imageIndex: number;
@@ -113,7 +115,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     mergedSeriesMapRef,
     allMeasurements,
     selectedSeries,
-    prevSeriesRef,
     pendingSeriesNavigationRef,
     setSelectedSeries,
     setSelectedMeasurementUID,
@@ -126,30 +127,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
   const selectFlowCounterRef = useRef(0);
   const selectingRef = useRef(false);
   const lastSelectingUIDRef = useRef<string | null>(null);
-  const isSrSeriesUID = useCallback(
-    (seriesUID?: string | null) => {
-      if (!seriesUID) return false;
-      return (
-        mergedSeriesMapRef.current?.[seriesUID]?.metadata
-          ?.seriesModality === 'SR' ||
-        String(seriesUID).startsWith('SR_')
-      );
-    },
-    [mergedSeriesMapRef]
-  );
-
-  const rememberSourceSeriesBeforeSr = useCallback(
-    (targetSeriesUID?: string | null) => {
-      if (
-        isSrSeriesUID(targetSeriesUID) &&
-        selectedSeries &&
-        !isSrSeriesUID(selectedSeries)
-      ) {
-        prevSeriesRef.current = selectedSeries;
-      }
-    },
-    [isSrSeriesUID, prevSeriesRef, selectedSeries]
-  );
 
   const isViewportShowingDesiredImage = useCallback((imageIds: string[], desiredIndex: number) => {
     try {
@@ -195,6 +172,9 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         requestId === selectFlowCounterRef.current;
 
       const targetSeriesUID = String(m.metadata?.seriesUID ?? '');
+      const reportSeriesUID = String(
+        m.metadata?.reportSeriesUID ?? ''
+      );
       if (!targetSeriesUID) {
         return;
       }
@@ -214,14 +194,11 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           seriesUID: targetSeriesUID,
           imageIndex: desiredIndex,
         };
-        rememberSourceSeriesBeforeSr(targetSeriesUID);
         if (selectedSeries !== targetSeriesUID) {
           setSelectedSeries(targetSeriesUID);
         }
         try {
-          setActiveSrId?.(
-            isSrSeriesUID(targetSeriesUID) ? targetSeriesUID : null
-          );
+          setActiveSrId?.(reportSeriesUID || null);
         } catch {}
 
         try {
@@ -351,14 +328,11 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
             ) {
               return;
             }
-            rememberSourceSeriesBeforeSr(targetSeriesUID);
             if (selectedSeries !== targetSeriesUID) {
               setSelectedSeries(targetSeriesUID);
             }
             try {
-              setActiveSrId?.(
-                isSrSeriesUID(targetSeriesUID) ? targetSeriesUID : null
-              );
+              setActiveSrId?.(reportSeriesUID || null);
             } catch {}
 
             setSelectedMeasurementUIDIfChanged(
@@ -391,12 +365,9 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       try {
         if (isViewportShowingDesiredImage(imageIds, desiredIndex)) {
           if (!isCurrentRequest()) return;
-          rememberSourceSeriesBeforeSr(targetSeriesUID);
           if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
           try {
-            setActiveSrId?.(
-              isSrSeriesUID(targetSeriesUID) ? targetSeriesUID : null
-            );
+            setActiveSrId?.(reportSeriesUID || null);
           } catch {}
 
           const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
@@ -465,15 +436,10 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       // Cross-stack navigation is owned by the selected-series attach effect.
       // Register/select the annotation here, but never mutate the stack from
       // this hook; pendingSeriesNavigationRef carries the requested frame.
-      rememberSourceSeriesBeforeSr(targetSeriesUID);
       if (selectedSeries !== targetSeriesUID) {
         setSelectedSeries(targetSeriesUID);
       }
-      if (isSrSeriesUID(targetSeriesUID)) {
-        try { setActiveSrId?.(targetSeriesUID); } catch {}
-      } else {
-        try { setActiveSrId?.(null); } catch {}
-      }
+      try { setActiveSrId?.(reportSeriesUID || null); } catch {}
 
       try {
         const inst =
@@ -521,7 +487,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     viewportEl,
     renderingEngineRef,
     selectedSeries,
-    prevSeriesRef,
     pendingSeriesNavigationRef,
     setSelectedSeries,
     setCurrentFrame,
@@ -531,100 +496,43 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     viewportId,
     isViewportShowingDesiredImage,
     selectedMeasurementUIDRef,
-    isSrSeriesUID,
-    rememberSourceSeriesBeforeSr,
   ]);
-
 
   const handleSelectSr = useCallback(async (srId: string | null) => {
     ++selectFlowCounterRef.current;
-    if (srId) {
-      if (!isSrSeriesUID(srId)) return;
-      rememberSourceSeriesBeforeSr(srId);
-      const srMeasurements = allMeasurements.filter((m) => String(m.metadata?.seriesUID) === String(srId));
-      const first = srMeasurements[0];
-      const imageIds = mergedSeriesMapRef.current?.[srId]?.files ?? [];
-      let firstAnnotation: any = null;
-      if (first) {
-        try {
-          firstAnnotation =
-            (csAnnotation.state as any)?.getAnnotation?.(
-              first.annotationUID
-            ) ?? null;
-        } catch {}
-      }
-      const desiredIndex = first
-        ? resolveMeasurementImageIndex(first, imageIds, firstAnnotation)
-        : 0;
+    if (!srId) {
+      pendingSeriesNavigationRef.current = null;
+      try { setActiveSrId?.(null); } catch {}
 
-      /**
-       * selectedSeries is the single owner of stack navigation. Its viewer
-       * effect already has a superseding request token, so View/Close/View
-       * races cannot leave an older SR stack behind.
-       */
-      pendingSeriesNavigationRef.current = {
-        seriesUID: srId,
-        imageIndex: desiredIndex,
-      };
-      try { setActiveSrId?.(srId); } catch {}
-      setSelectedSeries(srId);
-
-      if (first) {
-        setSelectedMeasurementUID(first.annotationUID);
-        setCurrentFrame(desiredIndex + 1);
+      const selectedUID = selectedMeasurementUIDRef?.current;
+      const selectedMeasurement = allMeasurements.find(
+        (measurement) => measurement.annotationUID === selectedUID
+      );
+      if (selectedMeasurement?.metadata?.reportSeriesUID) {
+        setSelectedMeasurementUID(null);
       }
 
       safeRenderViewport(viewportId);
-    } else {
-      try { setActiveSrId?.(null); } catch {}
-      const previous = prevSeriesRef.current;
-      const fallback =
-        previous &&
-        mergedSeriesMapRef.current?.[previous] &&
-        !isSrSeriesUID(previous)
-          ? previous
-          : Object.keys(mergedSeriesMapRef.current || {}).find(
-              (seriesUID) => !isSrSeriesUID(seriesUID)
-            ) ?? '';
-      if (fallback) {
-        const fallbackImageIds =
-          mergedSeriesMapRef.current?.[fallback]?.files ?? [];
-        let runtimeIndex = 0;
-        try {
-          runtimeIndex = Number(
-            viewportInstance?.getCurrentImageIdIndex?.() ?? 0
-          );
-        } catch {}
-        const desiredIndex = Number.isInteger(runtimeIndex)
-          ? Math.max(
-              0,
-              Math.min(runtimeIndex, Math.max(0, fallbackImageIds.length - 1))
-            )
-          : 0;
-        pendingSeriesNavigationRef.current = {
-          seriesUID: fallback,
-          imageIndex: desiredIndex,
-        };
-        setCurrentFrame(desiredIndex + 1);
-      } else {
-        pendingSeriesNavigationRef.current = null;
-      }
-      setSelectedSeries(fallback);
+      return;
     }
+
+    const first = allMeasurements.find(
+      (measurement) =>
+        measurement.metadata?.reportSeriesUID === srId
+    );
+    if (!first) return;
+
+    try { setActiveSrId?.(srId); } catch {}
+    await handleSelectMeasurement(first);
   }, [
-    mergedSeriesMapRef,
-    viewportInstance,
-    prevSeriesRef,
+    allMeasurements,
+    handleSelectMeasurement,
     pendingSeriesNavigationRef,
-    setSelectedSeries,
     setSelectedMeasurementUID,
-    setCurrentFrame,
     setActiveSrId,
     safeRenderViewport,
     viewportId,
-    allMeasurements,
-    isSrSeriesUID,
-    rememberSourceSeriesBeforeSr,
+    selectedMeasurementUIDRef,
   ]);
 
   return {

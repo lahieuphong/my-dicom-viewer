@@ -83,6 +83,8 @@ export function createMeasurementFingerprint(
       metadata: {
         studyUID: measurement.metadata?.studyUID,
         seriesUID: measurement.metadata?.seriesUID,
+        reportSeriesUID: measurement.metadata?.reportSeriesUID,
+        trackingUID: measurement.metadata?.trackingUID,
         frameIndex: measurement.metadata?.frameIndex,
         referencedImageId: measurement.metadata?.referencedImageId,
         imageId: measurement.metadata?.imageId,

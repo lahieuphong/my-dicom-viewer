@@ -12,6 +12,10 @@ export type MeasurementType =
 
 export interface MeasurementMetadata {
   seriesUID: DicomUID;
+  /** Present only for a measurement hydrated from a DICOM SR display set. */
+  reportSeriesUID?: DicomUID;
+  /** DICOM Tracking Unique Identifier, when supplied by an SR. */
+  trackingUID?: DicomUID;
   studyUID: DicomUID;
   viewportId: string;
   frameIndex?: number;

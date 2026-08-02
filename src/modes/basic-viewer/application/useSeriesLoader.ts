@@ -71,9 +71,9 @@ export function useSeriesLoader(studyUID: string) {
           // Keep empty branch to avoid network calls
         }
 
-        // NOTE: We intentionally do NOT auto-inject SR series here.
-        // SR series (if any) should be managed by Viewer / SR export logic (extraSeriesMap).
-        // This keeps loading purely static and avoids PACS/SR API usage.
+        // SR is secondary content, so it is intentionally not inserted into
+        // the primary image-series map. The SR runtime owns its report list and
+        // hydrates annotations over the referenced source stack.
 
         setSeriesMap(map);
         setVoiDefaults(voiMap);

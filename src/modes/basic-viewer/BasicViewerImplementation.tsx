@@ -55,7 +55,10 @@ import { useSrExport } from '@/extensions/dicom-sr';
 import {
   fetchStudyMeta,
 } from '@/extensions/static-dicom-data-source';
-import type { Series, Study } from '@/platform/core';
+import type {
+  LocalStructuredReport,
+  Study,
+} from '@/platform/core';
 
 import {
   releaseMeasurementAnnotationStyle,
@@ -110,6 +113,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   // signal that component has been unmounted (hard abort)
   const abortRef = useRef(false);
   useEffect(() => {
+    // React StrictMode runs setup -> cleanup -> setup in development while
+    // preserving refs. Reset here so the second setup is a live viewer again.
+    abortRef.current = false;
+
     return () => {
       // mark globally aborted on unmount
       abortRef.current = true;
@@ -159,7 +166,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   // ==============================
   const currentAttachSessionRef = useRef<number>(0);
 
-  const prevSeriesRef = useRef<string | null>(null);
   const pendingSeriesNavigationRef = useRef<{
     seriesUID: string;
     imageIndex: number;
@@ -192,8 +198,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     voiDefaults,
   } = useSeriesLoader(studyUID);
 
-  const [extraSeriesMap, setExtraSeriesMap] = useState<Record<string, { files: string[]; metadata: Series }>>({});
-  const mergedSeriesMap = useMemo(() => ({ ...seriesMap, ...extraSeriesMap }), [seriesMap, extraSeriesMap]);
+  const mergedSeriesMap = seriesMap;
 
   // Refs that track mutable things used inside stable handlers
   const mergedSeriesMapRef = useRef(mergedSeriesMap);
@@ -1035,10 +1040,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   // ---------------- SR / measurement lists --------------
   const [loadedSrList, setLoadedSrList] = useState<
-    { id: string; label: string; count: number; instances: any[] }[]
+    LocalStructuredReport[]
   >([]);
-
-  const [srGroups, setSrGroups] = useState<{ id: number; srIds: string[]; label?: string }[]>([]);
 
   const [activeSrId, setActiveSrId] = useState<string | null>(null);
   const [isCreatingSr, setIsCreatingSr] = useState(false);
@@ -1049,15 +1052,12 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   useEffect(() => {
     currentAttachSessionRef.current += 1;
     pendingSeriesNavigationRef.current = null;
-    setExtraSeriesMap({});
     setLoadedSrList([]);
-    setSrGroups([]);
     setActiveSrId(null);
     setAllMeasurements([]);
     selectedMeasurementUIDRef.current = null;
     setSelectedMeasurementUID(null);
     measurementDeletionPromisesRef.current.clear();
-    prevSeriesRef.current = null;
   }, [studyUID]);
 
   // Serialize Measurement-panel navigation and retain the latest pending click.
@@ -1073,8 +1073,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   const { exportSRAsDICOM } = useSrExport({
     allMeasurements,
     mergedSeriesMap,
-    mergedSeriesMapRef,
-    setExtraSeriesMap,
     setAllMeasurements,
     refreshMeasurements,
     setLoadedSrList,
@@ -1083,13 +1081,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     viewportId,
   });
 
-  const isSR =
-    mergedSeriesMap[selectedSeries]?.metadata?.seriesModality === 'SR';
-
-  const isSeriesReadOnly =
-    isSR ||
-    (typeof selectedSeries === 'string' &&
-      selectedSeries.startsWith?.('SR_'));
+  const isSeriesReadOnly = Boolean(activeSrId);
 
   const openSrNameDialog = () => {
     if (isCreatingSrRef.current || isSeriesReadOnly) return;
@@ -1109,23 +1101,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     isCreatingSrRef.current = true;
     setIsCreatingSr(true);
     try {
-      const createdIds = await exportSRAsDICOM(name);
+      const createdReportUID = await exportSRAsDICOM(name);
 
-      if (createdIds && createdIds.length) {
-        const createdIdSet = new Set(createdIds);
-        setSrGroups((prev) => {
-          const maxId = prev.reduce((max, g) => Math.max(max, Number(g.id ?? 0)), 0);
-          const grpId = maxId + 1;
-          const cleaned = prev
-            .map((g) => ({
-              ...g,
-              srIds: g.srIds.filter((id) => !createdIdSet.has(id)),
-            }))
-            .filter((g) => g.srIds && g.srIds.length > 0);
-          const newGroup = { id: grpId, srIds: createdIds, label: `Group ${grpId} — ${name}` };
-          return [...cleaned, newGroup];
-        });
-
+      if (createdReportUID) {
         toast.success('Đã tạo và tải xuống DICOM SR.');
       }
     } catch (error) {
@@ -1172,15 +1150,27 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
 
   const measurementsForPanel = useMemo(() => {
+    if (activeSrId) {
+      return allMeasurements.filter(
+        (measurement) =>
+          measurement.metadata?.reportSeriesUID === activeSrId
+      );
+    }
     if (!selectedSeries) return [];
     const currentFiles = new Set(
       (mergedSeriesMap[selectedSeries]?.files ?? []).map(normalizeId)
     );
 
-    return allMeasurements.filter((measurement) =>
-      isMeasurementInSeries(measurement, selectedSeries, currentFiles)
+    return allMeasurements.filter(
+      (measurement) =>
+        !measurement.metadata?.reportSeriesUID &&
+        isMeasurementInSeries(
+          measurement,
+          selectedSeries,
+          currentFiles
+        )
     );
-  }, [allMeasurements, selectedSeries, mergedSeriesMap]);
+  }, [activeSrId, allMeasurements, selectedSeries, mergedSeriesMap]);
 
   useLayoutEffect(() => {
     if (typeof window !== 'undefined') {
@@ -1211,6 +1201,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     renderingEngineRender: safeRenderViewport,
     hiddenMeasurements,
     selectedSeries,
+    activeSrId,
     mergedSeriesMap,
     onAutoSelect: handleAutoSelectMeasurement,
   });
@@ -1355,7 +1346,16 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     if (!selectedMeasurementUID) return;
     const sel = allMeasurements.find((m) => m.annotationUID === selectedMeasurementUID);
     if (!sel) {
-      setSelectedMeasurementUID(null);
+      commitSelectedMeasurementUID(null);
+      return;
+    }
+
+    const selectedReportUID = sel.metadata?.reportSeriesUID ?? null;
+    if (
+      (activeSrId && selectedReportUID !== activeSrId) ||
+      (!activeSrId && selectedReportUID)
+    ) {
+      commitSelectedMeasurementUID(null);
       return;
     }
 
@@ -1363,9 +1363,17 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       (mergedSeriesMap[selectedSeries]?.files ?? []).map(normalizeId)
     );
     if (!isMeasurementInSeries(sel, selectedSeries, files)) {
-      setSelectedMeasurementUID(null);
+      commitSelectedMeasurementUID(null);
     }
-  }, [selectedSeries, allMeasurements, selectedMeasurementUID, mergedSeriesMap, normalizeId]);
+  }, [
+    activeSrId,
+    allMeasurements,
+    commitSelectedMeasurementUID,
+    mergedSeriesMap,
+    normalizeId,
+    selectedMeasurementUID,
+    selectedSeries,
+  ]);
 
   useEffect(() => {
     if (!loadingSeries && !selectedSeries && Object.keys(seriesMap).length > 0) {
@@ -1518,7 +1526,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     mergedSeriesMapRef,
     allMeasurements,
     selectedSeries,
-    prevSeriesRef,
     pendingSeriesNavigationRef,
     setSelectedSeries,
     setSelectedMeasurementUID: commitSelectedMeasurementUID,
@@ -1583,7 +1590,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     // restore native selection without re-running all annotation style writes.
     // The same applies when the selected series is hidden and shown again.
     syncMeasurementNativeSelection(selectedMeasurementUIDRef.current);
-  }, [hiddenMeasurementUIDSignature, selectedSeries]);
+  }, [activeSrId, hiddenMeasurementUIDSignature, selectedSeries]);
 
   useEffect(
     () => () => {
@@ -1601,13 +1608,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       setLeftPanelWidth={setLeftPanelWidth}
       rightPanelWidth={rightPanelWidth}
       setRightPanelWidth={setRightPanelWidth}
-      isSR={isSR}
       studyDate={studyMeta.studyDate}
       studyDescription={studyMeta.studyDescription}
       seriesMap={mergedSeriesMap}
       selectedSeries={selectedSeries}
       onSelectSeries={(uid) => {
-        prevSeriesRef.current = selectedSeries;
         pendingSeriesNavigationRef.current = {
           seriesUID: uid,
           imageIndex: 0,
@@ -1617,7 +1622,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         setSelectedSeries(uid);
       }}
       onSelectMobileSeries={(uid) => {
-        prevSeriesRef.current = selectedSeries;
         pendingSeriesNavigationRef.current = {
           seriesUID: uid,
           imageIndex: 0,
@@ -1634,7 +1638,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       loadedSrList={loadedSrList}
       activeSrId={activeSrId}
       onSelectSr={handleSelectSr}
-      srGroups={srGroups}
       mobileMeasurementsOpen={mobileMeasurementsOpen}
       setMobileMeasurementsOpen={setMobileMeasurementsOpen}
       measurements={measurementsForPanel}

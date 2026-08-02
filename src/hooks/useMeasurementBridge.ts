@@ -1,6 +1,9 @@
 // src/hooks/useMeasurementBridge.ts
 import { useEffect, useRef } from 'react';
-import { annotation as csAnnotation } from '@cornerstonejs/tools';
+import {
+  annotation as csAnnotation,
+  utilities as csToolsUtilities,
+} from '@cornerstonejs/tools';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import {
   safeSetAnnotationVisibility,
@@ -11,8 +14,7 @@ import { isMeasurementInSeries } from '@/lib/viewer/measurementVisibility';
 /**
  * useMeasurementBridge
  *
- * - Quản lý visibility dựa trên selectedSeries / hiddenMeasurements / mergedSeriesMap.
- * - Reset local caches when the viewport element changes.
+ * - Reconcile source-series visibility and the active read-only SR overlay.
  * - Gọi onAutoSelect (nếu có) cho mỗi annotationUID phù hợp, deduplicate.
  */
 export function useMeasurementBridge({
@@ -20,6 +22,7 @@ export function useMeasurementBridge({
   viewportEl,
   hiddenMeasurements,
   selectedSeries,
+  activeSrId,
   mergedSeriesMap,
   renderingEngineRender,
   onAutoSelect,
@@ -28,26 +31,15 @@ export function useMeasurementBridge({
   viewportEl: HTMLDivElement | null;
   hiddenMeasurements: Set<string>;
   selectedSeries?: string | null;
+  activeSrId?: string | null;
   mergedSeriesMap?: Record<string, { files: string[]; metadata: any }>;
   renderingEngineRender?: () => void;
   onAutoSelect?: (annotationUID: string, frameIndex: number) => void;
 }) {
-  // cache visibility to avoid repeated setVisibility calls
-  const visibilityCacheRef = useRef<Map<string, boolean>>(new Map());
-  const previousViewportElRef = useRef<HTMLDivElement | null>(null);
-
   // Measurements are auto-selected only once, when their UID first appears.
   // Without this persistent set, every parent render selected the whole list
   // again and the last item kept overwriting an explicit card selection.
   const autoSelectedUIDsRef = useRef<Set<string>>(new Set());
-
-  // Cornerstone/useMeasurements owns annotation registration. The bridge only
-  // owns derived visibility and auto-selection state.
-  useEffect(() => {
-    if (previousViewportElRef.current === viewportEl) return;
-    previousViewportElRef.current = viewportEl;
-    visibilityCacheRef.current.clear();
-  }, [viewportEl]);
 
   // Sync visibility for each measurement based on selected series and hidden state.
   useEffect(() => {
@@ -56,53 +48,58 @@ export function useMeasurementBridge({
     const files = new Set(
       (mergedSeriesMap?.[selectedSeries ?? '']?.files ?? []).map(normalizeImageId)
     );
-    const currentUIDs = new Set(
-      allMeasurements.map((measurement) => measurement.annotationUID)
-    );
     let anyChanged = false;
-    const stateAny = csAnnotation.state as any;
-
-    for (const uid of Array.from(visibilityCacheRef.current.keys())) {
-      if (!currentUIDs.has(uid)) {
-        visibilityCacheRef.current.delete(uid);
-      }
-    }
+    let hasRegisteredAnnotation = false;
 
     for (const m of allMeasurements) {
       const uid = m.annotationUID;
 
-      const visible =
-        !hiddenMeasurements.has(uid) &&
-        isMeasurementInSeries(m, selectedSeries, files);
+      const reportSeriesUID = m.metadata?.reportSeriesUID;
+      const visible = activeSrId
+        ? reportSeriesUID === activeSrId
+        : !reportSeriesUID &&
+          !hiddenMeasurements.has(uid) &&
+          isMeasurementInSeries(m, selectedSeries, files);
 
-      const prev = visibilityCacheRef.current.get(uid);
-      if (prev === undefined || prev !== visible) {
-        try {
-          const annotationExists = Boolean(stateAny?.getAnnotation?.(uid));
-          const previousVisibility =
-            (csAnnotation.visibility as any)?.isAnnotationVisible?.(uid);
-          const applied =
-            annotationExists &&
-            safeSetAnnotationVisibility(csAnnotation, uid, Boolean(visible));
-          if (applied) {
-            visibilityCacheRef.current.set(uid, visible);
-            anyChanged = anyChanged || previousVisibility !== visible;
-          } else {
-            // Retry after asynchronous annotation registration.
-            visibilityCacheRef.current.delete(uid);
-          }
-        } catch {
-          visibilityCacheRef.current.delete(uid);
+      try {
+        if (!csAnnotation.state.getAnnotation(uid)) continue;
+        hasRegisteredAnnotation = true;
+
+        const actual = csAnnotation.visibility.isAnnotationVisible(uid);
+        if (actual === visible) continue;
+
+        if (safeSetAnnotationVisibility(csAnnotation, uid, visible)) {
+          anyChanged = true;
         }
+      } catch {
+        // A later measurement/state update will reconcile again.
       }
     }
 
-    if (anyChanged) {
+    if (hasRegisteredAnnotation) {
       try {
-        renderingEngineRender?.();
-      } catch {}
+        // Visibility is rendered by Cornerstone Tools' annotation SVG engine,
+        // not by the image rendering engine. Re-render every reconciliation,
+        // including when state already matches, so a stale SVG layer after a
+        // missed render/HMR cycle repairs itself deterministically.
+        csToolsUtilities.triggerAnnotationRender(viewportEl);
+      } catch {
+        if (anyChanged) {
+          try {
+            renderingEngineRender?.();
+          } catch {}
+        }
+      }
     }
-  }, [allMeasurements, selectedSeries, hiddenMeasurements, mergedSeriesMap, viewportEl, renderingEngineRender]);
+  }, [
+    allMeasurements,
+    activeSrId,
+    selectedSeries,
+    hiddenMeasurements,
+    mergedSeriesMap,
+    viewportEl,
+    renderingEngineRender,
+  ]);
 
   // Auto-select only a newly-added measurement, once per annotation UID.
   useEffect(() => {
@@ -117,13 +114,18 @@ export function useMeasurementBridge({
         !autoSelectedUIDsRef.current.has(measurement.annotationUID)
     );
 
-    const candidates = newlyAdded.filter((measurement) =>
-      isMeasurementInSeries(
-        measurement,
-        selectedSeries,
-        filesForSelected
-      )
-    );
+    const candidates = newlyAdded.filter((measurement) => {
+      const reportSeriesUID = measurement.metadata?.reportSeriesUID;
+      if (activeSrId) return reportSeriesUID === activeSrId;
+      return (
+        !reportSeriesUID &&
+        isMeasurementInSeries(
+          measurement,
+          selectedSeries,
+          filesForSelected
+        )
+      );
+    });
 
     for (const measurement of newlyAdded) {
       autoSelectedUIDsRef.current.add(measurement.annotationUID);
@@ -148,5 +150,12 @@ export function useMeasurementBridge({
     } catch {
       autoSelectedUIDsRef.current.delete(newest.annotationUID);
     }
-  }, [allMeasurements, selectedSeries, viewportEl, mergedSeriesMap, onAutoSelect]);
+  }, [
+    activeSrId,
+    allMeasurements,
+    selectedSeries,
+    viewportEl,
+    mergedSeriesMap,
+    onAutoSelect,
+  ]);
 }

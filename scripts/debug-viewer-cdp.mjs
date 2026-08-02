@@ -47,8 +47,12 @@ function send(method, params = {}, sessionId) {
   });
 }
 
+const { browserContextId } = await send('Target.createBrowserContext', {
+  disposeOnDetach: true,
+});
 const { targetId } = await send('Target.createTarget', {
   url: 'about:blank',
+  browserContextId,
 });
 const { sessionId } = await send('Target.attachToTarget', {
   targetId,
@@ -67,6 +71,7 @@ await Promise.all([
       behavior: 'allow',
       downloadPath,
       eventsEnabled: true,
+      browserContextId,
     }
   ),
 ]);
@@ -110,6 +115,36 @@ async function waitFor(expression, timeoutMs = 30000) {
   const diagnostic = await evaluate(`({
     body: document.body.innerText.slice(-5000),
     dialog: document.querySelector('[role="dialog"]')?.innerText ?? null,
+    stackScrollbar: (() => {
+      const element = document.querySelector(
+        '[role="scrollbar"][aria-label="Điều hướng lát cắt DICOM"]'
+      );
+      return element
+        ? {
+            value: element.getAttribute('aria-valuenow'),
+            tabIndex: element.getAttribute('tabindex'),
+            className: element.className,
+            focused: document.activeElement === element,
+          }
+        : null;
+    })(),
+    runtimeViewport: (() => {
+      try {
+        const core = window.__cornerstoneCore;
+        const enabled = core?.getEnabledElementByViewportId?.(
+          'WORKSTATION_VIEWPORT'
+        );
+        const viewport = enabled?.viewport;
+        return {
+          currentIndex: viewport?.getCurrentImageIdIndex?.(),
+          imageIdCount: viewport?.getImageIds?.()?.length,
+          currentImageId: viewport?.getCurrentImageId?.(),
+          status: viewport?.viewportStatus,
+        };
+      } catch (error) {
+        return { error: String(error) };
+      }
+    })(),
   })`);
   const relevantEvents = events
     .filter(
@@ -175,62 +210,139 @@ async function clickElement(expression) {
   );
 }
 
+async function dragPointer(start, end) {
+  await send(
+    'Input.dispatchMouseEvent',
+    { type: 'mouseMoved', x: start.x, y: start.y },
+    sessionId
+  );
+  await send(
+    'Input.dispatchMouseEvent',
+    {
+      type: 'mousePressed',
+      x: start.x,
+      y: start.y,
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+    },
+    sessionId
+  );
+  await send(
+    'Input.dispatchMouseEvent',
+    {
+      type: 'mouseMoved',
+      x: end.x,
+      y: end.y,
+      button: 'left',
+      buttons: 1,
+    },
+    sessionId
+  );
+  await send(
+    'Input.dispatchMouseEvent',
+    {
+      type: 'mouseReleased',
+      x: end.x,
+      y: end.y,
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+    },
+    sessionId
+  );
+}
+
+async function pressKey(key, code, virtualKeyCode) {
+  await send(
+    'Input.dispatchKeyEvent',
+    {
+      type: 'rawKeyDown',
+      key,
+      code,
+      windowsVirtualKeyCode: virtualKeyCode,
+      nativeVirtualKeyCode: virtualKeyCode,
+    },
+    sessionId
+  );
+  await send(
+    'Input.dispatchKeyEvent',
+    {
+      type: 'keyUp',
+      key,
+      code,
+      windowsVirtualKeyCode: virtualKeyCode,
+      nativeVirtualKeyCode: virtualKeyCode,
+    },
+    sessionId
+  );
+}
+
+function annotationRenderedExpression(annotationUID) {
+  return `(() =>
+    [...document.querySelectorAll(
+      '#svg-layer-WORKSTATION_VIEWPORT [data-annotation-uid]'
+    )].some(
+      (node) =>
+        node.getAttribute('data-annotation-uid') ===
+        ${JSON.stringify(annotationUID)}
+    )
+  )()`;
+}
+
+async function createSrReport(name) {
+  await clickElement(
+    `[...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Create SR'
+    )`
+  );
+  await waitFor(`!!document.querySelector('input[aria-label="Tên SR"]')`);
+  await evaluate(`(() => {
+    const input = document.querySelector('input[aria-label="Tên SR"]');
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value'
+    ).set;
+    setter.call(input, ${JSON.stringify(name)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await clickElement(
+    `[...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Tạo SR'
+    )`
+  );
+  await waitFor(
+    `[...document.querySelectorAll('button')].some(
+      (button) => button.getAttribute('aria-label') ===
+        ${JSON.stringify(`View SR ${name}`)}
+    )`,
+    60000
+  );
+  await waitFor(`!document.querySelector('input[aria-label="Tên SR"]')`);
+}
+
 await send('Page.navigate', { url: viewerUrl }, sessionId);
 await waitFor(
   `document.readyState === 'complete' && !!document.querySelector('canvas')`,
   30000
 );
 await new Promise((resolve) => setTimeout(resolve, 6000));
-await evaluate(`(() => {
-  const button = document.querySelector(
+await clickElement(
+  `document.querySelector(
     'button[aria-label="Công cụ đo lường — Measurement Tools"]'
-  );
-  button?.dispatchEvent(new PointerEvent('pointerdown', {
-    bubbles: true,
-    cancelable: true,
-    pointerId: 31,
-    pointerType: 'mouse',
-    isPrimary: true,
-    button: 0,
-    buttons: 1,
-  }));
-  button?.dispatchEvent(new PointerEvent('pointerup', {
-    bubbles: true,
-    cancelable: true,
-    pointerId: 31,
-    pointerType: 'mouse',
-    isPrimary: true,
-    button: 0,
-    buttons: 0,
-  }));
-})()`);
+  )`
+);
 await waitFor(
   `[...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent?.trim().toLowerCase() === 'length')`
 );
-await evaluate(`(() => {
-  const item = [...document.querySelectorAll('[role="menuitem"]')].find(
+await clickElement(
+  `[...document.querySelectorAll('[role="menuitem"]')].find(
     (candidate) => candidate.textContent?.trim().toLowerCase() === 'length'
-  );
-  item?.dispatchEvent(new PointerEvent('pointerdown', {
-    bubbles: true,
-    cancelable: true,
-    pointerId: 32,
-    pointerType: 'mouse',
-    isPrimary: true,
-    button: 0,
-    buttons: 1,
-  }));
-  item?.dispatchEvent(new PointerEvent('pointerup', {
-    bubbles: true,
-    cancelable: true,
-    pointerId: 32,
-    pointerType: 'mouse',
-    isPrimary: true,
-    button: 0,
-    buttons: 0,
-  }));
-  item?.click();
-})()`);
+  )`
+);
+await waitFor(
+  `![...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent?.trim().toLowerCase() === 'length')`
+);
 
 const viewportRect = await evaluate(`(() => {
   const element = document.querySelector('[data-viewport-uid="WORKSTATION_VIEWPORT"]');
@@ -245,79 +357,119 @@ const end = {
   x: viewportRect.x + viewportRect.width * 0.62,
   y: viewportRect.y + viewportRect.height * 0.56,
 };
-await send(
-  'Input.dispatchMouseEvent',
-  { type: 'mouseMoved', x: start.x, y: start.y },
-  sessionId
-);
-await send(
-  'Input.dispatchMouseEvent',
-  {
-    type: 'mousePressed',
-    x: start.x,
-    y: start.y,
-    button: 'left',
-    buttons: 1,
-    clickCount: 1,
-  },
-  sessionId
-);
-await send(
-  'Input.dispatchMouseEvent',
-  {
-    type: 'mouseMoved',
-    x: end.x,
-    y: end.y,
-    button: 'left',
-    buttons: 1,
-  },
-  sessionId
-);
-await send(
-  'Input.dispatchMouseEvent',
-  {
-    type: 'mouseReleased',
-    x: end.x,
-    y: end.y,
-    button: 'left',
-    buttons: 0,
-    clickCount: 1,
-  },
-  sessionId
-);
+await dragPointer(start, end);
 await waitFor(`document.body.innerText.includes('Measurement (1)')`);
 await waitFor(
   `[...document.querySelectorAll('button')].some((button) => button.textContent?.trim() === 'Create SR' && !button.disabled)`
 );
-await evaluate(
-  `document.querySelector('button[aria-label="Hide measurement"]')?.click()`
+
+const scrollbarExpression = `document.querySelector(
+  '[role="scrollbar"][aria-label="Điều hướng lát cắt DICOM"]'
+)`;
+await evaluate(`${scrollbarExpression}?.focus()`);
+for (let frame = 2; frame <= 4; frame += 1) {
+  await evaluate(`${scrollbarExpression}?.focus()`);
+  await pressKey('ArrowDown', 'ArrowDown', 40);
+  await waitFor(
+    `${scrollbarExpression}?.getAttribute('aria-valuenow') === '${frame}'`,
+    5000
+  );
+  await waitFor(`document.body.innerText.includes('(${frame}/7)')`);
+}
+await dragPointer(
+  {
+    x: viewportRect.x + viewportRect.width * 0.32,
+    y: viewportRect.y + viewportRect.height * 0.62,
+  },
+  {
+    x: viewportRect.x + viewportRect.width * 0.52,
+    y: viewportRect.y + viewportRect.height * 0.68,
+  }
+);
+await waitFor(`document.body.innerText.includes('Measurement (2)')`);
+
+const measurementUIDsByFrame = await evaluate(`(() => {
+  const result = {};
+  for (const card of document.querySelectorAll(
+    '[role="button"][data-annotation-uid]'
+  )) {
+    const frame = card.innerText.match(/I:\\s*(\\d+)\\s*\\//)?.[1];
+    const uid = card.getAttribute('data-annotation-uid');
+    if (frame && uid) result[frame] = uid;
+  }
+  return result;
+})()`);
+const sourceAnnotationUID = measurementUIDsByFrame?.['1'];
+const secondAnnotationUID = measurementUIDsByFrame?.['4'];
+if (!sourceAnnotationUID || !secondAnnotationUID) {
+  throw new Error(
+    `Could not resolve the frame 1/frame 4 measurement UIDs: ${JSON.stringify(
+      measurementUIDsByFrame
+    )}`
+  );
+}
+
+const isSourceAnnotationRendered = annotationRenderedExpression(
+  sourceAnnotationUID
+);
+const isSecondAnnotationRendered = annotationRenderedExpression(
+  secondAnnotationUID
+);
+await waitFor(isSecondAnnotationRendered);
+
+await evaluate(`${scrollbarExpression}?.focus()`);
+await evaluate(`${scrollbarExpression}?.dispatchEvent(
+  new KeyboardEvent('keydown', {
+    key: 'Home',
+    code: 'Home',
+    bubbles: true,
+    cancelable: true,
+  })
+)`);
+await waitFor(
+  `${scrollbarExpression}?.getAttribute('aria-valuenow') === '1'`
+);
+await waitFor(`document.body.innerText.includes('(1/7)')`);
+await waitFor(isSourceAnnotationRendered);
+if (await evaluate(isSecondAnnotationRendered)) {
+  throw new Error('The frame 4 measurement rendered on frame 1.');
+}
+
+await clickElement(
+  `document.querySelector(
+    '[data-annotation-uid=${JSON.stringify(sourceAnnotationUID)}] button[aria-label="Hide measurement"]'
+  )`
 );
 await waitFor(
   `!!document.querySelector('button[aria-label="Show measurement"]')`
 );
+await waitFor(`!(${isSourceAnnotationRendered})`);
+
+// Selecting/navigating to a hidden measurement must not resurrect it.
+await evaluate(
+  `document.querySelector(
+    '[role="button"][data-annotation-uid=${JSON.stringify(sourceAnnotationUID)}]'
+  )?.click()`
+);
+await waitFor(`!(${isSourceAnnotationRendered})`);
 
 await clickElement(
-  `[...document.querySelectorAll('button')].find(
-    (button) => button.textContent?.trim() === 'Create SR'
+  `document.querySelector(
+    '[data-annotation-uid=${JSON.stringify(sourceAnnotationUID)}] button[aria-label="Show measurement"]'
   )`
 );
-await waitFor(`!!document.querySelector('input[aria-label="Tên SR"]')`);
-await evaluate(`(() => {
-  const input = document.querySelector('input[aria-label="Tên SR"]');
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    'value'
-  ).set;
-  setter.call(input, 'Runtime OHIF SR');
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-})()`);
+await waitFor(isSourceAnnotationRendered);
+
+// Keep one source measurement hidden while creating the report. Hidden state
+// is a display concern and must not remove it from the SR snapshot.
 await clickElement(
-  `[...document.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Tạo SR')`
+  `document.querySelector(
+    '[data-annotation-uid=${JSON.stringify(sourceAnnotationUID)}] button[aria-label="Hide measurement"]'
+  )`
 );
-await waitFor(
-  `document.body.innerText.includes('Đã tạo và tải xuống DICOM SR.')`,
-  60000
-);
+await waitFor(`!(${isSourceAnnotationRendered})`);
+
+await createSrReport('Runtime OHIF SR');
 await new Promise((resolve) => setTimeout(resolve, 1500));
 
 const sourceStateAfterExport = await evaluate(`(() => {
@@ -329,6 +481,7 @@ const sourceStateAfterExport = await evaluate(`(() => {
   );
   return {
     viewportText: viewport?.innerText ?? '',
+    canvasCount: viewport?.querySelectorAll('canvas.cornerstone-canvas').length ?? 0,
     measurementCountText: document.body.innerText.match(/Measurement \\(\\d+\\)/)?.[0],
     createSrDisabled: createButton?.disabled,
     hiddenMeasurementCount: document.querySelectorAll(
@@ -339,6 +492,19 @@ const sourceStateAfterExport = await evaluate(`(() => {
       .filter(Boolean),
   };
 })()`);
+if (
+  sourceStateAfterExport.measurementCountText !== 'Measurement (2)' ||
+  sourceStateAfterExport.canvasCount < 1 ||
+  sourceStateAfterExport.createSrDisabled ||
+  sourceStateAfterExport.hiddenMeasurementCount !== 1 ||
+  !sourceStateAfterExport.reportButtons.includes('Runtime OHIF SR')
+) {
+  throw new Error(
+    `Invalid source state after SR export: ${JSON.stringify(
+      sourceStateAfterExport
+    )}`
+  );
+}
 
 await evaluate(
   `document.querySelector('span[title="Runtime OHIF SR"]')?.closest('button')?.click()`
@@ -347,13 +513,71 @@ await waitFor(
   `!![...document.querySelectorAll('button')].find((button) => button.title === 'Close SR')`,
   60000
 );
+await waitFor(`document.body.innerText.includes('Measurement (2)')`);
+await waitFor(`(() => {
+  const reportUIDs = new Set(
+    [...document.querySelectorAll('[role="button"][data-annotation-uid]')]
+      .map((card) => card.getAttribute('data-annotation-uid'))
+      .filter(Boolean)
+  );
+  return [...document.querySelectorAll(
+    '#svg-layer-WORKSTATION_VIEWPORT [data-annotation-uid]'
+  )].some((node) => reportUIDs.has(node.getAttribute('data-annotation-uid')));
+})()`);
 await new Promise((resolve) => setTimeout(resolve, 1000));
 const srViewState = await evaluate(`(() => {
+  const viewport = document.querySelector(
+    '[data-viewport-uid="WORKSTATION_VIEWPORT"]'
+  );
+  const canvas = viewport?.querySelector('canvas.cornerstone-canvas');
+  const canvasRect = canvas?.getBoundingClientRect();
+  const reportUIDs = new Set(
+    [...document.querySelectorAll('[role="button"][data-annotation-uid]')]
+      .map((card) => card.getAttribute('data-annotation-uid'))
+      .filter(Boolean)
+  );
+  const renderedReportUIDs = new Set(
+    [...document.querySelectorAll(
+      '#svg-layer-WORKSTATION_VIEWPORT [data-annotation-uid]'
+    )]
+      .map((node) => node.getAttribute('data-annotation-uid'))
+      .filter((uid) => reportUIDs.has(uid))
+  );
   const createButton = [...document.querySelectorAll('button')].find(
     (button) => button.textContent?.trim() === 'Create SR'
   );
+  const runtimeViewport = (() => {
+    try {
+      const enabled =
+        window.__cornerstoneCore?.getEnabledElementByViewportId?.(
+          'WORKSTATION_VIEWPORT'
+        );
+      const cornerstoneViewport = enabled?.viewport;
+      return {
+        currentImageId: cornerstoneViewport?.getCurrentImageId?.() ?? null,
+        currentImageIndex:
+          cornerstoneViewport?.getCurrentImageIdIndex?.() ?? null,
+        imageIdCount: cornerstoneViewport?.getImageIds?.()?.length ?? 0,
+        status: String(cornerstoneViewport?.viewportStatus ?? ''),
+      };
+    } catch (error) {
+      return { error: String(error) };
+    }
+  })();
   return {
     body: document.body.innerText.slice(-2500),
+    measurementCountText: document.body.innerText.match(/Measurement \\(\\d+\\)/)?.[0],
+    viewportConnected: Boolean(viewport?.isConnected),
+    canvasWidth: canvasRect?.width ?? 0,
+    canvasHeight: canvasRect?.height ?? 0,
+    runtimeViewport,
+    reportAnnotationUIDs: [...reportUIDs],
+    reportMeasurementCount: reportUIDs.size,
+    renderedReportMeasurementCount: renderedReportUIDs.size,
+    sourceAnnotationRendered: ${isSourceAnnotationRendered},
+    activeReportPressed: Boolean(
+      document.querySelector('button[aria-label="View SR Runtime OHIF SR"][aria-pressed="true"]')
+    ),
     createSrDisabled: createButton?.disabled,
     closeSrVisible: !![...document.querySelectorAll('button')].find(
       (button) => button.title === 'Close SR'
@@ -364,33 +588,160 @@ const srViewState = await evaluate(`(() => {
     deleteButtonCount: document.querySelectorAll(
       'button[title="Delete measurement"]'
     ).length,
+    lockedVisibilityButtonCount: document.querySelectorAll(
+      'button[aria-label="SR measurement — visibility locked"]:disabled'
+    ).length,
   };
 })()`);
+if (
+  srViewState.measurementCountText !== 'Measurement (2)' ||
+  !srViewState.viewportConnected ||
+  srViewState.canvasWidth <= 0 ||
+  srViewState.canvasHeight <= 0 ||
+  !srViewState.runtimeViewport.currentImageId ||
+  srViewState.runtimeViewport.imageIdCount !== 7 ||
+  srViewState.runtimeViewport.status.toLowerCase() !== 'rendered' ||
+  srViewState.reportMeasurementCount !== 2 ||
+  srViewState.renderedReportMeasurementCount < 1 ||
+  srViewState.sourceAnnotationRendered ||
+  !srViewState.activeReportPressed ||
+  !srViewState.createSrDisabled ||
+  !srViewState.closeSrVisible ||
+  srViewState.hideButtonCount !== 0 ||
+  srViewState.deleteButtonCount !== 0 ||
+  srViewState.lockedVisibilityButtonCount !== 2
+) {
+  throw new Error(`Invalid active SR state: ${JSON.stringify(srViewState)}`);
+}
 await evaluate(
   `[...document.querySelectorAll('button')].find((button) => button.title === 'Close SR')?.click()`
 );
 await waitFor(
   `![...document.querySelectorAll('button')].some((button) => button.title === 'Close SR')`
 );
+const reportAnnotationUIDsExpression = JSON.stringify(
+  srViewState.reportAnnotationUIDs
+);
+await waitFor(`(() => {
+  const reportUIDs = new Set(${reportAnnotationUIDsExpression});
+  return ![...document.querySelectorAll(
+    '#svg-layer-WORKSTATION_VIEWPORT [data-annotation-uid]'
+  )].some((node) => reportUIDs.has(node.getAttribute('data-annotation-uid')));
+})()`);
+
+// Re-open and close the same secondary display set once more. This catches
+// stale View/Close jobs that used to detach the primary image viewport.
+await clickElement(
+  `document.querySelector('button[aria-label="View SR Runtime OHIF SR"]')`
+);
+await waitFor(
+  `!![...document.querySelectorAll('button')].find((button) => button.title === 'Close SR')`
+);
+await waitFor(`(() => {
+  const reportUIDs = new Set(${reportAnnotationUIDsExpression});
+  return [...document.querySelectorAll(
+    '#svg-layer-WORKSTATION_VIEWPORT [data-annotation-uid]'
+  )].some((node) => reportUIDs.has(node.getAttribute('data-annotation-uid')));
+})()`);
+await waitFor(`(() => {
+  const viewport = document.querySelector(
+    '[data-viewport-uid="WORKSTATION_VIEWPORT"]'
+  );
+  const rect = viewport?.querySelector(
+    'canvas.cornerstone-canvas'
+  )?.getBoundingClientRect();
+  return Boolean(rect && rect.width > 0 && rect.height > 0);
+})()`);
+await clickElement(
+  `[...document.querySelectorAll('button')].find((button) => button.title === 'Close SR')`
+);
+await waitFor(
+  `![...document.querySelectorAll('button')].some((button) => button.title === 'Close SR')`
+);
+await waitFor(`(() => {
+  const reportUIDs = new Set(${reportAnnotationUIDsExpression});
+  return ![...document.querySelectorAll(
+    '#svg-layer-WORKSTATION_VIEWPORT [data-annotation-uid]'
+  )].some((node) => reportUIDs.has(node.getAttribute('data-annotation-uid')));
+})()`);
 await new Promise((resolve) => setTimeout(resolve, 750));
-await evaluate(
-  `document.querySelector('button[aria-label="Show measurement"]')?.click()`
+await clickElement(
+  `document.querySelector(
+    '[data-annotation-uid=${JSON.stringify(sourceAnnotationUID)}] button[aria-label="Show measurement"]'
+  )`
 );
 await waitFor(
   `!!document.querySelector('button[aria-label="Hide measurement"]')`
 );
+await waitFor(isSourceAnnotationRendered);
 const sourceStateAfterClose = await evaluate(`(() => {
   const viewport = document.querySelector(
     '[data-viewport-uid="WORKSTATION_VIEWPORT"]'
   );
   return {
     viewportText: viewport?.innerText ?? '',
+    canvasCount: viewport?.querySelectorAll('canvas.cornerstone-canvas').length ?? 0,
     measurementCountText: document.body.innerText.match(/Measurement \\(\\d+\\)/)?.[0],
   };
 })()`);
+if (
+  sourceStateAfterClose.measurementCountText !== 'Measurement (2)' ||
+  sourceStateAfterClose.canvasCount < 1
+) {
+  throw new Error(
+    `Invalid source state after closing SR: ${JSON.stringify(
+      sourceStateAfterClose
+    )}`
+  );
+}
 
-await evaluate(
-  `document.querySelector('button[title="Delete measurement"]')?.click()`
+// A second export must snapshot only the two editable source measurements,
+// not the two hydrated annotations from the first report.
+await createSrReport('Runtime OHIF SR 2');
+await waitFor(
+  `document.querySelectorAll('button[aria-label^="View SR Runtime OHIF SR"]').length === 2`
+);
+await waitFor(`document.body.innerText.includes('Measurement (2)')`);
+
+await clickElement(
+  `document.querySelector('button[aria-label="View SR Runtime OHIF SR 2"]')`
+);
+await waitFor(
+  `[...document.querySelectorAll('button')].some(
+    (button) => button.title === 'Close SR'
+  )`
+);
+await waitFor(`document.body.innerText.includes('Measurement (2)')`);
+await waitFor(`(() => {
+  const viewport = document.querySelector(
+    '[data-viewport-uid="WORKSTATION_VIEWPORT"]'
+  );
+  const rect = viewport?.querySelector(
+    'canvas.cornerstone-canvas'
+  )?.getBoundingClientRect();
+  return Boolean(rect && rect.width > 0 && rect.height > 0);
+})()`);
+await clickElement(
+  `[...document.querySelectorAll('button')].find(
+    (button) => button.title === 'Close SR'
+  )`
+);
+await waitFor(
+  `![...document.querySelectorAll('button')].some(
+    (button) => button.title === 'Close SR'
+  )`
+);
+await waitFor(`document.body.innerText.includes('Measurement (2)')`);
+
+await clickElement(
+  `document.querySelector(
+    '[data-annotation-uid=${JSON.stringify(sourceAnnotationUID)}] button[title="Delete measurement"]'
+  )`
+);
+await waitFor(`document.body.innerText.includes('Measurement (1)')`);
+await new Promise((resolve) => setTimeout(resolve, 450));
+await clickElement(
+  `document.querySelector('button[title="Delete measurement"]:not(:disabled)')`
 );
 await waitFor(
   `document.body.innerText.includes('Measurement (0)')`
@@ -408,6 +759,17 @@ const afterDeleteState = await evaluate(`(() => {
     ).length,
   };
 })()`);
+if (
+  afterDeleteState.measurementCountText !== 'Measurement (0)' ||
+  !afterDeleteState.createSrDisabled ||
+  afterDeleteState.deleteButtonCount !== 0
+) {
+  throw new Error(
+    `Invalid measurement state after delete: ${JSON.stringify(
+      afterDeleteState
+    )}`
+  );
+}
 
 const snapshot = await evaluate(`(() => ({
   title: document.title,
@@ -457,26 +819,41 @@ const runtimeErrors = events
   .filter(
     (event) =>
       event.method === 'Runtime.exceptionThrown' ||
-      event.method === 'Log.entryAdded'
+      (event.method === 'Log.entryAdded' &&
+        event.params?.entry?.level === 'error')
   )
   .map((event) => event.params);
 console.log(
   JSON.stringify({ runtimeErrorCount: runtimeErrors.length, runtimeErrors }, null, 2)
 );
+if (runtimeErrors.length) {
+  throw new Error(
+    `Viewer emitted ${runtimeErrors.length} runtime error(s).`
+  );
+}
 
-await send('Target.closeTarget', { targetId });
-ws.close();
-
-const downloadedFile = fs
-  .readdirSync(downloadPath)
-  .filter((name) => name.endsWith('.dcm'))
-  .map((name) => ({
-    name,
-    path: path.join(downloadPath, name),
-    modifiedAt: fs.statSync(path.join(downloadPath, name)).mtimeMs,
-  }))
-  .sort((a, b) => b.modifiedAt - a.modifiedAt)[0];
-if (!downloadedFile) throw new Error('No DICOM SR file was downloaded.');
+const downloadStartedAt = Date.now();
+let downloadedFiles = [];
+while (downloadedFiles.length < 2 && Date.now() - downloadStartedAt < 15000) {
+  downloadedFiles = fs
+    .readdirSync(downloadPath)
+    .filter((name) => name.endsWith('.dcm'))
+    .map((name) => ({
+      name,
+      path: path.join(downloadPath, name),
+      modifiedAt: fs.statSync(path.join(downloadPath, name)).mtimeMs,
+    }))
+    .sort((a, b) => b.modifiedAt - a.modifiedAt);
+  if (downloadedFiles.length < 2) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+if (downloadedFiles.length !== 2) {
+  throw new Error(
+    `Expected two DICOM SR downloads, received ${downloadedFiles.length}.`
+  );
+}
+const downloadedFile = downloadedFiles[0];
 
 const dcmjsModule = await import('dcmjs');
 const dcmjs = dcmjsModule.default ?? dcmjsModule;
@@ -516,6 +893,7 @@ console.log(
       measurementGroupCount: measurementGroups.length,
       patientID: dataset.PatientID,
       patientName: dataset.PatientName,
+      seriesNumber: dataset.SeriesNumber,
       seriesDescription: dataset.SeriesDescription,
     },
     null,
@@ -532,6 +910,15 @@ if (dataset.StudyInstanceUID !== studyUID) {
 if (String(dataset.ContentTemplateSequence?.TemplateIdentifier) !== '1500') {
   throw new Error('Downloaded SR is not TID 1500.');
 }
-if (measurementGroups.length !== 1) {
-  throw new Error('Downloaded SR does not contain exactly one measurement.');
+if (measurementGroups.length !== 2) {
+  throw new Error('Downloaded SR does not contain exactly two measurements.');
 }
+if (String(dataset.SeriesNumber) !== '3002') {
+  throw new Error(
+    `The second SR should use SeriesNumber 3002, received ${dataset.SeriesNumber}.`
+  );
+}
+
+await send('Target.closeTarget', { targetId });
+await send('Target.disposeBrowserContext', { browserContextId });
+ws.close();

@@ -4,7 +4,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronUp } from 'lucide-react';
 import { AnnotationMeasurement } from '@/hooks/useMeasurements';
-import type { Series } from '@/platform/core';
+import type {
+  LocalStructuredReport,
+  Series,
+} from '@/platform/core';
 import { cn, formatStudyDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import EditLabelDialog from './EditLabelDialog';
@@ -51,7 +54,6 @@ interface MeasurementPanelProps {
   onSelectMeasurement: (m: AnnotationMeasurement) => void;
   onRemoveMeasurement: (annotationUID: string) => Promise<boolean>;
   seriesMap: Record<string, { files: string[]; metadata: Series }>;
-  seriesInstanceUID?: string;
   totalFrames: number;
   selectedMeasurementUID: string | null;
   studyDate: string;
@@ -63,7 +65,7 @@ interface MeasurementPanelProps {
   onCreateSR?: () => void;
   isExportDisabled?: boolean;
 
-  srList?: { id: string; label: string; count: number; instances?: any[] }[];
+  srList?: LocalStructuredReport[];
   activeSrId?: string | null;
   onSelectSr?: (srId: string | null) => void;
 }
@@ -76,7 +78,6 @@ export default function MeasurementPanel({
   onSelectMeasurement,
   onRemoveMeasurement,
   seriesMap,
-  seriesInstanceUID,
   totalFrames,
   selectedMeasurementUID,
   studyDate,
@@ -162,20 +163,11 @@ export default function MeasurementPanel({
     [onRemoveMeasurement]
   );
 
-  const visible = measurements;
+  const isSelectedSR = Boolean(activeSrId);
 
-  const selectedSeriesMetadata = seriesInstanceUID
-    ? seriesMap[seriesInstanceUID]?.metadata
-    : undefined;
-  const isSelectedSR =
-    selectedSeriesMetadata?.seriesModality === 'SR' ||
-    (typeof seriesInstanceUID === 'string' &&
-      seriesInstanceUID.startsWith('SR_'));
-
-  let currentSrEntry: { id: string; label: string; count: number; instances?: any[] } | undefined;
+  let currentSrEntry: LocalStructuredReport | undefined;
   if (isSelectedSR && srList && srList.length) {
-    const lookupId = activeSrId ?? seriesInstanceUID;
-    currentSrEntry = srList.find((s) => s.id === lookupId) ?? srList.find((s) => s.id === seriesInstanceUID);
+    currentSrEntry = srList.find((report) => report.id === activeSrId);
   }
 
   return (
@@ -297,7 +289,7 @@ export default function MeasurementPanel({
                       className="px-2 py-1 text-xs border rounded"
                       onClick={() =>
                         onSelectSr(
-                          currentSrEntry?.id ?? seriesInstanceUID ?? null
+                          currentSrEntry?.id ?? activeSrId ?? null
                         )
                       }
                     >
@@ -322,8 +314,10 @@ export default function MeasurementPanel({
                 <div className="mt-2 text-xs">
                   <div className="font-medium">Instances:</div>
                   <ul className="list-disc pl-4">
-                    {currentSrEntry.instances.slice(0, 5).map((it: any, idx: number) => (
-                      <li key={idx} className="truncate">{String(it.sopInstanceUID ?? it.SOPInstanceUID ?? it.uid ?? `inst-${idx}`).slice(0, 40)}</li>
+                    {currentSrEntry.instances.slice(0, 5).map((instance) => (
+                      <li key={instance.sopInstanceUID} className="truncate">
+                        {instance.sopInstanceUID.slice(0, 40)}
+                      </li>
                     ))}
                     {currentSrEntry.instances.length > 5 && (
                       <li className="text-muted">... {currentSrEntry.instances.length - 5} more</li>
@@ -335,7 +329,7 @@ export default function MeasurementPanel({
           )}
 
           <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-            <h4 className="text-lg font-semibold">Measurement ({visible.length})</h4>
+            <h4 className="text-lg font-semibold">Measurement ({measurements.length})</h4>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
@@ -377,7 +371,7 @@ export default function MeasurementPanel({
               </div>
 
               <PanelScrollArea contentClassName="min-h-full px-2 py-2 space-y-2">
-                  {visible.length === 0 ? (
+                  {measurements.length === 0 ? (
                     <div className="flex min-h-full flex-1 flex-col items-center justify-center text-center text-xs text-muted px-4 py-10 space-y-2">
                       <i className="fas fa-ruler text-3xl text-secondary-foreground" />
                       <div className="font-semibold text-base text-secondary-foreground">No Measurements</div>
@@ -385,10 +379,7 @@ export default function MeasurementPanel({
                     </div>
                   ) : (
                     (() => {
-                      let srCounter = 0;
-                      let nonSrCounter = 0;
-
-                      return visible.map((item, idx) => {
+                      return measurements.map((item, idx) => {
                         const isSelected = item.annotationUID === selectedMeasurementUID;
                         const isHidden = hiddenMeasurements.has(item.annotationUID);
                         const isDeleting = deletingUIDs.has(item.annotationUID);
@@ -398,39 +389,22 @@ export default function MeasurementPanel({
                         const seriesMetadata = seriesMap[seriesUID]?.metadata;
                         const statTotalFrames = seriesMap[seriesUID]?.files.length ?? totalFrames;
 
-                        const isSRItem =
-                          Boolean(seriesMetadata && seriesMetadata.seriesModality === 'SR') ||
-                          String(item.metadata.seriesUID ?? '').startsWith('SR_');
+                        const isSRItem = Boolean(
+                          item.metadata.reportSeriesUID
+                        );
                         const isDeleteDisabled =
                           isSRItem ||
                           isDeleting ||
                           deleteCooldownActive;
 
-                        const displayIndex = isSRItem ? ++srCounter : ++nonSrCounter;
-
-                        let insertSeparator = false;
-                        if (idx > 0) {
-                          const prev = visible[idx - 1];
-                          const prevSeriesMeta = seriesMap[prev.metadata.seriesUID]?.metadata;
-                          const prevIsSR =
-                            Boolean(prevSeriesMeta && prevSeriesMeta.seriesModality === 'SR') ||
-                            String(prev.metadata.seriesUID ?? '').startsWith('SR_');
-                          if (prevIsSR !== isSRItem) insertSeparator = true;
-                        }
+                        const displayIndex = idx + 1;
 
                         return (
                           <React.Fragment key={item.annotationUID}>
-                            {insertSeparator && (
-                              <div className="flex items-center justify-center text-muted-foreground text-sm my-2">
-                                <span className="flex-1 border-t border-border mr-2"></span>
-                                — SR || Non-SR —
-                                <span className="flex-1 border-t border-border ml-2"></span>
-                              </div>
-                            )}
-
                             <div
                               role="button"
                               tabIndex={0}
+                              data-annotation-uid={item.annotationUID}
                               className={cn(
                                 'w-full cursor-pointer rounded-md overflow-hidden transition-shadow duration-150',
                                 isSelected ? 'bg-muted border-l-4 border-primary shadow-lg' : 'bg-card hover:bg-muted'
@@ -477,7 +451,12 @@ export default function MeasurementPanel({
                                   <div className="flex items-center gap-2 mt-1">
                                     <button
                                       type="button"
-                                      className={cn(isSRItem ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground')}
+                                      className={cn(
+                                        'inline-flex h-8 w-8 items-center justify-center rounded transition-colors',
+                                        isSRItem
+                                          ? 'cursor-not-allowed opacity-50'
+                                          : 'hover:bg-background hover:text-foreground'
+                                      )}
                                       aria-label={
                                         isSRItem
                                           ? 'SR measurement — visibility locked'
@@ -485,7 +464,14 @@ export default function MeasurementPanel({
                                           ? 'Show measurement'
                                           : 'Hide measurement'
                                       }
-                                      title={isSRItem ? 'SR measurement — visibility locked' : undefined}
+                                      title={
+                                        isSRItem
+                                          ? 'SR measurement — visibility locked'
+                                          : isHidden
+                                          ? 'Show measurement'
+                                          : 'Hide measurement'
+                                      }
+                                      onPointerDown={(e) => e.stopPropagation()}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (isSRItem) return;
@@ -495,7 +481,10 @@ export default function MeasurementPanel({
                                       disabled={isSRItem}
                                       aria-disabled={isSRItem}
                                     >
-                                      <i className={`fas fa-eye${isHidden ? '-slash' : ''}`} />
+                                      <i
+                                        aria-hidden="true"
+                                        className={`fas fa-eye${isHidden ? '-slash' : ''}`}
+                                      />
                                     </button>
 
                                     <button
