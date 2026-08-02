@@ -1,16 +1,16 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
-
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { ToolID } from '@/hooks/useToolManager';
+import { cn } from '@/lib/utils';
 
 import ToolbarTooltip from './ToolbarTooltip';
 import {
@@ -37,28 +37,28 @@ export default function MeasurementToolsControl({
 
   return (
     <div
-      className="flex h-10 items-center"
+      className={cn(
+        'flex h-8 w-12 items-center overflow-hidden rounded-md border border-border sm:h-9 sm:w-14',
+        activeDefinition
+          ? 'bg-primary text-primary-foreground shadow-xs'
+          : 'bg-transparent text-foreground'
+      )}
       data-active={Boolean(activeDefinition)}
       data-testid="measurement-tools-control"
     >
       <ToolbarTooltip label={tooltip.label} detail={tooltip.detail}>
         <Button
           type="button"
-          variant={activeDefinition ? 'default' : 'ghost'}
+          variant="ghost"
           disabled={readOnly}
           onClick={() => onSelectTool(primaryDefinition.id)}
-          className="h-10 w-10 rounded-lg rounded-r-none border border-r-0 border-border p-0"
+          className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent p-0 has-[>svg]:px-0 hover:bg-muted hover:text-foreground"
           aria-label={`${tooltip.label} — ${tooltip.detail}`}
           data-tool-id={primaryDefinition.id}
         >
-          <Icon className="size-7" />
+          <Icon className="size-4" />
         </Button>
       </ToolbarTooltip>
-
-      <span
-        aria-hidden="true"
-        className="h-5 w-px shrink-0 bg-primary"
-      />
 
       <DropdownMenu>
         <ToolbarTooltip
@@ -69,35 +69,36 @@ export default function MeasurementToolsControl({
             <Button
               type="button"
               variant="ghost"
-              className="h-10 w-5 min-w-5 max-w-5 rounded-lg rounded-l-none border border-l-0 border-border p-0 has-[>svg]:px-0 text-foreground hover:text-primary"
+              className="h-full w-5 min-w-5 max-w-5 rounded-none border-0 bg-transparent p-0 text-current has-[>svg]:px-0 hover:bg-muted hover:text-foreground"
               aria-label="Mở danh sách công cụ đo lường"
               data-testid="measurement-tools-menu-trigger"
             >
-              <ChevronDown className="size-5 text-primary" />
+              <i
+                aria-hidden="true"
+                className="fas fa-ellipsis-h text-xs"
+              />
             </Button>
           </DropdownMenuTrigger>
         </ToolbarTooltip>
 
         <DropdownMenuContent
-          side="bottom"
-          align="start"
-          alignOffset={-40}
-          className="min-w-32 rounded border-[hsla(236,52%,30%,0.5)] bg-[hsl(219,90%,15%)] p-1 text-[hsl(0,0%,98%)] shadow-md"
+          className="w-56 border border-border bg-card text-foreground"
           data-testid="measurement-tools-menu"
         >
+          <DropdownMenuLabel>Measurement</DropdownMenuLabel>
           <DropdownMenuGroup>
             {MEASUREMENT_MENU_TOOLS.map(({ id, label, detail, Icon: ItemIcon }) => (
               <DropdownMenuItem
                 key={id}
                 disabled={readOnly}
                 onSelect={() => onSelectTool(id)}
-                className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-base font-normal text-[hsl(0,0%,98%)] focus:bg-[hsl(217,79%,24%)] focus:text-[hsl(0,0%,98%)] data-[disabled]:cursor-not-allowed"
+                className="flex w-full items-center px-2 py-2 text-left"
                 aria-label={`${label} — ${detail}`}
                 data-tool-id={id}
                 data-active={activeTool === id}
               >
-                <ItemIcon className="size-6 shrink-0 text-white" />
-                <span className="pl-1 leading-6">{label}</span>
+                <ItemIcon className="mr-2 size-4 shrink-0 text-foreground" />
+                <span>{label}</span>
               </DropdownMenuItem>
             ))}
           </DropdownMenuGroup>

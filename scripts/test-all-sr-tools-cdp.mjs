@@ -384,6 +384,10 @@ const measurementMenuState = await evaluate(`(() => {
   const control = document.querySelector(
     '[data-testid="measurement-tools-control"]'
   );
+  const menu = document.querySelector(
+    '[data-testid="measurement-tools-menu"]'
+  );
+  const label = menu?.querySelector('[data-slot="dropdown-menu-label"]');
   const primary = control?.querySelector('button[data-tool-id]');
   const trigger = control?.querySelector(
     '[data-testid="measurement-tools-menu-trigger"]'
@@ -391,23 +395,45 @@ const measurementMenuState = await evaluate(`(() => {
   const items = [...document.querySelectorAll(
     '[data-testid="measurement-tools-menu"] [role="menuitem"]'
   )];
+  const visualStyle = (element) => {
+    if (!element) return null;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      backgroundColor: style.backgroundColor,
+      color: style.color,
+      borderColor: style.borderColor,
+      borderRadius: style.borderRadius,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      lineHeight: style.lineHeight,
+      paddingTop: style.paddingTop,
+      paddingRight: style.paddingRight,
+      paddingBottom: style.paddingBottom,
+      paddingLeft: style.paddingLeft,
+    };
+  };
   return {
     ids: items.map((item) => item.getAttribute('data-tool-id')),
     labels: items.map((item) => item.textContent?.trim()),
+    header: label?.textContent?.trim() ?? null,
     fontSizes: items.map((item) => getComputedStyle(item).fontSize),
     iconSizes: items.map((item) => {
       const rect = item.querySelector('svg')?.getBoundingClientRect();
       return rect ? [Math.round(rect.width), Math.round(rect.height)] : null;
     }),
-    primarySize: primary
-      ? [primary.getBoundingClientRect().width, primary.getBoundingClientRect().height]
-      : null,
+    controlVisual: visualStyle(control),
+    menuVisual: visualStyle(menu),
+    labelVisual: visualStyle(label),
+    itemVisual: visualStyle(items[0]),
     primaryIconSize: (() => {
       const rect = primary?.querySelector('svg')?.getBoundingClientRect();
-      return rect ? [rect.width, rect.height] : null;
+      return rect ? [Math.round(rect.width), Math.round(rect.height)] : null;
     })(),
     triggerSize: trigger
-      ? [trigger.getBoundingClientRect().width, trigger.getBoundingClientRect().height]
+      ? [Math.round(trigger.getBoundingClientRect().width), Math.round(trigger.getBoundingClientRect().height)]
       : null,
   };
 })()`);
@@ -438,17 +464,17 @@ if (
     JSON.stringify(expectedMeasurementMenuIds) ||
   JSON.stringify(measurementMenuState.labels) !==
     JSON.stringify(expectedMeasurementMenuLabels) ||
-  measurementMenuState.fontSizes.some((size) => size !== '16px') ||
+  measurementMenuState.header !== 'Measurement' ||
   measurementMenuState.iconSizes.some(
-    (size) => !size || size[0] !== 24 || size[1] !== 24
+    (size) => !size || size[0] !== 16 || size[1] !== 16
   ) ||
-  measurementMenuState.primarySize?.some((size) => size !== 40) ||
-  measurementMenuState.primaryIconSize?.some((size) => size !== 28) ||
+  measurementMenuState.primaryIconSize?.some((size) => size !== 16) ||
   measurementMenuState.triggerSize?.[0] !== 20 ||
-  measurementMenuState.triggerSize?.[1] !== 40
+  measurementMenuState.controlVisual?.width !== 56 ||
+  measurementMenuState.controlVisual?.height !== 36
 ) {
   throw new Error(
-    `Measurement menu does not match OHIF: ${JSON.stringify(
+    `Measurement menu content changed unexpectedly: ${JSON.stringify(
       measurementMenuState
     )}`
   );
@@ -460,7 +486,7 @@ const menuScreenshot = await send(
 );
 const menuScreenshotPath = path.join(
   downloadPath,
-  'measurement-menu-ohif.png'
+  'measurement-menu-other-style.png'
 );
 fs.writeFileSync(
   menuScreenshotPath,
@@ -471,6 +497,107 @@ await clickElement(
 );
 await waitFor(
   `!document.querySelector('[data-testid="measurement-tools-menu"]')`
+);
+
+await clickElement(
+  `[...document.querySelectorAll('button')].find(
+    (button) => button.getAttribute('aria-label')?.startsWith('Công cụ khác —')
+  )`
+);
+await waitFor(
+  `[...document.querySelectorAll('[data-slot="dropdown-menu-label"]')].some(
+    (label) => label.textContent?.trim() === 'Other'
+  )`
+);
+await new Promise((resolve) => setTimeout(resolve, 250));
+const otherMenuStyle = await evaluate(`(() => {
+  const label = [...document.querySelectorAll(
+    '[data-slot="dropdown-menu-label"]'
+  )].find((candidate) => candidate.textContent?.trim() === 'Other');
+  const menu = label?.closest('[data-slot="dropdown-menu-content"]');
+  const item = menu?.querySelector('[role="menuitem"]');
+  const trigger = [...document.querySelectorAll('button')].find(
+    (button) => button.getAttribute('aria-label')?.startsWith('Công cụ khác —')
+  );
+  const visualStyle = (element) => {
+    if (!element) return null;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      backgroundColor: style.backgroundColor,
+      color: style.color,
+      borderColor: style.borderColor,
+      borderRadius: style.borderRadius,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      lineHeight: style.lineHeight,
+      paddingTop: style.paddingTop,
+      paddingRight: style.paddingRight,
+      paddingBottom: style.paddingBottom,
+      paddingLeft: style.paddingLeft,
+    };
+  };
+  return {
+    controlVisual: visualStyle(trigger),
+    menuVisual: visualStyle(menu),
+    labelVisual: visualStyle(label),
+    itemVisual: visualStyle(item),
+  };
+})()`);
+const comparableControlStyle = (style) => ({
+  width: style?.width,
+  height: style?.height,
+  backgroundColor: style?.backgroundColor,
+  color: style?.color,
+  borderColor: style?.borderColor,
+  borderRadius: style?.borderRadius,
+});
+const comparableMenuStyle = (style) => ({
+  width: style?.width,
+  backgroundColor: style?.backgroundColor,
+  color: style?.color,
+  borderColor: style?.borderColor,
+  borderRadius: style?.borderRadius,
+  fontSize: style?.fontSize,
+  fontWeight: style?.fontWeight,
+  lineHeight: style?.lineHeight,
+  paddingTop: style?.paddingTop,
+  paddingRight: style?.paddingRight,
+  paddingBottom: style?.paddingBottom,
+  paddingLeft: style?.paddingLeft,
+});
+if (
+  JSON.stringify(comparableMenuStyle(measurementMenuState.menuVisual)) !==
+    JSON.stringify(comparableMenuStyle(otherMenuStyle.menuVisual)) ||
+  JSON.stringify(measurementMenuState.labelVisual) !==
+    JSON.stringify(otherMenuStyle.labelVisual) ||
+  JSON.stringify(measurementMenuState.itemVisual) !==
+    JSON.stringify(otherMenuStyle.itemVisual) ||
+  JSON.stringify(
+    comparableControlStyle(measurementMenuState.controlVisual)
+  ) !== JSON.stringify(comparableControlStyle(otherMenuStyle.controlVisual)) ||
+  measurementMenuState.fontSizes.some(
+    (size) => size !== otherMenuStyle.itemVisual?.fontSize
+  )
+) {
+  throw new Error(
+    `Measurement menu does not match Other menu styling: ${JSON.stringify({
+      measurementMenuState,
+      otherMenuStyle,
+    })}`
+  );
+}
+await clickElement(
+  `[...document.querySelectorAll('button')].find(
+    (button) => button.getAttribute('aria-label')?.startsWith('Công cụ khác —')
+  )`
+);
+await waitFor(
+  `![...document.querySelectorAll('[data-slot="dropdown-menu-label"]')].some(
+    (label) => label.textContent?.trim() === 'Other'
+  )`
 );
 
 if (testGhostCancellation) {
