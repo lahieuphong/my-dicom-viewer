@@ -247,28 +247,69 @@ async function pointerDrag(start, end) {
   );
 }
 
-async function selectMeasurementTool(toolName) {
+async function pointerPath(points) {
+  if (points.length < 2) {
+    throw new Error('pointerPath requires at least two points.');
+  }
+
+  await send(
+    'Input.dispatchMouseEvent',
+    { type: 'mouseMoved', ...points[0] },
+    pageSessionId
+  );
+  await send(
+    'Input.dispatchMouseEvent',
+    {
+      type: 'mousePressed',
+      ...points[0],
+      button: 'left',
+      buttons: 1,
+      clickCount: 1,
+    },
+    pageSessionId
+  );
+  for (const pathPoint of points.slice(1)) {
+    await send(
+      'Input.dispatchMouseEvent',
+      {
+        type: 'mouseMoved',
+        ...pathPoint,
+        button: 'left',
+        buttons: 1,
+      },
+      pageSessionId
+    );
+  }
+  await send(
+    'Input.dispatchMouseEvent',
+    {
+      type: 'mouseReleased',
+      ...points.at(-1),
+      button: 'left',
+      buttons: 0,
+      clickCount: 1,
+    },
+    pageSessionId
+  );
+}
+
+async function selectMeasurementTool(toolId) {
   await clickElement(
-    `[...document.querySelectorAll(
-      '[role="toolbar"] button[aria-haspopup="menu"]'
-    )][0]`
+    `document.querySelector('[data-testid="measurement-tools-menu-trigger"]')`
   );
   await waitFor(
-    `[...document.querySelectorAll('[role="menuitem"]')].some(
-      (item) => item.textContent?.trim().toLowerCase() === '${toolName.toLowerCase()}'
+    `!!document.querySelector(
+      '[role="menuitem"][data-tool-id="${toolId}"]'
     )`
   );
   await clickElement(
-    `[...document.querySelectorAll('[role="menuitem"]')].find(
-      (candidate) =>
-        candidate.textContent?.trim().toLowerCase() ===
-        '${toolName.toLowerCase()}'
+    `document.querySelector(
+      '[role="menuitem"][data-tool-id="${toolId}"]'
     )`
   );
   await waitFor(
-    `![...document.querySelectorAll('[role="menuitem"]')].some(
-      (item) => item.textContent?.trim().toLowerCase() ===
-        '${toolName.toLowerCase()}'
+    `!document.querySelector(
+      '[role="menuitem"][data-tool-id="${toolId}"]'
     )`
   );
 }
@@ -300,13 +341,22 @@ async function waitForMeasurementCount(count) {
   await waitFor(`document.body.innerText.includes('Measurement (${count})')`);
 }
 
+function annotationRenderedExpression(annotationUID) {
+  return `(() =>
+    [...document.querySelectorAll(
+      '#svg-layer-WORKSTATION_VIEWPORT [data-annotation-uid]'
+    )].some(
+      (node) => node.getAttribute('data-annotation-uid') ===
+        ${JSON.stringify(annotationUID)}
+    )
+  )()`;
+}
+
 await waitFor(
   `document.readyState === 'complete' &&
     !!document.querySelector('[data-viewport-uid="WORKSTATION_VIEWPORT"]') &&
     !!document.querySelector('canvas') &&
-    !!document.querySelector(
-      'button[aria-label="Công cụ đo lường — Measurement Tools"]'
-    )`,
+    !!document.querySelector('[data-testid="measurement-tools-control"]')`,
   45000
 );
 await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -320,6 +370,108 @@ const point = (x, y) => ({
   x: viewport.x + viewport.width * x,
   y: viewport.y + viewport.height * y,
 });
+
+await clickElement(
+  `document.querySelector('[data-testid="measurement-tools-menu-trigger"]')`
+);
+await waitFor(
+  `!!document.querySelector('[data-testid="measurement-tools-menu"]')`
+);
+// Radix applies a short zoom-in animation to the menu. Measure the final
+// rendered geometry instead of the transient 95% animation frame.
+await new Promise((resolve) => setTimeout(resolve, 250));
+const measurementMenuState = await evaluate(`(() => {
+  const control = document.querySelector(
+    '[data-testid="measurement-tools-control"]'
+  );
+  const primary = control?.querySelector('button[data-tool-id]');
+  const trigger = control?.querySelector(
+    '[data-testid="measurement-tools-menu-trigger"]'
+  );
+  const items = [...document.querySelectorAll(
+    '[data-testid="measurement-tools-menu"] [role="menuitem"]'
+  )];
+  return {
+    ids: items.map((item) => item.getAttribute('data-tool-id')),
+    labels: items.map((item) => item.textContent?.trim()),
+    fontSizes: items.map((item) => getComputedStyle(item).fontSize),
+    iconSizes: items.map((item) => {
+      const rect = item.querySelector('svg')?.getBoundingClientRect();
+      return rect ? [Math.round(rect.width), Math.round(rect.height)] : null;
+    }),
+    primarySize: primary
+      ? [primary.getBoundingClientRect().width, primary.getBoundingClientRect().height]
+      : null,
+    primaryIconSize: (() => {
+      const rect = primary?.querySelector('svg')?.getBoundingClientRect();
+      return rect ? [rect.width, rect.height] : null;
+    })(),
+    triggerSize: trigger
+      ? [trigger.getBoundingClientRect().width, trigger.getBoundingClientRect().height]
+      : null,
+  };
+})()`);
+const expectedMeasurementMenuIds = [
+  'length',
+  'bidirectional',
+  'arrowAnnotate',
+  'ellipticalROI',
+  'rectangleROI',
+  'circleROI',
+  'planarFreehandROI',
+  'splineROI',
+  'livewireContour',
+];
+const expectedMeasurementMenuLabels = [
+  'Thước đo chiều dài',
+  'Hai hướng',
+  'Annotation',
+  'Đo Elip',
+  'Đo chữ nhật',
+  'Vòng tròn',
+  'Freehand ROI',
+  'Spline ROI',
+  'Livewire tool',
+];
+if (
+  JSON.stringify(measurementMenuState.ids) !==
+    JSON.stringify(expectedMeasurementMenuIds) ||
+  JSON.stringify(measurementMenuState.labels) !==
+    JSON.stringify(expectedMeasurementMenuLabels) ||
+  measurementMenuState.fontSizes.some((size) => size !== '16px') ||
+  measurementMenuState.iconSizes.some(
+    (size) => !size || size[0] !== 24 || size[1] !== 24
+  ) ||
+  measurementMenuState.primarySize?.some((size) => size !== 40) ||
+  measurementMenuState.primaryIconSize?.some((size) => size !== 28) ||
+  measurementMenuState.triggerSize?.[0] !== 20 ||
+  measurementMenuState.triggerSize?.[1] !== 40
+) {
+  throw new Error(
+    `Measurement menu does not match OHIF: ${JSON.stringify(
+      measurementMenuState
+    )}`
+  );
+}
+const menuScreenshot = await send(
+  'Page.captureScreenshot',
+  { format: 'png', fromSurface: true },
+  pageSessionId
+);
+const menuScreenshotPath = path.join(
+  downloadPath,
+  'measurement-menu-ohif.png'
+);
+fs.writeFileSync(
+  menuScreenshotPath,
+  Buffer.from(menuScreenshot.data, 'base64')
+);
+await clickElement(
+  `document.querySelector('[data-testid="measurement-tools-menu-trigger"]')`
+);
+await waitFor(
+  `!document.querySelector('[data-testid="measurement-tools-menu"]')`
+);
 
 if (testGhostCancellation) {
   await selectMeasurementTool('splineROI');
@@ -422,10 +574,31 @@ const dragTools = [
 ];
 
 let measurementCount = 0;
+let singleContourAnnotationUID = null;
+let contourInteractionState = null;
+let srHydrationState = null;
+let afterDeleteState = null;
 for (const [toolName, start, end] of dragTools) {
   if (singleToolName && singleToolName !== toolName) continue;
   await selectMeasurementTool(toolName);
   await pointerDrag(start, end);
+  measurementCount += 1;
+  await waitForMeasurementCount(measurementCount);
+}
+
+if (!singleToolName || singleToolName === 'planarFreehandROI') {
+  await selectMeasurementTool('planarFreehandROI');
+  await pointerPath([
+    point(0.42, 0.65),
+    point(0.45, 0.61),
+    point(0.50, 0.60),
+    point(0.54, 0.63),
+    point(0.55, 0.68),
+    point(0.52, 0.72),
+    point(0.47, 0.73),
+    point(0.43, 0.70),
+    point(0.42, 0.65),
+  ]);
   measurementCount += 1;
   await waitForMeasurementCount(measurementCount);
 }
@@ -441,6 +614,17 @@ if (!singleToolName || singleToolName === 'splineROI') {
   await waitForMeasurementCount(measurementCount);
 }
 
+if (!singleToolName || singleToolName === 'livewireContour') {
+  await selectMeasurementTool('livewireContour');
+  await pointerClick(point(0.58, 0.46));
+  await pointerClick(point(0.66, 0.47));
+  await pointerClick(point(0.68, 0.56));
+  await pointerClick(point(0.61, 0.59));
+  await pointerClick(point(0.58, 0.46), 2);
+  measurementCount += 1;
+  await waitForMeasurementCount(measurementCount);
+}
+
 if (!singleToolName || singleToolName === 'angle') {
   await selectAngleTool();
   await pointerDrag(point(0.67, 0.38), point(0.72, 0.48));
@@ -451,6 +635,70 @@ if (!singleToolName || singleToolName === 'angle') {
 
 if (!measurementCount) {
   throw new Error(`Unsupported SR_SINGLE_TOOL value: ${singleToolName}`);
+}
+
+if (
+  singleToolName === 'planarFreehandROI' ||
+  singleToolName === 'livewireContour'
+) {
+  singleContourAnnotationUID = await evaluate(`(() => {
+    const cards = [...document.querySelectorAll(
+      '[role="button"][data-annotation-uid]'
+    )];
+    return cards.length === 1
+      ? cards[0].getAttribute('data-annotation-uid')
+      : null;
+  })()`);
+  if (!singleContourAnnotationUID) {
+    throw new Error('Could not resolve the contour measurement card.');
+  }
+
+  const isContourRendered = annotationRenderedExpression(
+    singleContourAnnotationUID
+  );
+  await waitFor(isContourRendered);
+  await clickElement(
+    `document.querySelector(
+      '[data-annotation-uid=${JSON.stringify(
+        singleContourAnnotationUID
+      )}] button[aria-label="Hide measurement"]'
+    )`
+  );
+  await waitFor(
+    `!!document.querySelector(
+      '[data-annotation-uid=${JSON.stringify(
+        singleContourAnnotationUID
+      )}] button[aria-label="Show measurement"]'
+    )`
+  );
+  await waitFor(`!(${isContourRendered})`);
+  await clickElement(
+    `document.querySelector(
+      '[data-annotation-uid=${JSON.stringify(
+        singleContourAnnotationUID
+      )}] button[aria-label="Show measurement"]'
+    )`
+  );
+  await waitFor(isContourRendered);
+  contourInteractionState = await evaluate(`({
+    annotationUID: ${JSON.stringify(singleContourAnnotationUID)},
+    renderedAfterShow: ${isContourRendered},
+    hideButtonVisible: !!document.querySelector(
+      '[data-annotation-uid=${JSON.stringify(
+        singleContourAnnotationUID
+      )}] button[aria-label="Hide measurement"]'
+    ),
+  })`);
+  if (
+    !contourInteractionState.renderedAfterShow ||
+    !contourInteractionState.hideButtonVisible
+  ) {
+    throw new Error(
+      `Invalid contour hide/show state: ${JSON.stringify(
+        contourInteractionState
+      )}`
+    );
+  }
 }
 
 await clickElement(
@@ -584,16 +832,184 @@ if (!singleToolName || singleToolName === 'arrowAnnotate') {
     );
   }
 }
+for (const contourToolName of [
+  'PlanarFreehandROI',
+  'LivewireContour',
+]) {
+  const toolId =
+    contourToolName === 'PlanarFreehandROI'
+      ? 'planarFreehandROI'
+      : 'livewireContour';
+  if (singleToolName && singleToolName !== toolId) continue;
+
+  const contourGroup = groupSummaries.find((group) =>
+    String(group.tracking).endsWith(`:${contourToolName}`)
+  );
+  if (!contourGroup) {
+    throw new Error(`Missing ${contourToolName} DICOM SR group.`);
+  }
+  if (
+    !contourGroup.nums.some(
+      (numeric) =>
+        numeric.concept === 'Area' && Number(numeric.value) > 0
+    )
+  ) {
+    throw new Error(
+      `Invalid ${contourToolName} area: ${JSON.stringify(contourGroup)}`
+    );
+  }
+}
 if (groups.length !== measurementCount) {
   throw new Error(
     `All-tools report contains ${groups.length}/${measurementCount} groups.`
   );
 }
 
+if (singleContourAnnotationUID) {
+  await waitFor(
+    `!!document.querySelector(
+      'button[aria-label=${JSON.stringify(`View SR ${reportName}`)}]'
+    )`,
+    60000
+  );
+  await clickElement(
+    `document.querySelector(
+      'button[aria-label=${JSON.stringify(`View SR ${reportName}`)}]'
+    )`
+  );
+  await waitFor(
+    `!![...document.querySelectorAll('button')].find(
+      (button) => button.title === 'Close SR'
+    )`,
+    60000
+  );
+  await waitFor(
+    `document.querySelectorAll(
+      'button[aria-label="SR measurement — visibility locked"]:disabled'
+    ).length === 1`
+  );
+  await waitFor(`(() => {
+    const reportUIDs = new Set(
+      [...document.querySelectorAll(
+        '[role="button"][data-annotation-uid]'
+      )]
+        .map((card) => card.getAttribute('data-annotation-uid'))
+        .filter(Boolean)
+    );
+    return [...document.querySelectorAll(
+      '#svg-layer-WORKSTATION_VIEWPORT [data-annotation-uid]'
+    )].some((node) => reportUIDs.has(
+      node.getAttribute('data-annotation-uid')
+    ));
+  })()`, 60000);
+  srHydrationState = await evaluate(`(() => {
+    const reportUIDs = new Set(
+      [...document.querySelectorAll(
+        '[role="button"][data-annotation-uid]'
+      )]
+        .map((card) => card.getAttribute('data-annotation-uid'))
+        .filter(Boolean)
+    );
+    const renderedUIDs = new Set(
+      [...document.querySelectorAll(
+        '#svg-layer-WORKSTATION_VIEWPORT [data-annotation-uid]'
+      )]
+        .map((node) => node.getAttribute('data-annotation-uid'))
+        .filter((uid) => reportUIDs.has(uid))
+    );
+    const createButton = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Create SR'
+    );
+    return {
+      measurementCount:
+        document.body.innerText.match(/Measurement \\(\\d+\\)/)?.[0],
+      reportMeasurementCount: reportUIDs.size,
+      renderedReportMeasurementCount: renderedUIDs.size,
+      lockedVisibilityButtonCount: document.querySelectorAll(
+        'button[aria-label="SR measurement — visibility locked"]:disabled'
+      ).length,
+      deleteButtonCount: document.querySelectorAll(
+        'button[title="Delete measurement"]'
+      ).length,
+      activeReportPressed: Boolean(document.querySelector(
+        'button[aria-label=${JSON.stringify(`View SR ${reportName}`)}][aria-pressed="true"]'
+      )),
+      createSrDisabled: createButton?.disabled,
+    };
+  })()`);
+  if (
+    srHydrationState.measurementCount !== 'Measurement (1)' ||
+    srHydrationState.reportMeasurementCount !== 1 ||
+    srHydrationState.renderedReportMeasurementCount !== 1 ||
+    srHydrationState.lockedVisibilityButtonCount !== 1 ||
+    srHydrationState.deleteButtonCount !== 0 ||
+    !srHydrationState.activeReportPressed ||
+    !srHydrationState.createSrDisabled
+  ) {
+    throw new Error(
+      `Invalid contour SR hydration state: ${JSON.stringify(
+        srHydrationState
+      )}`
+    );
+  }
+
+  await clickElement(
+    `[...document.querySelectorAll('button')].find(
+      (button) => button.title === 'Close SR'
+    )`
+  );
+  await waitFor(
+    `![...document.querySelectorAll('button')].some(
+      (button) => button.title === 'Close SR'
+    )`
+  );
+  await waitForMeasurementCount(1);
+  await waitFor(annotationRenderedExpression(singleContourAnnotationUID));
+  await clickElement(
+    `document.querySelector(
+      '[data-annotation-uid=${JSON.stringify(
+        singleContourAnnotationUID
+      )}] button[title="Delete measurement"]'
+    )`
+  );
+  await waitForMeasurementCount(0);
+  afterDeleteState = await evaluate(`(() => {
+    const createButton = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Create SR'
+    );
+    return {
+      measurementCount:
+        document.body.innerText.match(/Measurement \\(\\d+\\)/)?.[0],
+      createSrDisabled: createButton?.disabled,
+      deleteButtonCount: document.querySelectorAll(
+        'button[title="Delete measurement"]'
+      ).length,
+      sourceRendered: ${annotationRenderedExpression(
+        singleContourAnnotationUID
+      )},
+    };
+  })()`);
+  if (
+    afterDeleteState.measurementCount !== 'Measurement (0)' ||
+    !afterDeleteState.createSrDisabled ||
+    afterDeleteState.deleteButtonCount !== 0 ||
+    afterDeleteState.sourceRendered
+  ) {
+    throw new Error(
+      `Invalid contour delete state: ${JSON.stringify(afterDeleteState)}`
+    );
+  }
+}
+
 console.log(
   JSON.stringify(
     {
       uiState,
+      measurementMenuState,
+      contourInteractionState,
+      srHydrationState,
+      afterDeleteState,
+      menuScreenshot: menuScreenshotPath,
       download: path.join(downloadPath, downloadedFile),
       size: fileBuffer.byteLength,
       dicmPrefix: fileBuffer.subarray(128, 132).toString('ascii'),

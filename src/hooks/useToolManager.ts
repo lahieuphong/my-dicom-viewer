@@ -12,7 +12,9 @@ import {
   EllipticalROITool,
   RectangleROITool,
   CircleROITool,
+  PlanarFreehandROITool,
   SplineROITool,
+  LivewireContourTool,
   StackScrollTool,
   AngleTool,
   ToolGroupManager,
@@ -36,7 +38,9 @@ export type ToolID =
   | 'ellipticalROI'
   | 'rectangleROI'
   | 'circleROI'
+  | 'planarFreehandROI'
   | 'splineROI'
+  | 'livewireContour'
   | 'angle'
   | 'cine'
   | 'rotate90'
@@ -56,7 +60,9 @@ export const toolNameMap: Record<ToolID, string> = {
   ellipticalROI: EllipticalROITool.toolName,
   rectangleROI: RectangleROITool.toolName,
   circleROI: CircleROITool.toolName,
+  planarFreehandROI: PlanarFreehandROITool.toolName,
   splineROI: SplineROITool.toolName,
+  livewireContour: LivewireContourTool.toolName,
   angle: AngleTool.toolName,
   cine: StackScrollTool.toolName,
   // UI-only actions
@@ -72,7 +78,9 @@ export const measurementToolIDs: ToolID[] = [
   'ellipticalROI',
   'rectangleROI',
   'circleROI',
+  'planarFreehandROI',
   'splineROI',
+  'livewireContour',
   'angle',
 ];
 
@@ -86,7 +94,9 @@ const CORNERSTONE_TOOL_NAMES = [
   EllipticalROITool.toolName,
   RectangleROITool.toolName,
   CircleROITool.toolName,
+  PlanarFreehandROITool.toolName,
   SplineROITool.toolName,
+  LivewireContourTool.toolName,
   AngleTool.toolName,
   StackScrollTool.toolName,
 ];
@@ -105,7 +115,9 @@ const TOOL_CLASS_MAP: Partial<Record<ToolID, any>> = {
   ellipticalROI: EllipticalROITool,
   rectangleROI: RectangleROITool,
   circleROI: CircleROITool,
+  planarFreehandROI: PlanarFreehandROITool,
   splineROI: SplineROITool,
+  livewireContour: LivewireContourTool,
   angle: AngleTool,
   cine: StackScrollTool,
 };

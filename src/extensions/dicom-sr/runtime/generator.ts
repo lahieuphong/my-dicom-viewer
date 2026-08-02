@@ -660,8 +660,15 @@ function normalizeCachedStats(
       );
       break;
     }
-    case 'SplineROI': {
+    case 'PlanarFreehandROI':
+    case 'SplineROI':
+    case 'LivewireContour': {
       const closed = annotation?.data?.contour?.closed !== false;
+      if (!closed) {
+        throw new Error(
+          `Measurement ${annotationUID} must be a closed ${toolName} contour before it can be exported to DICOM SR.`
+        );
+      }
       requireFiniteStat(
         stats,
         'perimeter',

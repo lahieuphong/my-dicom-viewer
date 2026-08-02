@@ -13,7 +13,9 @@ import {
   EllipticalROITool,
   RectangleROITool,
   CircleROITool,
+  PlanarFreehandROITool,
   SplineROITool,
+  LivewireContourTool,
   AngleTool,
   StackScrollTool,
 } from '@cornerstonejs/tools';
@@ -85,7 +87,9 @@ export function registerToolsOnce(): void {
       EllipticalROITool,
       RectangleROITool,
       CircleROITool,
+      PlanarFreehandROITool,
       SplineROITool,
+      LivewireContourTool,
       AngleTool,
       StackScrollTool,
     ];
@@ -137,6 +141,17 @@ export function registerToolsOnce(): void {
         // Keep native Cornerstone wheel navigation active independently from
         // whichever primary tool the user selects.
         ensureStackScrollWheelActive(TOOL_GROUP_ID);
+
+        // Keep Freehand ROI exportable as a true region. Cornerstone permits
+        // open freehand contours by default, while TID 1500 ROI reporting
+        // requires a closed region with a finite area.
+        try {
+          (tgLocal as any).setToolConfiguration?.(
+            PlanarFreehandROITool.toolName,
+            { allowOpenContours: false, calculateStats: true }
+          );
+        } catch {}
+
         configureMeasurementToolGroupStyles(TOOL_GROUP_ID);
       }
     } catch (e) {

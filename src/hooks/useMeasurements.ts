@@ -12,7 +12,9 @@ import {
   ArrowAnnotateTool,
   EllipticalROITool,
   CircleROITool,
+  PlanarFreehandROITool,
   SplineROITool,
+  LivewireContourTool,
   AngleTool,
   Enums as ToolEnums,
 } from '@cornerstonejs/tools';
@@ -212,6 +214,26 @@ export const useMeasurements = ({
             flat.area = stats.area;
             flat.areaUnit = stats.areaUnit;
             break;
+          case 'planarFreehandROI':
+            flat.closed = a.data?.contour?.closed !== false;
+            flat.length = stats.length;
+            flat.unit = stats.unit;
+            flat.area = stats.area;
+            flat.areaUnit = stats.areaUnit;
+            flat.perimeter = stats.perimeter;
+            flat.mean = stats.mean;
+            flat.max = stats.max;
+            flat.min = stats.min;
+            flat.stdDev = stats.stdDev;
+            flat.modalityUnit = stats.modalityUnit;
+            flat.contour = cloneMeasurementData(a.data?.contour ?? {});
+            break;
+          case 'livewireContour':
+            flat.closed = a.data?.contour?.closed !== false;
+            flat.area = stats.area;
+            flat.areaUnit = stats.areaUnit;
+            flat.contour = cloneMeasurementData(a.data?.contour ?? {});
+            break;
           case 'angle':
             flat.angle = stats.angle;
             break;
@@ -252,7 +274,16 @@ export const useMeasurements = ({
       result.push(...collect(EllipticalROITool.toolName, 'ellipticalROI'));
       result.push(...collect(RectangleROITool.toolName, 'rectangleROI'));
       result.push(...collect(CircleROITool.toolName, 'circleROI'));
+      result.push(
+        ...collect(
+          PlanarFreehandROITool.toolName,
+          'planarFreehandROI'
+        )
+      );
       result.push(...collect(SplineROITool.toolName, 'splineROI'));
+      result.push(
+        ...collect(LivewireContourTool.toolName, 'livewireContour')
+      );
       result.push(...collect(AngleTool.toolName, 'angle'));
     } catch (err) {
     }

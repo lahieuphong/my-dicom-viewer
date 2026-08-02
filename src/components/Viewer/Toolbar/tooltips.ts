@@ -42,9 +42,17 @@ const TOOL_TOOLTIP_COPY: Partial<Record<ToolID, ToolbarTooltipCopy>> = {
     label: 'Vùng quan tâm hình tròn',
     detail: 'Circle ROI Tool',
   },
+  planarFreehandROI: {
+    label: 'Freehand ROI',
+    detail: 'Planar Freehand ROI Tool',
+  },
   splineROI: {
     label: 'Vùng quan tâm đường cong',
     detail: 'Spline ROI Tool',
+  },
+  livewireContour: {
+    label: 'Livewire tool',
+    detail: 'Livewire Contour Tool',
   },
   angle: {
     label: 'Thước đo góc',
@@ -105,4 +113,3 @@ export function getFpsTooltip(fps: number): ToolbarTooltipCopy {
     detail: `${fps} FPS`,
   };
 }
-

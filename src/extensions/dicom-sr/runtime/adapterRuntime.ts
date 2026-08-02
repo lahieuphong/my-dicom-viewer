@@ -19,34 +19,46 @@ export const SUPPORTED_SR_TOOL_NAMES = new Set([
   'EllipticalROI',
   'RectangleROI',
   'CircleROI',
+  'PlanarFreehandROI',
   'SplineROI',
+  'LivewireContour',
   'Angle',
 ]);
 
-function registerSplineRoiAdapter(cornerstone3D: any): void {
+function registerPlanarContourSubtype(
+  cornerstone3D: any,
+  toolName: 'SplineROI' | 'LivewireContour'
+): void {
   const { MeasurementReport, PlanarFreehandROI } = cornerstone3D;
   const adapters = MeasurementReport?.measurementAdapterByToolType;
 
-  if (!adapters || adapters.has('SplineROI') || !PlanarFreehandROI) {
+  if (!adapters || adapters.has(toolName) || !PlanarFreehandROI) {
     return;
   }
 
   /**
-   * Cornerstone 3.33 does not ship a named SplineROI SR adapter.  A closed
-   * SplineROI has the same TID300 polyline representation as
-   * PlanarFreehandROI, so register it as a subtype instead of rewriting its
-   * world coordinates.
+   * Cornerstone 3.33 does not ship named SplineROI/LivewireContour SR
+   * adapters. Both annotations use the same closed contour polyline shape as
+   * PlanarFreehandROI, so keep their own tracking identifiers while reusing
+   * the official TID300 polyline geometry implementation.
    */
   const registerSubType = (PlanarFreehandROI as any).registerSubType;
   if (typeof registerSubType !== 'function') {
-    throw new Error('Cornerstone SR adapter does not support SplineROI.');
+    throw new Error(
+      `Cornerstone SR adapter does not support ${toolName}.`
+    );
   }
 
   registerSubType.call(
     PlanarFreehandROI,
     PlanarFreehandROI,
-    'SplineROI'
+    toolName
   );
+}
+
+function registerContourAdapters(cornerstone3D: any): void {
+  registerPlanarContourSubtype(cornerstone3D, 'SplineROI');
+  registerPlanarContourSubtype(cornerstone3D, 'LivewireContour');
 }
 
 function getReferencedStats(tool: any): Record<string, any> {
@@ -111,7 +123,9 @@ function patchMeasurementUnits(cornerstone3D: any): void {
         toolName === 'Bidirectional' ||
         toolName === 'CircleROI' ||
         toolName === 'RectangleROI' ||
-        toolName === 'SplineROI'
+        toolName === 'PlanarFreehandROI' ||
+        toolName === 'SplineROI' ||
+        toolName === 'LivewireContour'
       ) {
         args.unit = lengthUnit;
       }
@@ -119,7 +133,9 @@ function patchMeasurementUnits(cornerstone3D: any): void {
         toolName === 'EllipticalROI' ||
         toolName === 'CircleROI' ||
         toolName === 'RectangleROI' ||
-        toolName === 'SplineROI'
+        toolName === 'PlanarFreehandROI' ||
+        toolName === 'SplineROI' ||
+        toolName === 'LivewireContour'
       ) {
         args.areaUnit = areaUnit;
       }
@@ -230,7 +246,7 @@ export async function getCornerstoneSrRuntime(): Promise<{
           throw new Error('Cornerstone DICOM SR adapter is unavailable.');
         }
 
-        registerSplineRoiAdapter(cornerstone3D);
+        registerContourAdapters(cornerstone3D);
         patchMeasurementUnits(cornerstone3D);
         patchRectangleHydration(cornerstone3D);
         return {

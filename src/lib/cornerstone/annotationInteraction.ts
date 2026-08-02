@@ -5,16 +5,45 @@ import {
   ToolGroupManager,
 } from '@cornerstonejs/tools';
 
-function getActiveAnnotationEditData(): any[] {
+type ActiveAnnotationInteraction = {
+  annotation: any;
+  isNewAnnotation: boolean;
+  isDrawing: boolean;
+};
+
+function getActiveAnnotationInteractions(): ActiveAnnotationInteraction[] {
   try {
     const groups = ToolGroupManager.getAllToolGroups?.() ?? [];
     return groups.flatMap((group: any) =>
       Object.values(group?.getToolInstances?.() ?? {})
-        .map((instance: any) => ({
-          editData: instance?.editData,
-          isDrawing: Boolean(instance?.isDrawing),
-        }))
-        .filter(({ editData }) => editData?.annotation?.annotationUID)
+        .flatMap((instance: any) => {
+          const interactions: ActiveAnnotationInteraction[] = [];
+          const editAnnotation = instance?.editData?.annotation;
+          const freehandAnnotation = instance?.commonData?.annotation;
+
+          if (editAnnotation?.annotationUID) {
+            interactions.push({
+              annotation: editAnnotation,
+              isNewAnnotation: Boolean(instance.editData?.newAnnotation),
+              isDrawing: Boolean(instance?.isDrawing),
+            });
+          }
+
+          // PlanarFreehandROITool keeps its active annotation in commonData
+          // and the creation flag in drawData instead of editData.
+          if (
+            freehandAnnotation?.annotationUID &&
+            freehandAnnotation !== editAnnotation
+          ) {
+            interactions.push({
+              annotation: freehandAnnotation,
+              isNewAnnotation: Boolean(instance.drawData?.newAnnotation),
+              isDrawing: Boolean(instance?.isDrawing),
+            });
+          }
+
+          return interactions;
+        })
     );
   } catch {
     return [];
@@ -31,10 +60,10 @@ export function isAnnotationCreationInProgress(
 ): boolean {
   if (!annotationUID) return false;
 
-  return getActiveAnnotationEditData().some(
-    ({ editData, isDrawing }) =>
-      String(editData.annotation.annotationUID) === annotationUID &&
-      Boolean(editData.newAnnotation) &&
+  return getActiveAnnotationInteractions().some(
+    ({ annotation, isNewAnnotation, isDrawing }) =>
+      String(annotation.annotationUID) === annotationUID &&
+      isNewAnnotation &&
       (isDrawing ||
         cornerstoneToolsState.isInteractingWithTool ||
         cornerstoneToolsState.isMultiPartToolActive)
@@ -53,5 +82,5 @@ export function hasActiveAnnotationInteraction(): boolean {
     return false;
   }
 
-  return getActiveAnnotationEditData().length > 0;
+  return getActiveAnnotationInteractions().length > 0;
 }

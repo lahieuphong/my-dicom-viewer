@@ -2,6 +2,7 @@
 
 import { metaData } from '@cornerstonejs/core';
 import {
+  LivewireContourTool,
   SplineROITool,
   ToolGroupManager,
 } from '@cornerstonejs/tools';
@@ -22,7 +23,9 @@ const DOMAIN_TYPE_BY_TOOL_NAME: Record<
   EllipticalROI: 'ellipticalROI',
   RectangleROI: 'rectangleROI',
   CircleROI: 'circleROI',
+  PlanarFreehandROI: 'planarFreehandROI',
   SplineROI: 'splineROI',
+  LivewireContour: 'livewireContour',
   Angle: 'angle',
 };
 
@@ -214,9 +217,15 @@ function createFlatStats(
     case 'EllipticalROI':
     case 'RectangleROI':
     case 'CircleROI':
+    case 'PlanarFreehandROI':
     case 'SplineROI':
+    case 'LivewireContour':
       result.area = stats.area;
       result.areaUnit = stats.areaUnit ?? 'mm²';
+      result.closed = annotationData?.contour?.closed !== false;
+      result.contour = annotationData?.contour ?? {};
+      result.length = stats.length;
+      result.unit = stats.unit;
       result.perimeter = stats.perimeter;
       result.radius = stats.radius;
       result.max = stats.max;
@@ -290,6 +299,70 @@ function prepareSplineAnnotation(annotation: any): void {
     toolInstance?.configuration?.spline?.type ??
     SplineROITool.SplineTypes.CatmullRom;
   toolInstance.createSplineObjectFromType(annotation, splineType);
+}
+
+/**
+ * TID300 preserves Livewire's dense contour polyline but not its interactive
+ * anchor points. Livewire's text-box renderer expects at least two handles,
+ * even for a read-only annotation, so derive two stable anchors from the
+ * preserved dense polyline; editing SR annotations remains disabled.
+ */
+function prepareLivewireAnnotation(annotation: any): void {
+  const polyline = annotation?.data?.contour?.polyline ?? [];
+  if (!Array.isArray(polyline) || polyline.length < 3) {
+    throw new Error('Hydrated LivewireContour has fewer than three points.');
+  }
+
+  const existingHandles = annotation?.data?.handles ?? {};
+  const existingPoints = Array.isArray(existingHandles.points)
+    ? existingHandles.points
+    : [];
+  const firstAnchor = existingPoints[0] ?? polyline[0];
+  const secondAnchor = polyline.reduce(
+    (farthest: any, point: any) => {
+      const farthestDistance = farthest.reduce(
+        (total: number, value: number, index: number) =>
+          total + (value - firstAnchor[index]) ** 2,
+        0
+      );
+      const pointDistance = point.reduce(
+        (total: number, value: number, index: number) =>
+          total + (value - firstAnchor[index]) ** 2,
+        0
+      );
+      return pointDistance > farthestDistance ? point : farthest;
+    },
+    polyline[0]
+  );
+  const handlePoints =
+    existingPoints.length >= 2
+      ? existingPoints
+      : [firstAnchor, secondAnchor];
+  if (
+    handlePoints.length < 2 ||
+    handlePoints[0].every(
+      (value: number, index: number) => value === handlePoints[1][index]
+    )
+  ) {
+    throw new Error('Hydrated LivewireContour has no distinct anchors.');
+  }
+
+  const textBox = existingHandles.textBox ?? {};
+  annotation.data.handles = {
+    ...existingHandles,
+    activeHandleIndex: null,
+    points: handlePoints,
+    textBox: {
+      ...textBox,
+      hasMoved:
+        textBox.hasMoved === true && Array.isArray(textBox.worldPosition),
+    },
+  };
+  annotation.data.cachedStats ??= {};
+  annotation.data.contour = {
+    ...(annotation.data.contour ?? {}),
+    closed: true,
+  };
 }
 
 function getImageFrameNumber(imageId: string): number {
@@ -541,6 +614,9 @@ export async function hydrateStructuredReportForLocalViewer({
       if (toolName === SplineROITool.toolName) {
         prepareSplineAnnotation(annotation);
       }
+      if (toolName === LivewireContourTool.toolName) {
+        prepareLivewireAnnotation(annotation);
+      }
       const frameIndex = findFrameIndex(
         referencedImageId,
         reportImageIds
@@ -553,7 +629,7 @@ export async function hydrateStructuredReportForLocalViewer({
           toolName,
           label,
           type: domainType,
-          data: createFlatStats(toolName, data, label),
+          data: createFlatStats(toolName, annotation.data, label),
           metadata: {
             seriesUID: sourceSeriesInstanceUID,
             reportSeriesUID: reportSeriesInstanceUID,

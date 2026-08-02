@@ -80,11 +80,46 @@ export default function MeasurementStats({ type, stats }: MeasurementStatsProps)
     case 'rectangleROI':
     case 'circleROI':
     case 'splineROI':
+    case 'livewireContour':
       return (
         <>
           <div className={baseClass}>
             Diện tích • {safeNumberToFixed(stats.area)} {stats.areaUnit ?? ''}
           </div>
+          {stats.max != null && (
+            <div className={baseClass}>
+              Max • {safeNumberToFixed(stats.max)} {stats.modalityUnit ?? ''}
+            </div>
+          )}
+          {renderPoints()}
+        </>
+      );
+
+    case 'planarFreehandROI':
+      if (stats.closed === false) {
+        return (
+          <div className={baseClass}>
+            Độ dài • {safeNumberToFixed(stats.length)} {stats.unit ?? ''}
+            {renderPoints()}
+          </div>
+        );
+      }
+
+      return (
+        <>
+          <div className={baseClass}>
+            Diện tích • {safeNumberToFixed(stats.area)} {stats.areaUnit ?? ''}
+          </div>
+          {stats.perimeter != null && (
+            <div className={baseClass}>
+              Chu vi • {safeNumberToFixed(stats.perimeter)} {stats.unit ?? ''}
+            </div>
+          )}
+          {stats.mean != null && (
+            <div className={baseClass}>
+              Mean • {safeNumberToFixed(stats.mean)} {stats.modalityUnit ?? ''}
+            </div>
+          )}
           {stats.max != null && (
             <div className={baseClass}>
               Max • {safeNumberToFixed(stats.max)} {stats.modalityUnit ?? ''}

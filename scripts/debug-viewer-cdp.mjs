@@ -328,20 +328,16 @@ await waitFor(
 );
 await new Promise((resolve) => setTimeout(resolve, 6000));
 await clickElement(
-  `document.querySelector(
-    'button[aria-label="Công cụ đo lường — Measurement Tools"]'
-  )`
+  `document.querySelector('[data-testid="measurement-tools-menu-trigger"]')`
 );
 await waitFor(
-  `[...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent?.trim().toLowerCase() === 'length')`
+  `!!document.querySelector('[role="menuitem"][data-tool-id="length"]')`
 );
 await clickElement(
-  `[...document.querySelectorAll('[role="menuitem"]')].find(
-    (candidate) => candidate.textContent?.trim().toLowerCase() === 'length'
-  )`
+  `document.querySelector('[role="menuitem"][data-tool-id="length"]')`
 );
 await waitFor(
-  `![...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent?.trim().toLowerCase() === 'length')`
+  `!document.querySelector('[role="menuitem"][data-tool-id="length"]')`
 );
 
 const viewportRect = await evaluate(`(() => {
@@ -366,6 +362,16 @@ await waitFor(
 const scrollbarExpression = `document.querySelector(
   '[role="scrollbar"][aria-label="Điều hướng lát cắt DICOM"]'
 )`;
+const totalFrames = Number(
+  await evaluate(
+    `${scrollbarExpression}?.getAttribute('aria-valuemax') ?? 0`
+  )
+);
+if (!Number.isInteger(totalFrames) || totalFrames < 4) {
+  throw new Error(
+    `The SR workflow test requires at least four frames; received ${totalFrames}.`
+  );
+}
 await evaluate(`${scrollbarExpression}?.focus()`);
 for (let frame = 2; frame <= 4; frame += 1) {
   await evaluate(`${scrollbarExpression}?.focus()`);
@@ -374,7 +380,9 @@ for (let frame = 2; frame <= 4; frame += 1) {
     `${scrollbarExpression}?.getAttribute('aria-valuenow') === '${frame}'`,
     5000
   );
-  await waitFor(`document.body.innerText.includes('(${frame}/7)')`);
+  await waitFor(
+    `document.body.innerText.includes('(${frame}/${totalFrames})')`
+  );
 }
 await dragPointer(
   {
@@ -429,7 +437,9 @@ await evaluate(`${scrollbarExpression}?.dispatchEvent(
 await waitFor(
   `${scrollbarExpression}?.getAttribute('aria-valuenow') === '1'`
 );
-await waitFor(`document.body.innerText.includes('(1/7)')`);
+await waitFor(
+  `document.body.innerText.includes('(1/${totalFrames})')`
+);
 await waitFor(isSourceAnnotationRendered);
 if (await evaluate(isSecondAnnotationRendered)) {
   throw new Error('The frame 4 measurement rendered on frame 1.');
@@ -599,7 +609,7 @@ if (
   srViewState.canvasWidth <= 0 ||
   srViewState.canvasHeight <= 0 ||
   !srViewState.runtimeViewport.currentImageId ||
-  srViewState.runtimeViewport.imageIdCount !== 7 ||
+  srViewState.runtimeViewport.imageIdCount !== totalFrames ||
   srViewState.runtimeViewport.status.toLowerCase() !== 'rendered' ||
   srViewState.reportMeasurementCount !== 2 ||
   srViewState.renderedReportMeasurementCount < 1 ||

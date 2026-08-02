@@ -14,10 +14,10 @@ import { ToolID } from '@/hooks/useToolManager';
 
 import CaptureControl from './CaptureControl';
 import CineControls from './CineControls';
+import MeasurementToolsControl from './MeasurementToolsControl';
 import ToolbarTooltip from './ToolbarTooltip';
 import {
   getToolTooltip,
-  MEASUREMENT_TOOLS_TOOLTIP,
   MORE_TOOLS_TOOLTIP,
 } from './tooltips';
 
@@ -39,16 +39,6 @@ interface ToolbarProps {
   // NEW prop: whether current series is SR (read-only)
   isSeriesSR?: boolean;
 }
-
-const measurementTools: ToolID[] = [
-  'length',
-  'bidirectional',
-  'arrowAnnotate',
-  'ellipticalROI',
-  'rectangleROI',
-  'circleROI',
-  'splineROI',
-];
 
 export default function Toolbar({
   activeTool,
@@ -87,7 +77,6 @@ export default function Toolbar({
     );
   };
 
-  const isMeasurementActive = measurementTools.includes(activeTool);
   const isOtherToolActive =
     activeTool === 'angle' ||
     activeTool === 'rotate90' ||
@@ -95,11 +84,7 @@ export default function Toolbar({
     activeTool === 'reset';
   const isCineActive = activeTool === 'cine';
 
-  const measurementIcon = isMeasurementActive ? getIconForTool(activeTool) : 'ruler';
   const otherIcon = isOtherToolActive ? getIconForOtherTool(activeTool) : 'tools';
-  const measurementTooltip = isMeasurementActive
-    ? getToolTooltip(activeTool, MEASUREMENT_TOOLS_TOOLTIP)
-    : MEASUREMENT_TOOLS_TOOLTIP;
   const otherTooltip = isOtherToolActive
     ? getToolTooltip(activeTool, MORE_TOOLS_TOOLTIP)
     : MORE_TOOLS_TOOLTIP;
@@ -116,50 +101,11 @@ export default function Toolbar({
             bg-card
           "
         >
-          {/* Measurement Tools Dropdown */}
-          <DropdownMenu>
-            <ToolbarTooltip
-              label={measurementTooltip.label}
-              detail={measurementTooltip.detail}
-            >
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant={isMeasurementActive ? 'default' : 'ghost'}
-                  className="w-12 sm:w-14 h-8 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
-                  aria-label={`${measurementTooltip.label} — ${measurementTooltip.detail}`}
-                >
-                  <i className={`fas fa-${measurementIcon} sm:mr-1`} />
-                  <i className="fas fa-ellipsis-h hidden sm:inline" />
-                </Button>
-              </DropdownMenuTrigger>
-            </ToolbarTooltip>
-
-            <DropdownMenuContent className="w-56 bg-card text-foreground border border-border">
-              <DropdownMenuLabel>Công cụ đo lường</DropdownMenuLabel>
-              <DropdownMenuGroup>
-                {measurementTools.map((tool) => {
-                  const disabled = isSeriesSR;
-                  return (
-                    <DropdownMenuItem
-                      key={tool}
-                      onClick={(e) => {
-                        if (disabled) {
-                          e.stopPropagation();
-                          return;
-                        }
-                        onSelectTool(tool);
-                      }}
-                      className={`w-full text-left flex items-center px-2 py-2 ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'}`}
-                      aria-disabled={disabled}
-                    >
-                      <i className={`fas fa-${getIconForTool(tool)} mr-2`} />
-                      <span className="capitalize">{tool}</span>
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <MeasurementToolsControl
+            activeTool={activeTool}
+            onSelectTool={onSelectTool}
+            readOnly={isSeriesSR}
+          />
 
           {renderButton('zoom', 'fas fa-search-plus', 'Zoom')}
           {renderButton('pan', 'fas fa-arrows-alt', 'Pan')}
@@ -249,27 +195,6 @@ export default function Toolbar({
       </div>
     </TooltipProvider>
   );
-}
-
-function getIconForTool(tool: ToolID) {
-  switch (tool) {
-    case 'length':
-      return 'ruler';
-    case 'bidirectional':
-      return 'arrows-alt-h';
-    case 'arrowAnnotate':
-      return 'long-arrow-alt-right';
-    case 'ellipticalROI':
-      return 'comment';
-    case 'rectangleROI':
-      return 'square';
-    case 'circleROI':
-      return 'circle';
-    case 'splineROI':
-      return 'ruler-combined';
-    default:
-      return 'question';
-  }
 }
 
 function getIconForOtherTool(tool: ToolID) {

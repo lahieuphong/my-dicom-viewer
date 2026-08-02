@@ -7,7 +7,9 @@ export type MeasurementType =
   | 'ellipticalROI'
   | 'rectangleROI'
   | 'circleROI'
+  | 'planarFreehandROI'
   | 'splineROI'
+  | 'livewireContour'
   | 'angle';
 
 export interface MeasurementMetadata {
