@@ -44,8 +44,8 @@ yarn-error.log*
 *.crt
 
 # DICOM / medical image data
-# Do not commit patient or sample DICOM files to a public repository.
-public/dicoms/
+# Ignore arbitrary medical-image files by default. The bundled files under
+# public/dicoms are an explicitly approved public demo dataset.
 public/dicom-manifest.json
 *.dcm
 *.dicom
@@ -53,6 +53,13 @@ public/dicom-manifest.json
 *.DICOM
 *.nii
 *.nii.gz
+!public/dicoms/
+!public/dicoms/**
+public/dicoms/**/.env
+public/dicoms/**/.env.*
+public/dicoms/**/*.pem
+public/dicoms/**/*.key
+public/dicoms/**/*.crt
 
 # IDE / editor
 .vscode/
@@ -64,6 +71,7 @@ public/.well-known/appspecific/
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Hosting / tool caches
 .vercel/

@@ -63,6 +63,33 @@ function validateBaseUrl(name, value) {
   }
 }
 
+function resolveLocalDicomPath(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl.startsWith('/dicoms/')) {
+    return null;
+  }
+
+  try {
+    const pathname = new URL(rawUrl, 'https://local.invalid').pathname;
+    const decodedPath = decodeURIComponent(pathname).replace(/^\/+/, '');
+    const publicDir = path.resolve(rootDir, 'public');
+    const dicomRoot = path.resolve(publicDir, 'dicoms');
+    const filePath = path.resolve(publicDir, decodedPath);
+
+    if (
+      filePath !== dicomRoot &&
+      !filePath.startsWith(`${dicomRoot}${path.sep}`)
+    ) {
+      errors.push('The DICOM manifest contains an unsafe local file path.');
+      return null;
+    }
+
+    return filePath;
+  } catch {
+    errors.push('The DICOM manifest contains an invalid local file URL.');
+    return null;
+  }
+}
+
 function readManifestStatus() {
   if (!fs.existsSync(manifestPath)) {
     return { exists: false, studyCount: 0, instanceCount: 0, missingFiles: 0 };
@@ -96,12 +123,12 @@ function readManifestStatus() {
 
           instanceCount += 1;
 
-          if (!rawUrl.startsWith('/dicoms/')) {
+          const localFilePath = resolveLocalDicomPath(rawUrl);
+          if (!localFilePath) {
             continue;
           }
 
-          const relativePath = rawUrl.replace(/^\/+/, '');
-          if (!fs.existsSync(path.join(rootDir, 'public', relativePath))) {
+          if (!fs.existsSync(localFilePath)) {
             missingFiles += 1;
           }
         }
@@ -147,7 +174,7 @@ if (isVercelBuild && !pacsApiBase && !hasUsableManifest) {
     );
   } else {
     errors.push(
-      'No deployable data source found. Configure NEXT_PUBLIC_PACS_API_BASE, provide a reviewed non-empty demo manifest, or explicitly set ALLOW_EMPTY_DATA_SOURCE=1 for a UI-only shell deployment; local DICOM data is intentionally excluded from Vercel uploads.'
+      'No deployable data source found. Configure NEXT_PUBLIC_PACS_API_BASE, include the approved public demo DICOM dataset, or explicitly set ALLOW_EMPTY_DATA_SOURCE=1 for a UI-only shell deployment.'
     );
   }
 }

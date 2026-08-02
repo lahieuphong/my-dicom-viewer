@@ -10,10 +10,37 @@ import { resolveDicomImageId, USE_STATIC_DICOMS } from '@/config/dicom';
 
 export type VoiRange = { lower: number; upper: number };
 
-type SeriesMapEntry = {
+export type SeriesMapEntry = {
   files: string[];      // imageIds for cornerstone (wadouri:... or wadors:...)
   metadata: Series;
 };
+
+function getSeriesNumber(entry: SeriesMapEntry): number {
+  const rawSeriesNumber = String(entry.metadata.seriesNumber ?? '').trim();
+  if (!rawSeriesNumber) return Number.MAX_SAFE_INTEGER;
+
+  const seriesNumber = Number(rawSeriesNumber);
+  return Number.isFinite(seriesNumber) ? seriesNumber : Number.MAX_SAFE_INTEGER;
+}
+
+export function selectDefaultSeriesUID(
+  seriesMap: Record<string, SeriesMapEntry>
+): string {
+  return Object.entries(seriesMap)
+    .filter(([, entry]) => (
+      entry.metadata.seriesModality?.toUpperCase() !== 'SR' &&
+      entry.files.length > 0
+    ))
+    .sort(([uidA, entryA], [uidB, entryB]) => {
+      const instanceCountDifference = entryB.files.length - entryA.files.length;
+      if (instanceCountDifference !== 0) return instanceCountDifference;
+
+      const seriesNumberDifference = getSeriesNumber(entryA) - getSeriesNumber(entryB);
+      if (seriesNumberDifference !== 0) return seriesNumberDifference;
+
+      return uidA.localeCompare(uidB);
+    })[0]?.[0] ?? '';
+}
 
 export function useSeriesLoader(studyUID: string) {
   const [seriesMap, setSeriesMap] = useState<Record<string, SeriesMapEntry>>({});
@@ -92,7 +119,7 @@ export function useSeriesLoader(studyUID: string) {
         if (!cancelled) {
           setSeriesMap(map);
           setVoiDefaults(voiMap);
-          setSelectedSeries(Object.keys(map)[0] || '');
+          setSelectedSeries(selectDefaultSeriesUID(map));
         }
       } catch (error) {
         if (!cancelled) {

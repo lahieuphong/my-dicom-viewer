@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "next dev --webpack",
-    "prebuild": "yarn check:deploy",
+    "prebuild": "yarn dicom:manifest && yarn check:deploy",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",

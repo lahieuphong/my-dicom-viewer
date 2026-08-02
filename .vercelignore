@@ -8,8 +8,8 @@ node_modules
 *.key
 *.crt
 
-# Local medical-image data must never be uploaded implicitly by the CLI.
-public/dicoms
+# Ignore arbitrary medical-image files by default. The bundled files under
+# public/dicoms are an explicitly approved public demo dataset.
 public/dicom-manifest.json
 *.dcm
 *.dicom
@@ -17,9 +17,17 @@ public/dicom-manifest.json
 *.DICOM
 *.nii
 *.nii.gz
+!public/dicoms/
+!public/dicoms/**
+public/dicoms/**/.env
+public/dicoms/**/.env.*
+public/dicoms/**/*.pem
+public/dicoms/**/*.key
+public/dicoms/**/*.crt
 
 coverage
 playwright-report
 test-results
 *.log
 .DS_Store
+desktop.ini

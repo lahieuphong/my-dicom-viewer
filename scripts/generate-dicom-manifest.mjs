@@ -60,34 +60,75 @@ function addModality(set, modality) {
     .forEach((item) => set.add(item));
 }
 
-function parseDataset(filename) {
-  const filePath = path.join(dicomDir, filename);
+function collectCandidateFiles(directory = dicomDir) {
+  if (!fs.existsSync(directory)) return [];
+
+  const ignoredNames = new Set(['desktop.ini', 'thumbs.db']);
+  const entries = fs
+    .readdirSync(directory, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        !entry.name.startsWith('.') &&
+        !ignoredNames.has(entry.name.toLowerCase())
+    )
+    .sort((left, right) =>
+      left.name.localeCompare(right.name, undefined, { numeric: true })
+    );
+
+  return entries.flatMap((entry) => {
+    const absolutePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return collectCandidateFiles(absolutePath);
+    if (!entry.isFile()) return [];
+
+    return [path.relative(dicomDir, absolutePath).split(path.sep).join('/')];
+  });
+}
+
+function parseDataset(relativePath) {
+  const filePath = path.join(dicomDir, ...relativePath.split('/'));
 
   try {
     const buffer = fs.readFileSync(filePath);
     const dicomMessage = dcmjs.data.DicomMessage.readFile(new Uint8Array(buffer));
     return dcmjs.data.DicomMetaDictionary.naturalizeDataset(dicomMessage.dict || {});
   } catch {
-    return {};
+    return null;
   }
+}
+
+function toPublicDicomUrl(relativePath) {
+  const encodedPath = relativePath
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+
+  return `/dicoms/${encodedPath}`;
 }
 
 function buildManifest() {
   if (!fs.existsSync(dicomDir)) {
-    return [];
+    return { studies: [], candidateCount: 0, skippedCount: 0 };
   }
 
-  const filenames = fs
-    .readdirSync(dicomDir)
-    .filter((filename) => /\.dcm$/i.test(filename))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-
+  const relativePaths = collectCandidateFiles();
   const studiesMap = new Map();
+  let skippedCount = 0;
 
-  for (const filename of filenames) {
-    const dataset = parseDataset(filename);
-    const studyInstanceUID = safeString(dataset.StudyInstanceUID, `no-study-${filename}`);
-    const seriesInstanceUID = safeString(dataset.SeriesInstanceUID, `no-series-${filename}`);
+  for (const relativePath of relativePaths) {
+    const dataset = parseDataset(relativePath);
+    if (!dataset) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const studyInstanceUID = safeString(
+      dataset.StudyInstanceUID,
+      `no-study-${relativePath}`
+    );
+    const seriesInstanceUID = safeString(
+      dataset.SeriesInstanceUID,
+      `no-series-${relativePath}`
+    );
     const modality = safeString(dataset.Modality, '');
 
     if (!studiesMap.has(studyInstanceUID)) {
@@ -118,14 +159,14 @@ function buildManifest() {
     }
 
     study.series.get(seriesInstanceUID).instances.push({
-      sopInstanceUID: safeString(dataset.SOPInstanceUID, filename),
+      sopInstanceUID: safeString(dataset.SOPInstanceUID, relativePath),
       instanceNumber: dataset.InstanceNumber == null ? null : Number(dataset.InstanceNumber),
-      url: `/dicoms/${filename}`,
-      filename,
+      url: toPublicDicomUrl(relativePath),
+      filename: relativePath,
     });
   }
 
-  return Array.from(studiesMap.values()).map((study) => {
+  const studies = Array.from(studiesMap.values()).map((study) => {
     const series = Array.from(study.series.values()).map((item) => {
       item.instances.sort((a, b) => {
         const left = Number.isFinite(a.instanceNumber) ? Number(a.instanceNumber) : Infinity;
@@ -163,9 +204,15 @@ function buildManifest() {
       series,
     };
   });
+
+  return {
+    studies,
+    candidateCount: relativePaths.length,
+    skippedCount,
+  };
 }
 
-const studies = buildManifest();
+const { studies, candidateCount, skippedCount } = buildManifest();
 const instanceCount = studies.reduce((total, study) => total + study.imageCount, 0);
 const payload = {
   generatedAt: new Date().toISOString(),
@@ -176,4 +223,6 @@ const payload = {
 };
 
 fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`);
-console.log(`Generated public/dicom-manifest.json (${studies.length} studies, ${instanceCount} instances).`);
+console.log(
+  `Generated public/dicom-manifest.json (${studies.length} studies, ${instanceCount} instances; scanned ${candidateCount}, skipped ${skippedCount}).`
+);

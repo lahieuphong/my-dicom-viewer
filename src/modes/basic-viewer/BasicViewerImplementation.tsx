@@ -12,7 +12,11 @@ import { toast } from 'sonner';
 
 import { imageLoader, utilities as csCoreUtilities } from '@cornerstonejs/core';
 
-import { useBatchedFrameState, useSeriesLoader } from './application';
+import {
+  selectDefaultSeriesUID,
+  useBatchedFrameState,
+  useSeriesLoader,
+} from './application';
 
 import {
   ToolGroupManager,
@@ -1378,13 +1382,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   useEffect(() => {
     if (!loadingSeries && !selectedSeries && Object.keys(seriesMap).length > 0) {
-      const orderedImageSeries = Object.entries(seriesMap)
-        .filter(([, e]) => e?.metadata?.seriesModality !== 'SR' && (Number(e.metadata.seriesRelatedInstanceCount ?? 0) > 0 || (Array.isArray(e.files) && e.files.length > 0)))
-        .sort(([, a], [, b]) => (Number(a.metadata?.seriesNumber ?? 0) - Number(b.metadata?.seriesNumber ?? 0)))
-        .map(([uid]) => uid);
-
-      const defaultSeries = orderedImageSeries[0] ?? Object.keys(seriesMap)[0];
-      setSelectedSeries(defaultSeries);
+      const defaultSeries = selectDefaultSeriesUID(seriesMap);
+      if (defaultSeries) setSelectedSeries(defaultSeries);
     }
   }, [loadingSeries, selectedSeries, seriesMap, setSelectedSeries]);
 
