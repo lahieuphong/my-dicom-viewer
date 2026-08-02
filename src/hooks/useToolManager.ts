@@ -15,7 +15,6 @@ import {
   PlanarFreehandROITool,
   SplineROITool,
   LivewireContourTool,
-  StackScrollTool,
   AngleTool,
   ToolGroupManager,
   Enums as ToolEnums,
@@ -26,7 +25,6 @@ import { TOOL_GROUP } from '@/constants/toolgroup';
 import {
   registerToolsOnce,
 } from '@/lib/cornerstone/tools';
-import { ensureStackScrollWheelActive } from '@/lib/cornerstone/stackScroll';
 
 export type ToolID =
   | 'adjust'
@@ -42,7 +40,6 @@ export type ToolID =
   | 'splineROI'
   | 'livewireContour'
   | 'angle'
-  | 'cine'
   | 'rotate90'
   | 'flipHorizontal'
   | 'reset';
@@ -64,7 +61,6 @@ export const toolNameMap: Record<ToolID, string> = {
   splineROI: SplineROITool.toolName,
   livewireContour: LivewireContourTool.toolName,
   angle: AngleTool.toolName,
-  cine: StackScrollTool.toolName,
   // UI-only actions
   rotate90: 'rotate90',
   flipHorizontal: 'flipHorizontal',
@@ -98,7 +94,6 @@ const CORNERSTONE_TOOL_NAMES = [
   SplineROITool.toolName,
   LivewireContourTool.toolName,
   AngleTool.toolName,
-  StackScrollTool.toolName,
 ];
 
 /**
@@ -119,7 +114,6 @@ const TOOL_CLASS_MAP: Partial<Record<ToolID, any>> = {
   splineROI: SplineROITool,
   livewireContour: LivewireContourTool,
   angle: AngleTool,
-  cine: StackScrollTool,
 };
 
 /* ================= Robust ToolGroup helpers ================= */
@@ -279,7 +273,6 @@ function trySetToolPassive(tg: any, toolName: string) {
 function forceDeactivateAllTools(tg: any) {
   if (!tg) return;
   for (const name of CORNERSTONE_TOOL_NAMES) {
-    if (name === StackScrollTool.toolName) continue;
     try {
       if (toolGroupHasTool(tg, name)) {
         trySetToolPassive(tg, name);
@@ -349,11 +342,6 @@ export function useToolManager() {
     // Basic validation: only attempt activation for known cornerstone tools
     if (!CORNERSTONE_TOOL_NAMES.includes(toolName)) {
       return false;
-    }
-
-    if (toolName === StackScrollTool.toolName) {
-      tryAddToolToGroup(tg, toolName, StackScrollTool);
-      return ensureStackScrollWheelActive(TOOL_GROUP);
     }
 
     // Ensure the tool exists in the ToolGroup (do NOT re-register globally here)

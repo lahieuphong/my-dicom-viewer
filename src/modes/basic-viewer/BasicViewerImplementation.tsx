@@ -26,6 +26,7 @@ import {
 
 import { TOOL_GROUP } from '@/constants/toolgroup';
 import { VIEWPORT_ID } from '@/constants/viewport';
+import { DEFAULT_CINE_FPS } from '@/constants/cine';
 
 import { ViewerWorkspace, useViewerLayout } from '@/extensions/default';
 import {
@@ -135,7 +136,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setCurrentFrameBatched,
   } = useBatchedFrameState(1);
 
-  const [fps, setFps] = useState(24);
+  const [fps, setFps] = useState(DEFAULT_CINE_FPS);
   const [isPlaying, setIsPlaying] = useState(false);
 
   const [allMeasurements, setAllMeasurements] = useState<AnnotationMeasurement[]>([]);
@@ -1695,7 +1696,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       onFlipHorizontal={() => flipHorizontal()}
       isPlaying={isPlaying}
       fps={fps}
-      onTogglePlay={() => setIsPlaying((v) => !v)}
+      onPlayChange={setIsPlaying}
       onFpsChange={setFps}
       loadingStack={loadingStack}
       imageAvailable={imageAvailable}

@@ -1,6 +1,7 @@
 // src/hooks/useCine.ts
 import { useEffect } from 'react';
 import { utilities } from '@cornerstonejs/tools';
+import { clampCineFps } from '@/constants/cine';
 
 /**
  * Hook to control cine playback using Cornerstone Tools' utilities.cine API
@@ -16,7 +17,7 @@ export function useCine(
   useEffect(() => {
     if (!element || !isPlaying) return;
 
-    const framesPerSecond = Math.max(1, Math.min(60, Math.round(fps)));
+    const framesPerSecond = clampCineFps(fps);
     utilities.cine.playClip(element, {
       framesPerSecond,
       loop: true,

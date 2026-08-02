@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback, useState } from 'react';
 import type { ComponentProps, CSSProperties, Dispatch, RefObject, SetStateAction } from 'react';
 
 import { Loading } from '@/components/ui/loading';
@@ -15,7 +16,7 @@ import { useViewerPanelResize } from '@/hooks/useViewerPanelResize';
 import { MeasurementPanel } from '@/components/Viewer/Measurement';
 import { SeriesSidebar } from '@/components/Viewer/Series';
 import { SrNameDialog } from '@/components/Viewer/SR';
-import { Toolbar } from '@/components/Viewer/Toolbar';
+import { CineControls, Toolbar } from '@/components/Viewer/Toolbar';
 import PanelResizeHandle from './PanelResizeHandle';
 import {
   DicomViewport,
@@ -69,7 +70,7 @@ type ViewerWorkspaceProps = {
   onFlipHorizontal: () => void;
   isPlaying: boolean;
   fps: number;
-  onTogglePlay: () => void;
+  onPlayChange: (isPlaying: boolean) => void;
   onFpsChange: (fps: number) => void;
   loadingStack: boolean;
   imageAvailable: boolean;
@@ -126,7 +127,7 @@ export default function ViewerWorkspace({
   onFlipHorizontal,
   isPlaying,
   fps,
-  onTogglePlay,
+  onPlayChange,
   onFpsChange,
   loadingStack,
   imageAvailable,
@@ -143,6 +144,18 @@ export default function ViewerWorkspace({
   const selectedSeriesEntry = seriesMap[selectedSeries];
   const totalFrames = selectedSeriesEntry?.files.length ?? 0;
   const measurementSeriesMap = seriesMap as MeasurementPanelProps['seriesMap'];
+  const [cineOpen, setCineOpen] = useState(false);
+
+  const toggleCine = useCallback(() => {
+    // OHIF opens and closes the Cine panel in a paused state.
+    onPlayChange(false);
+    setCineOpen((current) => !current);
+  }, [onPlayChange]);
+
+  const closeCine = useCallback(() => {
+    onPlayChange(false);
+    setCineOpen(false);
+  }, [onPlayChange]);
 
   const measurementPanelProps = {
     measurements,
@@ -288,11 +301,8 @@ export default function ViewerWorkspace({
                 onReset={onReset}
                 onRotate90={onRotate90}
                 onFlipHorizontal={onFlipHorizontal}
-                isPlaying={isPlaying}
-                fps={fps}
-                onTogglePlay={onTogglePlay}
-                onFpsChange={onFpsChange}
-                isLoading={loadingStack}
+                isCineOpen={cineOpen}
+                onToggleCine={toggleCine}
                 viewportEl={viewportEl}
                 isSeriesSR={isSeriesToolbarReadOnly}
               />
@@ -309,6 +319,15 @@ export default function ViewerWorkspace({
               <DicomViewport
                 elementRef={elementRef}
                 crosshair={activeTool !== 'adjust'}
+              />
+              <CineControls
+                open={cineOpen}
+                isPlaying={isPlaying}
+                fps={fps}
+                onPlayPauseChange={onPlayChange}
+                onFpsChange={onFpsChange}
+                onClose={closeCine}
+                isLoading={loadingStack}
               />
               <ViewportOverlay
                 studyDate={studyDate}

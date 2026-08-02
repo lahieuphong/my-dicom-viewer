@@ -2,6 +2,7 @@
 'use client';
 import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { CirclePlay } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -13,7 +14,6 @@ import {
 import { ToolID } from '@/hooks/useToolManager';
 
 import CaptureControl from './CaptureControl';
-import CineControls from './CineControls';
 import MeasurementToolsControl from './MeasurementToolsControl';
 import ToolbarTooltip from './ToolbarTooltip';
 import {
@@ -28,11 +28,8 @@ interface ToolbarProps {
   onRotate90: () => void;
   onFlipHorizontal: () => void;
 
-  isPlaying: boolean;
-  fps: number;
-  onTogglePlay: () => void;
-  onFpsChange: (v: number) => void;
-  isLoading: boolean;
+  isCineOpen: boolean;
+  onToggleCine: () => void;
 
   viewportEl?: HTMLDivElement | null;
 
@@ -46,11 +43,8 @@ export default function Toolbar({
   onReset,
   onRotate90,
   onFlipHorizontal,
-  isPlaying,
-  fps,
-  onTogglePlay,
-  onFpsChange,
-  isLoading,
+  isCineOpen,
+  onToggleCine,
   viewportEl,
   isSeriesSR = false,
 }: ToolbarProps) {
@@ -82,12 +76,13 @@ export default function Toolbar({
     activeTool === 'rotate90' ||
     activeTool === 'flipHorizontal' ||
     activeTool === 'reset';
-  const isCineActive = activeTool === 'cine';
-
+  const isOtherControlActive = isCineOpen || isOtherToolActive;
   const otherIcon = isOtherToolActive ? getIconForOtherTool(activeTool) : 'tools';
-  const otherTooltip = isOtherToolActive
-    ? getToolTooltip(activeTool, MORE_TOOLS_TOOLTIP)
-    : MORE_TOOLS_TOOLTIP;
+  const otherTooltip = isCineOpen
+    ? { label: 'Cine', detail: 'Cine Controls' }
+    : isOtherToolActive
+      ? getToolTooltip(activeTool, MORE_TOOLS_TOOLTIP)
+      : MORE_TOOLS_TOOLTIP;
 
   return (
     <TooltipProvider>
@@ -119,18 +114,32 @@ export default function Toolbar({
             <ToolbarTooltip label={otherTooltip.label} detail={otherTooltip.detail}>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant={isOtherToolActive ? 'default' : 'ghost'}
+                  variant={isOtherControlActive ? 'default' : 'ghost'}
                   className="w-12 sm:w-14 h-8 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
                   aria-label={`${otherTooltip.label} — ${otherTooltip.detail}`}
+                  data-testid="other-tools-trigger"
                 >
-                  <i className={`fas fa-${otherIcon} sm:mr-1`} />
+                  {isCineOpen ? (
+                    <CirclePlay className="sm:mr-1" aria-hidden="true" />
+                  ) : (
+                    <i className={`fas fa-${otherIcon} sm:mr-1`} />
+                  )}
                   <i className="fas fa-ellipsis-h hidden sm:inline" />
                 </Button>
               </DropdownMenuTrigger>
             </ToolbarTooltip>
-            <DropdownMenuContent className="w-56 bg-card text-foreground border border-border">
+            <DropdownMenuContent className="z-[90] w-56 bg-card text-foreground border border-border">
               <DropdownMenuLabel>Other</DropdownMenuLabel>
               <DropdownMenuGroup>
+                {/* Cine is a viewport state, not an active mouse tool. */}
+                <DropdownMenuItem
+                  onSelect={onToggleCine}
+                  className={isCineOpen ? 'bg-muted text-foreground' : undefined}
+                  aria-label={isCineOpen ? 'Đóng Cine' : 'Mở Cine'}
+                >
+                  <CirclePlay aria-hidden="true" /> Cine
+                </DropdownMenuItem>
+
                 {/* Angle Tool */}
                 <DropdownMenuItem
                   onClick={(e) => {
@@ -175,22 +184,10 @@ export default function Toolbar({
                 >
                   <i className="fas fa-redo mr-2" /> Reset View
                 </DropdownMenuItem>
+
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* Cine Controls */}
-          <CineControls
-            isPlaying={isPlaying}
-            fps={fps}
-            onTogglePlay={() => {
-              onTogglePlay();
-              onSelectTool('cine');
-            }}
-            onFpsChange={onFpsChange}
-            isLoading={isLoading}
-            isActive={isCineActive}
-          />
         </div>
       </div>
     </TooltipProvider>
