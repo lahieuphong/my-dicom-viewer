@@ -17,7 +17,6 @@ import { wait } from '@/lib/utils/wait';
 
 // <- reuse centralized preload helper when caller doesn't provide one
 import {
-  getPreloadWindow,
   preloadImagesWithTimeout as sharedPreloadImagesWithTimeout,
 } from '@/lib/viewer/preload';
 
@@ -38,11 +37,13 @@ export interface EnsureStackParams {
     imageIds: string[],
     desiredIndex: number,
     pollIntervalMs?: number,
-    timeoutMs?: number
+    timeoutMs?: number,
+    isCancelled?: () => boolean
   ) => Promise<boolean>;
   preloadImagesWithTimeout?: (imageIds: string[], opts?: any) => Promise<void>;
   viewportId?: string;
   settleMs?: number;
+  isCancelled?: () => boolean;
 }
 
 /** IN-FLIGHT LOCK (prevent concurrent ensure for same viewportInstance) */
@@ -123,6 +124,7 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
     preloadImagesWithTimeout,
     viewportId = VIEWPORT_ID,
     settleMs = DEFAULT_SETTLE_MS,
+    isCancelled,
   } = params;
 
   const preloadFn = typeof preloadImagesWithTimeout === 'function' ? preloadImagesWithTimeout : sharedPreloadImagesWithTimeout;
@@ -225,6 +227,7 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
 
     const shouldAbortBecauseSuperseded = (): boolean => {
       try {
+        if (isCancelled?.()) return true;
         if (!viewportEl || !(viewportEl as any).dataset) return false;
         const current = (viewportEl as any).dataset.__pendingStackRequestId ?? null;
         if (current !== requestToken) return true;
@@ -395,7 +398,15 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
     /* ------------------- Optional quick ensureImageRendered path ------------------ */
     if (typeof ensureImageRendered === 'function' && viewportInstance && viewportEl) {
       try {
-        const ok = await ensureImageRendered(viewportInstance, viewportEl, imageIds, desiredIndex, 40, 200).catch(() => false);
+        const ok = await ensureImageRendered(
+          viewportInstance,
+          viewportEl,
+          imageIds,
+          desiredIndex,
+          40,
+          200,
+          isCancelled
+        ).catch(() => false);
         if (ok) {
           const elToCheck = viewportEl;
           if (await tryAttachOrPreload(elToCheck, desiredIndex)) return true;
@@ -404,18 +415,17 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
       }
     }
 
-    /* ----------------------- Preload a few images (best-effort) ----------------------- */
+    /* ----------------------- Ensure the target image (best-effort) ----------------------- */
     try {
+      const target = imageIds[Math.max(0, Math.min(desiredIndex, imageIds.length - 1))];
       if (typeof preloadFn === 'function') {
-        const warmIds = getPreloadWindow(imageIds, desiredIndex, {
-          backward: 2,
-          forward: 6,
-          max: 9,
-        });
-        await preloadFn(warmIds, { concurrency: 3, perLoadTimeoutMs: 6000, limit: warmIds.length }).catch(() => {});
-      } else {
-        const tgt = imageIds[Math.max(0, Math.min(desiredIndex, imageIds.length - 1))];
-        await loadImageSafe(tgt).catch(() => {});
+        await preloadFn([target], {
+          concurrency: 1,
+          perLoadTimeoutMs: 6000,
+          limit: 1,
+        }).catch(() => {});
+      } else if (target) {
+        await loadImageSafe(target).catch(() => {});
       }
     } catch (e) {
     }

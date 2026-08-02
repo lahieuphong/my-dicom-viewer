@@ -176,6 +176,8 @@ export async function fetchInstances(
 
 export function prefetchStudyViewerData(studyInstanceUID: string): void {
   void fetchStudyMeta(studyInstanceUID).catch(() => null);
+  // Hover/focus may sweep across many studies, so keep this prefetch lightweight.
+  // The full instance list starts only when the user commits to opening viewer.
   void fetchSeries(studyInstanceUID, { includeInstances: false }).catch(
     () => []
   );

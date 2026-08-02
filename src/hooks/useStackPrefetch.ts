@@ -1,65 +1,161 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Enums as CoreEnums, getEnabledElement } from '@cornerstonejs/core';
-import { utilities } from '@cornerstonejs/tools';
+import { useEffect, useId, useRef } from 'react';
+import {
+  Enums as CoreEnums,
+  cache,
+  getEnabledElement,
+  imageLoader,
+  imageLoadPoolManager,
+} from '@cornerstonejs/core';
+
+const NEAR_IMAGES = 2;
+const DIRECTION_IMAGES = 8;
+const PREFETCH_PRIORITY = 5;
+
+function buildPrefetchIndices(
+  currentIndex: number,
+  imageCount: number,
+  direction: -1 | 0 | 1
+) {
+  const indices: number[] = [];
+  const addDirection = (step: -1 | 1, count: number) => {
+    for (let distance = 1; distance <= count; distance += 1) {
+      const index = currentIndex + step * distance;
+      if (index >= 0 && index < imageCount) indices.push(index);
+    }
+  };
+
+  if (direction < 0) {
+    addDirection(-1, DIRECTION_IMAGES);
+    addDirection(1, NEAR_IMAGES);
+  } else {
+    addDirection(1, DIRECTION_IMAGES);
+    addDirection(-1, NEAR_IMAGES);
+  }
+
+  return indices;
+}
 
 /**
- * Keeps nearby stack images warm using Cornerstone's direction-aware prefetcher.
- * This is the same prefetch path used by OHIF for stack viewports.
+ * Keeps a bounded, direction-aware window warm without allowing Cornerstone
+ * 3.33's context prefetcher to fill a quarter of its multi-gigabyte cache.
+ * Interactive viewport requests stay in their own higher-priority pool.
  */
 export function useStackPrefetch(element: HTMLDivElement | null) {
+  const ownerId = useId();
+  const previousIndexRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (!element) return;
 
-    const stackContextPrefetch = utilities.stackContextPrefetch;
-    if (!stackContextPrefetch) return;
+    const owner = `dicom-stack-prefetch-${ownerId}`;
+    let schedulingFrame: number | null = null;
 
-    let activationFrame: number | null = null;
+    const clearQueuedRequests = () => {
+      try {
+        imageLoadPoolManager.filterRequests(
+          (request) =>
+            (request.additionalDetails as Record<string, unknown>)
+              ?.prefetchOwner !== owner
+        );
+      } catch {}
+    };
 
-    const enablePrefetch = () => {
+    const queueNearbyImages = () => {
+      schedulingFrame = null;
+
       try {
         const enabledElement = getEnabledElement(element);
-        const imageIds = enabledElement?.viewport?.getImageIds?.();
-
+        const viewport = enabledElement?.viewport;
+        const imageIds = viewport?.getImageIds?.();
         if (!Array.isArray(imageIds) || imageIds.length <= 1) {
-          stackContextPrefetch.disable(element);
+          clearQueuedRequests();
+          previousIndexRef.current = null;
           return;
         }
 
-        stackContextPrefetch.enable(element);
+        const rawCurrentIndex = Number(
+          viewport?.getCurrentImageIdIndex?.() ?? 0
+        );
+        const currentIndex = Number.isFinite(rawCurrentIndex)
+          ? Math.max(0, Math.min(rawCurrentIndex, imageIds.length - 1))
+          : 0;
+        const previousIndex = previousIndexRef.current;
+        const direction: -1 | 0 | 1 =
+          previousIndex == null || previousIndex === currentIndex
+            ? 0
+            : currentIndex > previousIndex
+              ? 1
+              : -1;
+        previousIndexRef.current = currentIndex;
+
+        clearQueuedRequests();
+
+        for (const index of buildPrefetchIndices(
+          currentIndex,
+          imageIds.length,
+          direction
+        )) {
+          const imageId = imageIds[index];
+          if (!imageId || cache.getImageLoadObject(imageId)) continue;
+
+          imageLoadPoolManager.addRequest(
+            () =>
+              imageLoader
+                .loadAndCacheImage(imageId, {
+                  requestType: CoreEnums.RequestType.Prefetch,
+                  priority: PREFETCH_PRIORITY,
+                })
+                .catch(() => undefined),
+            CoreEnums.RequestType.Prefetch,
+            { imageId, prefetchOwner: owner },
+            PREFETCH_PRIORITY
+          );
+        }
       } catch {
         // The viewport may still be between enableElement and setStack.
       }
     };
 
-    const handleNewImageSet = (event: Event) => {
-      const eventElement = (event as CustomEvent<{ element?: HTMLDivElement }>).detail?.element;
-      if (eventElement && eventElement !== element) return;
-      enablePrefetch();
+    const scheduleNearbyImages = () => {
+      if (schedulingFrame != null) {
+        window.cancelAnimationFrame(schedulingFrame);
+      }
+      schedulingFrame = window.requestAnimationFrame(queueNearbyImages);
+    };
+
+    const handleNewImageSet = () => {
+      previousIndexRef.current = null;
+      scheduleNearbyImages();
     };
 
     element.addEventListener(
       CoreEnums.Events.VIEWPORT_NEW_IMAGE_SET,
-      handleNewImageSet as EventListener
+      handleNewImageSet
     );
-
-    // The first stack may already be attached before this hook receives the element.
-    activationFrame = window.requestAnimationFrame(enablePrefetch);
+    element.addEventListener(
+      CoreEnums.Events.STACK_NEW_IMAGE,
+      scheduleNearbyImages
+    );
+    scheduleNearbyImages();
 
     return () => {
-      if (activationFrame != null) {
-        window.cancelAnimationFrame(activationFrame);
+      if (schedulingFrame != null) {
+        window.cancelAnimationFrame(schedulingFrame);
       }
       element.removeEventListener(
         CoreEnums.Events.VIEWPORT_NEW_IMAGE_SET,
-        handleNewImageSet as EventListener
+        handleNewImageSet
       );
-      try {
-        stackContextPrefetch.disable(element);
-      } catch {}
+      element.removeEventListener(
+        CoreEnums.Events.STACK_NEW_IMAGE,
+        scheduleNearbyImages
+      );
+      clearQueuedRequests();
+      previousIndexRef.current = null;
     };
-  }, [element]);
+  }, [element, ownerId]);
 }
 
 export default useStackPrefetch;

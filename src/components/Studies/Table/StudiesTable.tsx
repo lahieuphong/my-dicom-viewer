@@ -118,10 +118,12 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
   const [filters, setFilters] = useState(emptyStudyFilters);
   const [hoveredColumnId, setHoveredColumnId] = useState<StudyTableColumnId | null>(null);
   const [availableTableWidth, setAvailableTableWidth] = useState(0);
+  const [resizeHandleHeight, setResizeHandleHeight] = useState(0);
   const [seriesByStudy, setSeriesByStudy] = useState<Partial<Record<string, SeriesWithInstances[]>>>({});
   const [seriesLoadingByStudy, setSeriesLoadingByStudy] = useState<Partial<Record<string, boolean>>>({});
   const seriesRequestsRef = useRef<Partial<Record<string, Promise<void>>>>({});
   const tableViewportRef = useRef<HTMLDivElement>(null);
+  const tableHeaderRef = useRef<HTMLTableSectionElement>(null);
 
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
@@ -155,20 +157,31 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
     const element = tableViewportRef.current;
     if (!element) return;
 
-    const updateWidth = () => {
+    const updateTableMeasurements = () => {
       const nextWidth = Math.floor(element.clientWidth);
       setAvailableTableWidth((current) => (current === nextWidth ? current : nextWidth));
+
+      const nextHandleHeight = Math.floor(
+        tableHeaderRef.current?.getBoundingClientRect().height ?? 0
+      );
+      setResizeHandleHeight((current) =>
+        current === nextHandleHeight ? current : nextHandleHeight
+      );
     };
 
-    updateWidth();
+    updateTableMeasurements();
 
     if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', updateWidth);
-      return () => window.removeEventListener('resize', updateWidth);
+      window.addEventListener('resize', updateTableMeasurements);
+      return () =>
+        window.removeEventListener('resize', updateTableMeasurements);
     }
 
-    const observer = new ResizeObserver(updateWidth);
+    const observer = new ResizeObserver(updateTableMeasurements);
     observer.observe(element);
+    if (tableHeaderRef.current) {
+      observer.observe(tableHeaderRef.current);
+    }
 
     return () => observer.disconnect();
   }, []);
@@ -216,6 +229,9 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
     setLoading(true);
     const target = String(study.studyInstanceUID ?? uid);
     prefetchViewerForStudy(study, uid);
+    // A click is committed navigation intent. Start the instance-aware request
+    // before routing so the viewer can reuse the same in-flight promise.
+    void fetchSeries(target).catch(() => []);
 
     const url = getViewerPath(target);
     try {
@@ -257,7 +273,10 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
               ))}
             </colgroup>
 
-            <TableHeader className="studies-resizable-head">
+            <TableHeader
+              ref={tableHeaderRef}
+              className="studies-resizable-head"
+            >
               <TableRow className="studies-resizable-row bg-card hover:bg-card !border-b-0 cursor-default">
                 {studyTableColumns.map((column) => (
                   <ResizableHeaderCell
@@ -328,7 +347,13 @@ export default function StudiesTable({ data: studies = [] }: StudiesTableProps) 
             </TableBody>
           </ShadTable>
 
-          <div className="pointer-events-none absolute inset-y-0 left-0" style={{ width: tableWidth }}>
+          <div
+            className="pointer-events-none absolute left-0 top-0"
+            style={{
+              width: tableWidth,
+              height: resizeHandleHeight,
+            }}
+          >
             {resizeBoundaries.map(({ column, left }) => (
               <ColumnResizeHandle
                 key={column.id}

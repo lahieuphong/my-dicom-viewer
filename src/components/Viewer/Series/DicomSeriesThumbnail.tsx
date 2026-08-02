@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { ImageIcon, LoaderCircle } from 'lucide-react';
 
 import { initCornerstone } from '@/lib/cornerstone/init';
@@ -11,7 +11,7 @@ type DicomSeriesThumbnailProps = {
   label: string;
 };
 
-type ThumbnailStatus = 'loading' | 'ready' | 'error';
+type ThumbnailStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 type ThumbnailImage = {
   rows: number;
@@ -122,19 +122,49 @@ function renderDecodedPixels(canvas: HTMLCanvasElement, image: ThumbnailImage) {
   );
 }
 
-export default function DicomSeriesThumbnail({
+function DicomSeriesThumbnail({
   imageId,
   label,
 }: DicomSeriesThumbnailProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [status, setStatus] = useState<ThumbnailStatus>('loading');
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const [status, setStatus] = useState<ThumbnailStatus>('idle');
+
+  useEffect(() => {
+    const root = rootRef.current;
+    setShouldLoad(false);
+    setStatus(imageId ? 'idle' : 'error');
+
+    if (!root || !imageId) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setShouldLoad(true);
+      return;
+    }
+
+    const scrollRoot = root.closest<HTMLElement>(
+      '[data-panel-scroll-viewport]'
+    );
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setShouldLoad(true);
+        observer.disconnect();
+      },
+      {
+        root: scrollRoot,
+        rootMargin: '240px 0px',
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [imageId]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !imageId) {
-      setStatus('error');
-      return;
-    }
+    if (!shouldLoad || !canvas || !imageId) return;
 
     let cancelled = false;
     setStatus('loading');
@@ -143,16 +173,30 @@ export default function DicomSeriesThumbnail({
 
     const renderThumbnail = async () => {
       const { csCore } = await initCornerstone();
-      const loadAndCacheImage = csCore?.imageLoader?.loadAndCacheImage;
-      const renderToCanvasCPU = csCore?.utilities?.renderToCanvasCPU;
-      if (typeof loadAndCacheImage !== 'function' || typeof renderToCanvasCPU !== 'function') {
+      const loadImageToCanvas = csCore?.utilities?.loadImageToCanvas;
+      const requestType = csCore?.Enums?.RequestType?.Thumbnail;
+      if (typeof loadImageToCanvas !== 'function' || requestType == null) {
         throw new Error('Cornerstone thumbnail renderer is unavailable');
       }
 
-      const image = (await loadAndCacheImage(imageId)) as ThumbnailImage;
-      await renderToCanvasCPU(canvas, image);
+      await loadImageToCanvas({
+        canvas,
+        imageId,
+        requestType,
+        priority: -5,
+        thumbnail: true,
+        useCPURendering: true,
+      });
+      if (cancelled) return;
+
       if (!canvasHasVisiblePixels(canvas)) {
-        renderDecodedPixels(canvas, image);
+        const cachedImage = (await csCore?.cache?.getImageLoadObject?.(
+          imageId
+        )?.promise) as ThumbnailImage | undefined;
+        if (!cachedImage) {
+          throw new Error('Decoded thumbnail image is unavailable');
+        }
+        renderDecodedPixels(canvas, cachedImage);
       }
 
       if (cancelled) return;
@@ -168,10 +212,10 @@ export default function DicomSeriesThumbnail({
     return () => {
       cancelled = true;
     };
-  }, [imageId]);
+  }, [imageId, shouldLoad]);
 
   return (
-    <div className="relative size-full overflow-hidden bg-black">
+    <div ref={rootRef} className="relative size-full overflow-hidden bg-black">
       <canvas
         ref={canvasRef}
         className={cn(
@@ -194,3 +238,5 @@ export default function DicomSeriesThumbnail({
     </div>
   );
 }
+
+export default memo(DicomSeriesThumbnail);

@@ -1,7 +1,7 @@
 // src/components/Viewer/Series/SeriesSidebar.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import { ChevronUp, Copy } from 'lucide-react';
 import type { LocalStructuredReport, Series } from '@/platform/core';
 import { Button } from '@/components/ui/button';
@@ -34,7 +34,7 @@ function truncateText(text?: string | null, max = 9) {
   return s.slice(0, max) + '…';
 }
 
-export default function SeriesSidebar({
+function SeriesSidebar({
   seriesMap,
   selectedSeries,
   onSelectSeries,
@@ -52,10 +52,14 @@ export default function SeriesSidebar({
   const [listCollapsed, setListCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<SeriesViewMode>('list');
   const formattedDate = formatStudyDate(studyDate);
-  const imageSeriesEntries = Object.entries(seriesMap).filter(
-    ([, data]) =>
-      Boolean(data?.metadata) &&
-      data.metadata?.seriesModality !== 'SR'
+  const imageSeriesEntries = useMemo(
+    () =>
+      Object.entries(seriesMap).filter(
+        ([, data]) =>
+          Boolean(data?.metadata) &&
+          data.metadata?.seriesModality !== 'SR'
+      ),
+    [seriesMap]
   );
 
   return (
@@ -315,3 +319,5 @@ export default function SeriesSidebar({
     </aside>
   );
 }
+
+export default memo(SeriesSidebar);

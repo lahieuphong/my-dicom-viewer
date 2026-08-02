@@ -50,7 +50,8 @@ export function useEnsureImageRendered(options: {
       imageIds: string[],
       desiredIndex: number,
       maxRetries = 20,
-      retryDelay = 150
+      retryDelay = 150,
+      isCancelled?: () => boolean
     ): Promise<boolean> => {
       if (!Array.isArray(imageIds) || imageIds.length === 0) return false;
       const desiredIndexClamped = Math.max(0, Math.min(desiredIndex ?? 0, imageIds.length - 1));
@@ -68,6 +69,7 @@ export function useEnsureImageRendered(options: {
       }
 
       const isStale = () => {
+        if (isCancelled?.()) return true;
         if (renderingEngineRef?.current !== engine) return true;
         if (!isEngineAlive(engine)) return true;
         try {
@@ -82,7 +84,9 @@ export function useEnsureImageRendered(options: {
 
       if (isStale()) return false;
 
-      // Preload desired image and neighbors
+      // Load only the frame required for the current interaction. The bounded
+      // stack prefetch hook owns direction-aware neighbor warming after attach,
+      // avoiding overlapping speculative batches here.
       try {
         if (imageLoader && typeof (imageLoader as any).loadAndCacheImage === 'function') {
           await (imageLoader as any).loadAndCacheImage(desiredImageId).catch(() => {});
@@ -97,16 +101,6 @@ export function useEnsureImageRendered(options: {
 
       if (isStale()) return false;
 
-      try {
-        const neighbors = 1;
-        for (let i = 1; i <= neighbors; i++) {
-          const a = desiredIndexClamped + i;
-          const b = desiredIndexClamped - i;
-          if (a < imageIds.length) imageLoader.loadAndCacheImage(imageIds[a]).catch(() => {});
-          if (b >= 0) imageLoader.loadAndCacheImage(imageIds[b]).catch(() => {});
-        }
-      } catch {}
-
       // Small layout settle
       try {
         await new Promise<void>((resolve) => {
@@ -117,6 +111,8 @@ export function useEnsureImageRendered(options: {
           });
         });
       } catch {}
+
+      if (isStale()) return false;
 
       // Attach stack / image (same as before)...
       try {
@@ -147,7 +143,9 @@ export function useEnsureImageRendered(options: {
           }
         }
 
+        if (isStale()) return false;
         await wait(30);
+        if (isStale()) return false;
 
         // presentation reset + normalize + render
         try {
@@ -171,6 +169,7 @@ export function useEnsureImageRendered(options: {
           try { engine?.resize?.(); } catch {}
           try { engine?.renderViewport?.(VIEWPORT_ID); } catch {}
           await wait(60);
+          if (isStale()) return false;
 
           try { if (typeof (vpInstance as any).render === 'function') await (vpInstance as any).render(); } catch {}
           try { engine?.renderViewport?.(VIEWPORT_ID); } catch {}
@@ -184,6 +183,7 @@ export function useEnsureImageRendered(options: {
       }
 
       await wait(30);
+      if (isStale()) return false;
 
       // Apply VOI (kept same)...
       try {
@@ -276,6 +276,21 @@ export function useEnsureImageRendered(options: {
         }
       };
 
+      const enabledShowsTargetStack = (enabled: ReturnType<typeof getEnabledSafe>) => {
+        if (!enabled) return false;
+        try {
+          const currentImageId =
+            enabled.viewport?.getCurrentImageId?.() ??
+            (enabled as any)?.image?.imageId;
+          return (
+            typeof currentImageId === 'string' &&
+            imageIds.includes(currentImageId)
+          );
+        } catch {
+          return false;
+        }
+      };
+
       try { normalizeCanvasAndContext(vpEl); } catch {}
 
       // Use centralized ATTEMPTS_POLL as baseline
@@ -285,8 +300,7 @@ export function useEnsureImageRendered(options: {
         if (isStale()) return false;
         try {
           const enabled = getEnabledSafe();
-          const hasImage = Boolean((enabled as any)?.image);
-          if (hasImage) {
+          if (enabledShowsTargetStack(enabled)) {
             return true;
           }
         } catch {}
@@ -300,9 +314,10 @@ export function useEnsureImageRendered(options: {
           if (isStale()) return false;
           await safeRender();
           await wait(80);
+          if (isStale()) return false;
           try { normalizeCanvasAndContext(vpEl); } catch {}
           const enabled = getEnabledSafe();
-          if ((enabled as any)?.image) return true;
+          if (enabledShowsTargetStack(enabled)) return true;
         }
       } catch {}
 

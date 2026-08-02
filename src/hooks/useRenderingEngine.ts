@@ -274,6 +274,29 @@ export function useRenderingEngine({
       }
     } catch {}
 
+    // A series switch reuses the same DOM element and rendering engine. Cancel
+    // per-series observers immediately so the next stack gets one clean set of
+    // listeners without tearing down the viewport itself.
+    try {
+      if (watchdogTimerRef.current) {
+        window.clearInterval(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
+    } catch {}
+    try {
+      const previousHandler = stackEventHandlerRef.current;
+      const previousElement =
+        renderingEngineRef.current?.getViewport?.(VIEWPORT_ID)?.element ??
+        elRef.current;
+      if (previousHandler && previousElement) {
+        previousElement.removeEventListener(
+          CoreEnums.Events.STACK_NEW_IMAGE,
+          previousHandler as EventListener
+        );
+      }
+      stackEventHandlerRef.current = null;
+    } catch {}
+
     let cancelled = false;
     let engine: any = null;
     let vp: any = null;
@@ -290,8 +313,6 @@ export function useRenderingEngine({
         renderingEngineRef.current = engine;
       } catch (err) {}
       if (isStale()) return;
-
-      tryDetachViewportSafely(renderingEngineRef.current);
 
       const container = (elRef.current ?? (await waitForElement(elRef, 5000))) as HTMLDivElement | null;
       if (!container || isStale()) return;
@@ -316,23 +337,46 @@ export function useRenderingEngine({
       await waitForVisibleSize(mountEl, 2000);
       if (isStale()) return;
 
+      let reuseExistingViewport = false;
+      try {
+        const existingViewport = engine.getViewport?.(VIEWPORT_ID) ?? null;
+        const existingElement = existingViewport?.element as HTMLDivElement | undefined;
+        const sharesViewerMount = Boolean(
+          existingElement &&
+          (existingElement === mountEl ||
+            container.contains(existingElement) ||
+            existingElement.contains(container))
+        );
+        if (
+          existingViewport &&
+          existingElement?.isConnected &&
+          sharesViewerMount
+        ) {
+          vp = existingViewport;
+          mountEl = existingElement;
+          reuseExistingViewport = true;
+        }
+      } catch {}
+
       try {
         if (isStale()) return;
-        tryDetachViewportSafely(renderingEngineRef.current);
-        await sleep(80);
-        if (isStale()) return;
+        if (!reuseExistingViewport) {
+          tryDetachViewportSafely(renderingEngineRef.current);
+          await sleep(80);
+          if (isStale()) return;
 
-        try {
-          await engine.setViewports?.([{
-            viewportId: VIEWPORT_ID,
-            type: viewportType,
-            element: mountEl,
-            defaultOptions: {
-              background: VIEWPORT_BACKGROUND,
-            },
-          }]);
-        } catch (err) {}
-        if (isStale()) return;
+          try {
+            await engine.setViewports?.([{
+              viewportId: VIEWPORT_ID,
+              type: viewportType,
+              element: mountEl,
+              defaultOptions: {
+                background: VIEWPORT_BACKGROUND,
+              },
+            }]);
+          } catch (err) {}
+          if (isStale()) return;
+        }
 
         try { normalizeCanvasAndContext(mountEl); } catch {}
         try { ensureCanvasSizing(mountEl); } catch {}
@@ -346,7 +390,9 @@ export function useRenderingEngine({
         try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
       } catch (err) {}
 
-      try { vp = engine.getViewport?.(VIEWPORT_ID); } catch {}
+      if (!vp) {
+        try { vp = engine.getViewport?.(VIEWPORT_ID); } catch {}
+      }
       if (!vp) {
         for (let i = 0; i < 6 && !vp && !isStale(); i++) {
           await sleep(80);
@@ -360,7 +406,10 @@ export function useRenderingEngine({
         if (vp) {
           try {
             const origSetStack = (vp as any).setStack;
-            if (typeof origSetStack === 'function') {
+            if (
+              typeof origSetStack === 'function' &&
+              !(vp as any).__viewerInteractionGuardedSetStack
+            ) {
               (vp as any).setStack = async function wrappedVpSetStack(_imageIds: string[], idx: number) {
                 try {
                   const el = (vp as any).element ?? mountEl ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
@@ -372,7 +421,9 @@ export function useRenderingEngine({
                   if (lastUserTs && now - lastUserTs < USER_COOLDOWN_MS) {
                     let currentIdx = -1;
                     try { if (typeof (vp as any).getCurrentImageIdIndex === 'function') currentIdx = (vp as any).getCurrentImageIdIndex(); } catch {}
-                    if (currentIdx >= 0 && currentIdx !== targetIndex) {
+                    const currentIds = (vp as any).getImageIds?.() ?? [];
+                    const isSameStack = areImageStacksEqual(currentIds, _imageIds);
+                    if (isSameStack && currentIdx >= 0 && currentIdx !== targetIndex) {
                       return false;
                     }
                   }
@@ -380,12 +431,16 @@ export function useRenderingEngine({
                 // eslint-disable-next-line prefer-rest-params
                 return await (origSetStack as any).apply(this, arguments as any);
               };
+              (vp as any).__viewerInteractionGuardedSetStack = true;
             }
           } catch {}
 
           try {
             const origSetImageId = (vp as any).setImageId;
-            if (typeof origSetImageId === 'function') {
+            if (
+              typeof origSetImageId === 'function' &&
+              !(vp as any).__viewerInteractionGuardedSetImageId
+            ) {
               (vp as any).setImageId = async function wrappedSetImageId(id: string) {
                 try {
                   const el = (vp as any).element ?? mountEl ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
@@ -406,6 +461,7 @@ export function useRenderingEngine({
                 // eslint-disable-next-line prefer-rest-params
                 return await (origSetImageId as any).apply(this, arguments as any);
               };
+              (vp as any).__viewerInteractionGuardedSetImageId = true;
             }
           } catch {}
         }

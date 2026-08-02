@@ -1,13 +1,11 @@
 // src/hooks/useImageReadiness.ts
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RenderingEngine } from '@cornerstonejs/core';
 import { getEnabledElement } from '@cornerstonejs/core';
 import { safeGetEnabledElement } from '@/lib/cornerstone/helpers';
 
-// Reuse centralized helper
 import { waitForCornerstoneReady as waitForCornerstoneReadyShared } from '@/lib/viewer/polling';
-import { preloadImagesWithTimeout as sharedPreloadImagesWithTimeout } from '@/lib/viewer/preload';
 
 type UseImageReadinessOpts = {
   renderingEngineRef: React.RefObject<RenderingEngine | null>;
@@ -21,7 +19,8 @@ type UseImageReadinessOpts = {
     imageIds: string[],
     desiredIndex: number,
     maxRetries?: number,
-    retryDelay?: number
+    retryDelay?: number,
+    isCancelled?: () => boolean
   ) => Promise<boolean>;
   viewportReady?: boolean;
   // optional: how long to wait in total when doing fallback poll (ms)
@@ -40,31 +39,24 @@ export function useImageReadiness({
 }: UseImageReadinessOpts) {
   const [imageReady, setImageReady] = useState<boolean>(false);
   const mountedRef = useRef(true);
+  const refreshGenerationRef = useRef(0);
 
-  // helper: extract imageIds for selected series
-  const getImageIdsForSelected = useCallback(() => {
+  const selectedImageIds = useMemo(() => {
     try {
       return (mergedSeriesMap?.[selectedSeries ?? '']?.files ?? []) as string[];
     } catch {
       return [];
     }
   }, [mergedSeriesMap, selectedSeries]);
+  const selectedImageIdSet = useMemo(
+    () => new Set(selectedImageIds),
+    [selectedImageIds]
+  );
 
-  // NOTE: use centralized preload helper (imported) instead of a local duplicate
-  const preloadImagesWithTimeout = useCallback(
-    async (imageIds: string[], options: { concurrency?: number; perLoadTimeoutMs?: number; limit?: number } = {}) => {
-      try {
-        // delegate to shared implementation which supports onProgress if needed
-        await sharedPreloadImagesWithTimeout(imageIds, {
-          concurrency: options.concurrency ?? 3,
-          perLoadTimeoutMs: options.perLoadTimeoutMs ?? 8000,
-          limit: options.limit ?? Math.min(6, imageIds.length),
-        });
-      } catch {
-        // swallow so readiness flow continues even if preload errors
-      }
-    },
-    []
+  // helper: extract imageIds for selected series
+  const getImageIdsForSelected = useCallback(
+    () => selectedImageIds,
+    [selectedImageIds]
   );
 
   // Helper: get enabled element safely (use existing helper where possible)
@@ -83,14 +75,49 @@ export function useImageReadiness({
     return null;
   }, []);
 
+  const hasSelectedStackImage = useCallback(
+    (enabledElement: ReturnType<typeof getEnabledSafe>) => {
+      if (!enabledElement) return false;
+
+      const imageIds = getImageIdsForSelected();
+      if (imageIds.length === 0) return false;
+
+      try {
+        const currentImageId =
+          enabledElement.viewport?.getCurrentImageId?.() ??
+          (enabledElement as any)?.image?.imageId;
+        return (
+          typeof currentImageId === 'string' &&
+          selectedImageIdSet.has(currentImageId)
+        );
+      } catch {
+        return false;
+      }
+    },
+    [getImageIdsForSelected, selectedImageIdSet]
+  );
+
   // Core refresh function: attempt robust ensureImageRendered -> fallback poll -> fallback setStack
   const refresh = useCallback(async (): Promise<boolean> => {
+    const generation = ++refreshGenerationRef.current;
     mountedRef.current = true;
+    const isCancelled = () =>
+      !mountedRef.current || refreshGenerationRef.current !== generation;
     // reset each refresh
-    try { if (mountedRef.current) setImageReady(false); } catch {}
+    try { if (!isCancelled()) setImageReady(false); } catch {}
 
     try {
       const imageIds = getImageIdsForSelected();
+      const enabledElement = getEnabledSafe(viewportEl);
+
+      // Series changes can briefly leave the previous image on the enabled
+      // element. Only short-circuit when the rendered image belongs to the
+      // currently selected stack.
+      if (hasSelectedStackImage(enabledElement)) {
+        if (!isCancelled()) setImageReady(true);
+        return true;
+      }
+
       const canUseEnsure =
         typeof ensureImageRendered === 'function' &&
         renderingEngineRef?.current &&
@@ -102,19 +129,21 @@ export function useImageReadiness({
       if (canUseEnsure) {
         // wait short time for cornerstone init (use shared helper)
         const csOk = await waitForCornerstoneReadyShared(3500).catch(() => false);
+        if (isCancelled()) return false;
         if (!csOk) {
           // allow fallback path (don't crash) — continue to poll fallback later
         } else {
           try {
-            // warm-up decoder using shared preload helper
-            await preloadImagesWithTimeout(imageIds, { concurrency: 3, perLoadTimeoutMs: 8000, limit: 6 });
-          } catch (e) {
-            // swallow preload errors
-          }
-
-          try {
-            const ok = await ensureImageRendered(viewportInstance, viewportEl, imageIds, 0, 40, 200);
-            if (mountedRef.current && ok) {
+            const ok = await ensureImageRendered(
+              viewportInstance,
+              viewportEl,
+              imageIds,
+              0,
+              40,
+              200,
+              isCancelled
+            );
+            if (!isCancelled() && ok && hasSelectedStackImage(getEnabledSafe(viewportEl))) {
               try { setImageReady(true); } catch {}
               return true;
             }
@@ -127,11 +156,11 @@ export function useImageReadiness({
       // fallback 1: quick polling enabled element
       const start = Date.now();
       const interval = 80;
-      while (mountedRef.current && Date.now() - start < pollTimeoutMs) {
+      while (!isCancelled() && Date.now() - start < pollTimeoutMs) {
         try {
           const en = getEnabledSafe(viewportEl);
-          if (en && (en as any).image) {
-            if (mountedRef.current) {
+          if (hasSelectedStackImage(en)) {
+            if (!isCancelled()) {
               try { setImageReady(true); } catch {}
             }
             return true;
@@ -141,10 +170,14 @@ export function useImageReadiness({
         }
         await new Promise((r) => setTimeout(r, interval));
       }
+      if (isCancelled()) return false;
 
       // final fail-open if viewportReady
-      if (viewportReady) {
-        if (mountedRef.current) {
+      if (
+        viewportReady &&
+        hasSelectedStackImage(getEnabledSafe(viewportEl))
+      ) {
+        if (!isCancelled()) {
           try { setImageReady(true); } catch {}
         }
         return true;
@@ -152,15 +185,13 @@ export function useImageReadiness({
 
       return false;
     } catch {
-      if (mountedRef.current) {
-        try { setImageReady(true); } catch {}
-      }
       return false;
     }
   }, [
     ensureImageRendered,
     getEnabledSafe,
     getImageIdsForSelected,
+    hasSelectedStackImage,
     viewportEl,
     viewportInstance,
     renderingEngineRef,
@@ -181,6 +212,7 @@ export function useImageReadiness({
 
     return () => {
       mountedRef.current = false;
+      refreshGenerationRef.current += 1;
     };
   }, [refresh]);
 
@@ -193,7 +225,7 @@ export function useImageReadiness({
     const checkOnce = () => {
       try {
         const en = getEnabledSafe(viewportEl);
-        if (en && (en as any).image) {
+        if (hasSelectedStackImage(en)) {
           setImageReady(true);
           return true;
         }
@@ -229,14 +261,16 @@ export function useImageReadiness({
       mounted = false;
       if (intervalId != null) clearInterval(intervalId);
     };
-  }, [viewportEl, selectedSeries]);
+  }, [getEnabledSafe, hasSelectedStackImage, pollTimeoutMs, selectedSeries, viewportEl]);
 
   // Listen to common render events (best effort)
   useEffect(() => {
     if (!viewportEl) return () => {};
     const onRendered = () => {
       try {
-        setImageReady(true);
+        if (hasSelectedStackImage(getEnabledSafe(viewportEl))) {
+          setImageReady(true);
+        }
       } catch {}
     };
 
@@ -247,20 +281,17 @@ export function useImageReadiness({
       try { viewportEl.removeEventListener('cornerstoneimagerendered', onRendered as EventListener); } catch {}
       try { viewportEl.removeEventListener('cornerstone-stack-new-image', onRendered as EventListener); } catch {}
     };
-  }, [viewportEl]);
+  }, [getEnabledSafe, hasSelectedStackImage, viewportEl]);
 
   // compute enabled presence quickly for callers
   const enForEnabledHasImage = getEnabledSafe(viewportEl);
-  const enabledHasImage = Boolean(
-    enForEnabledHasImage &&
-      ((enForEnabledHasImage as any).image ||
-        (enForEnabledHasImage.viewport &&
-          typeof (enForEnabledHasImage.viewport as any).getCurrentImageIdIndex === 'function' &&
-          (enForEnabledHasImage.viewport as any).getCurrentImageIdIndex() >= 0))
-  );
+  const enabledHasImage = hasSelectedStackImage(enForEnabledHasImage);
 
   useEffect(() => {
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      refreshGenerationRef.current += 1;
+    };
   }, []);
 
   return {

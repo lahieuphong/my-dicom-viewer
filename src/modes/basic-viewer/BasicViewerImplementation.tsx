@@ -327,6 +327,25 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   // --- Robust runtime check of enabled element presence (safe, effect-based)
   const [runtimeHasImage, setRuntimeHasImage] = useState<boolean>(false);
+  const selectedSeriesImageIdSet = useMemo(
+    () => new Set(mergedSeriesMap[selectedSeries]?.files ?? []),
+    [mergedSeriesMap, selectedSeries]
+  );
+
+  const isSelectedSeriesImageVisible = useCallback(() => {
+    try {
+      const enabled = getEnabledElementSafeLocal(viewportEl);
+      const currentImageId =
+        enabled?.viewport?.getCurrentImageId?.() ??
+        (enabled as any)?.image?.imageId;
+      return (
+        typeof currentImageId === 'string' &&
+        selectedSeriesImageIdSet.has(currentImageId)
+      );
+    } catch {
+      return false;
+    }
+  }, [selectedSeriesImageIdSet, viewportEl]);
 
   // Poll once (immediate) then a few retries to catch when Cornerstone finishes enabling
   useEffect(() => {
@@ -336,12 +355,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     const intervalMs = 120;
 
     const checkOnce = () => {
-      try {
-        const en = getEnabledElementSafeLocal(viewportEl);
-        return Boolean((en as any)?.image);
-      } catch {
-        return false;
-      }
+      return isSelectedSeriesImageVisible();
     };
 
     // immediate check
@@ -373,7 +387,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [viewportEl]);
+  }, [isSelectedSeriesImageVisible]);
 
   // Combine signals from useImageReadiness hook + hook's enabledHasImage + this runtime check
   // --- add viewportInstance signal as extra fallback ---
@@ -381,8 +395,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     try {
       if (!viewportInstance) return false;
       const vi: any = viewportInstance;
-      const enabled = getEnabledElementSafeLocal(viewportEl);
-      const hasRenderedImage = Boolean((enabled as any)?.image);
+      const hasRenderedImage = isSelectedSeriesImageVisible();
       if (vi.viewportStatus === 'rendered') return hasRenderedImage;
       if (hasRenderedImage) return true;
       return false;
@@ -553,6 +566,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
               preloadImagesWithTimeoutFn: preloadImagesWithTimeout,
               desiredIndex: desiredImageIndex,
               viewportId: VIEWPORT_ID,
+              isCancelled: shouldAbort,
             }).catch(() => false);
 
             if (shouldAbort()) return;
@@ -1599,6 +1613,27 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     []
   );
 
+  const handleSelectImageSeries = useCallback(
+    (uid: string) => {
+      pendingSeriesNavigationRef.current = {
+        seriesUID: uid,
+        imageIndex: 0,
+      };
+      setIsPlaying(false);
+      setCurrentFrame(1);
+      setSelectedSeries(uid);
+    },
+    [setCurrentFrame]
+  );
+
+  const handleSelectMobileImageSeries = useCallback(
+    (uid: string) => {
+      handleSelectImageSeries(uid);
+      setMobileSeriesOpen(false);
+    },
+    [handleSelectImageSeries]
+  );
+
   if (seriesError) {
     return (
       <div
@@ -1627,25 +1662,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       studyDescription={studyMeta.studyDescription}
       seriesMap={mergedSeriesMap}
       selectedSeries={selectedSeries}
-      onSelectSeries={(uid) => {
-        pendingSeriesNavigationRef.current = {
-          seriesUID: uid,
-          imageIndex: 0,
-        };
-        setIsPlaying(false);
-        setCurrentFrame(1);
-        setSelectedSeries(uid);
-      }}
-      onSelectMobileSeries={(uid) => {
-        pendingSeriesNavigationRef.current = {
-          seriesUID: uid,
-          imageIndex: 0,
-        };
-        setIsPlaying(false);
-        setCurrentFrame(1);
-        setSelectedSeries(uid);
-        setMobileSeriesOpen(false);
-      }}
+      onSelectSeries={handleSelectImageSeries}
+      onSelectMobileSeries={handleSelectMobileImageSeries}
       sidebarCollapsed={sidebarCollapsed}
       setSidebarCollapsed={setSidebarCollapsed}
       mobileSeriesOpen={mobileSeriesOpen}

@@ -114,7 +114,7 @@ export default function PanelScrollArea({
       el.removeEventListener('scroll', updateMetrics);
       observer?.disconnect();
     };
-  }, [children, updateMetrics]);
+  }, [updateMetrics]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -243,6 +243,7 @@ export default function PanelScrollArea({
     <div ref={rootRef} className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden', className)}>
       <div
         ref={scrollRef}
+        data-panel-scroll-viewport
         className="viewer-panel-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pr-4 focus:outline-none"
         tabIndex={0}
         onKeyDown={handleKeyDown}

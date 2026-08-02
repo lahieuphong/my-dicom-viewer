@@ -3,7 +3,7 @@
 
 import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
 import { ensureStackOnViewport } from './stack';
-import { getPreloadWindow, preloadImagesWithTimeout } from './preload';
+import { preloadImagesWithTimeout } from './preload';
 import type { DisplaySet } from './displaySet';
 import type { EngineRef } from './stack';
 import { VIEWPORT_ID } from '@/constants/viewport';
@@ -121,6 +121,7 @@ export async function attachDisplaySetToViewport(opts: {
   viewportId?: string;
   // new: whether to lock viewport to the index used for this attach (default true)
   lockAfterAttach?: boolean;
+  isCancelled?: () => boolean;
 }) {
   const {
     displaySet,
@@ -132,10 +133,11 @@ export async function attachDisplaySetToViewport(opts: {
     viewportId = VIEWPORT_ID,
     lockAfterAttach: _lockAfterAttach = true,
     desiredIndex: optDesiredIndex,
+    isCancelled,
   } = opts;
 
   const imageIds = displaySet.imageIds ?? [];
-  if (!imageIds || imageIds.length === 0) return false;
+  if (!imageIds || imageIds.length === 0 || isCancelled?.()) return false;
 
   // If caller supplies desiredIndex we respect it; otherwise default to initialImageIdIndex OR 0.
   const defaultDesiredIndex =
@@ -251,23 +253,6 @@ export async function attachDisplaySetToViewport(opts: {
         }
       };
 
-      // WARM PRELOAD: call preloadWrapper (best-effort). Use a small limit to warm.
-      try {
-        const warmIds = getPreloadWindow(imageIds, desiredIndex, {
-          backward: 3,
-          forward: 12,
-          max: 16,
-        });
-
-        await preloadWrapper(warmIds, {
-          concurrency: 3,
-          perLoadTimeoutMs: 7000,
-          limit: warmIds.length,
-        }).catch(() => {});
-      } catch (e) {
-        // swallow warm preload errors but log
-      }
-
       // Call ensureStackOnViewport but *pass our bound preloadWrapper* so ensureStack won't create independent preloads.
       const ok = await ensureStackOnViewport({
         renderingEngineRef,
@@ -280,6 +265,7 @@ export async function attachDisplaySetToViewport(opts: {
         preloadImagesWithTimeout: preloadWrapper,
         viewportId,
         settleMs: 120,
+        isCancelled,
       }).catch(() => {
         return false;
       });
@@ -312,6 +298,8 @@ export async function attachDisplaySetToViewport(opts: {
     /* swallow top-level */
   }
 
+  if (isCancelled?.()) return false;
+
   // 2) final housekeeping: reset presentation before applying the requested frame.
   try {
     try { viewportInstance?.reset?.(); } catch {}
@@ -320,6 +308,7 @@ export async function attachDisplaySetToViewport(opts: {
     try { await viewportInstance?.render?.(); } catch {}
   } catch (e) {
   }
+  if (isCancelled?.()) return false;
 
   // 3) The requested index is authoritative. Preload/render nudges must not
   // advance the stack and then become the locked display frame.
@@ -332,6 +321,7 @@ export async function attachDisplaySetToViewport(opts: {
     viewportId,
     requestToken,
   });
+  if (isCancelled?.()) return false;
 
   try {
     const runtimeIndex = readViewportImageIndex(viewportInstance, viewportEl);
@@ -397,6 +387,7 @@ export async function attachDisplaySetToViewport(opts: {
   }
 
   // 6) ensure VOI if displaySet has it
+  if (isCancelled?.()) return false;
   try {
     const voi = displaySet.initialVOIRange ?? null;
     if (voi && viewportInstance && typeof viewportInstance.setProperties === 'function') {
@@ -407,6 +398,8 @@ export async function attachDisplaySetToViewport(opts: {
       try { await viewportInstance?.render?.(); } catch {}
     }
   } catch {}
+
+  if (isCancelled?.()) return false;
 
   // final normalize & render
   try { normalizeCanvasAndContext(viewportEl); } catch {}

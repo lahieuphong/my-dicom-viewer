@@ -28,7 +28,11 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: 'Cache-Control',
-            value: 'private, no-store, max-age=0, must-revalidate',
+            // The checked-in files are reviewed public demo assets. Reuse them
+            // across repeat visits while allowing future deployments to replace
+            // non-content-addressed filenames without an immutable cache entry.
+            value:
+              'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800',
           },
         ],
       },
