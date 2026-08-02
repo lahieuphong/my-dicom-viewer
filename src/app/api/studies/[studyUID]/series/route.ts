@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSeriesForStudy } from '@/server/dicom-manifest';
+import { PRIVATE_NO_STORE_HEADERS } from '@/server/http';
+
+export const runtime = 'nodejs';
 
 type RouteContext = {
   params: Promise<{ studyUID: string }>;
@@ -13,11 +16,12 @@ export async function GET(request: Request, context: RouteContext) {
 
     return NextResponse.json(getSeriesForStudy(studyUID, { includeInstances }), {
       status: 200,
-      headers: {
-        'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
-      },
+      headers: PRIVATE_NO_STORE_HEADERS,
     });
   } catch {
-    return NextResponse.json({ error: 'Internal' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Internal' },
+      { status: 500, headers: PRIVATE_NO_STORE_HEADERS }
+    );
   }
 }

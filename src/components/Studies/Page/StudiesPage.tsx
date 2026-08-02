@@ -1,16 +1,24 @@
 'use client';
 
 import { Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
-import { BasicViewer } from '@/modes/basic-viewer/BasicViewer';
 import { AppFooter, AppHeader } from '@/platform/ui';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import Loading from '@/components/ui/loading';
 import { StudiesProvider, useStudies } from '@/context/StudiesContext';
 import StudiesTable from '../Table';
 
+const BasicViewer = dynamic(
+  () => import('@/modes/basic-viewer/BasicViewer').then((module) => module.BasicViewer),
+  {
+    ssr: false,
+    loading: () => <Loading message="Đang tải trình xem DICOM..." />,
+  }
+);
+
 function StudiesPageContent() {
-  const { studies, loading: studiesLoading } = useStudies();
+  const { studies, loading: studiesLoading, error: studiesError } = useStudies();
   const searchParams = useSearchParams();
   const queryPatient = searchParams.get('patientId');
   const studyUID = searchParams.get('study');
@@ -75,6 +83,17 @@ function StudiesPageContent() {
         <div className="px-2 relative min-h-[200px]">
           {showInitialLoading ? (
             <Loading message="Đang tải danh sách studies..." />
+          ) : studiesError ? (
+            <Alert
+              variant="destructive"
+              className="mx-auto max-w-2xl border border-red-400 p-4"
+            >
+              <i className="fas fa-exclamation-triangle text-destructive text-xl" />
+              <AlertTitle className="whitespace-normal">
+                Không thể tải danh sách studies. Vui lòng kiểm tra kết nối PACS
+                hoặc cấu hình nguồn dữ liệu.
+              </AlertTitle>
+            </Alert>
           ) : (
             <>
               <StudiesTable data={filteredStudies} />

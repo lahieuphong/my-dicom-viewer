@@ -28,13 +28,23 @@ function buildPacsApiUrl(pathname: string): string {
   if (/^https?:\/\//i.test(pathname)) return pathname;
   if (!PACS_API_BASE) return pathname;
 
-  const base = PACS_API_BASE.replace(/\/+$/, '');
-  const remotePath = pathname.replace(/^\/api(?=\/)/, '');
-  const normalizedPath = remotePath.startsWith('/')
-    ? remotePath
-    : `/${remotePath}`;
+  try {
+    const base = new URL(PACS_API_BASE);
+    base.search = '';
+    base.hash = '';
+    if (!base.pathname.endsWith('/')) {
+      base.pathname = `${base.pathname}/`;
+    }
 
-  return `${base}${normalizedPath}`;
+    const remotePath = pathname
+      .replace(/^\/api(?=\/)/, '')
+      .replace(/^\/+/, '');
+    return new URL(remotePath, base).toString();
+  } catch {
+    // The deployment readiness check rejects invalid production values. Keep
+    // the same-origin API usable if local development has a malformed value.
+    return pathname;
+  }
 }
 
 export function getViewerPath(studyInstanceUID: string): string {

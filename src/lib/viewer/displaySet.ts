@@ -2,6 +2,7 @@
 'use client';
 
 import type { DisplaySet, Series } from '@/platform/core';
+import { resolveDicomImageId } from '@/config/dicom';
 import { getInitialVOIFromSeriesMetadata } from '@/lib/cornerstone/voi';
 import { normalizeImageId } from '@/lib/cornerstone/helpers';
 
@@ -9,34 +10,13 @@ export type { DisplaySet } from '@/platform/core';
 
 /**
  * Convert a raw file identifier into a Cornerstone-compatible imageId.
- * Rules:
- *  - If value already contains a scheme (e.g. starts with "wadouri:", "dicomweb:", "imageId:") -> return as-is
- *  - If value is an absolute http(s) URL -> prefix with "wadouri:"
- *  - If value starts with "/" -> treat as absolute path on same origin -> prefix with window.location.origin + "wadouri:"
- *  - Otherwise treat as relative path -> prefix with window.location.origin + "/" and "wadouri:"
- *
- * This normalization ensures the dicom-image-loader (wadouri) recognizes and can load imageIds.
+ * The shared resolver preserves existing Cornerstone schemes and resolves
+ * ordinary URLs against the configured DICOM/PACS origin before adding the
+ * WADO-URI loader prefix.
  */
 function toCornerstoneImageId(raw?: string | null): string {
   if (!raw) return String(raw ?? '');
-  const s = String(raw).trim();
-  // already has a scheme like 'wadouri:', 'dicomweb:', 'imageId:', 'http:', etc.
-  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) {
-    return s;
-  }
-
-  // absolute http(s)
-  if (/^https?:\/\//i.test(s)) {
-    return `wadouri:${s}`;
-  }
-
-  // path starting with '/'
-  if (s.startsWith('/')) {
-    return `wadouri:${window.location.origin}${s}`;
-  }
-
-  // fallback: relative path
-  return `wadouri:${window.location.origin}/${s}`;
+  return resolveDicomImageId(String(raw), window.location.origin);
 }
 
 /**

@@ -52,7 +52,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUsername(null);
     toast.success('Đăng xuất thành công');
-    router.replace('/login');
+
+    // A full navigation clears module-level study/series caches so metadata
+    // from the previous user cannot remain available in the same browser tab.
+    window.location.replace('/login');
   };
 
   return (

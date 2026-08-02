@@ -1,0 +1,25 @@
+.git
+.next
+node_modules
+
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# Local medical-image data must never be uploaded implicitly by the CLI.
+public/dicoms
+public/dicom-manifest.json
+*.dcm
+*.dicom
+*.DCM
+*.DICOM
+*.nii
+*.nii.gz
+
+coverage
+playwright-report
+test-results
+*.log
+.DS_Store

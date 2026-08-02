@@ -195,6 +195,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     selectedSeries,
     setSelectedSeries,
     loadingSeries,
+    seriesError,
     voiDefaults,
   } = useSeriesLoader(studyUID);
 
@@ -1599,6 +1600,21 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     []
   );
 
+  if (seriesError) {
+    return (
+      <div
+        role="alert"
+        className="flex h-full min-h-64 items-center justify-center bg-background p-6 text-center"
+      >
+        <div className="max-w-xl rounded-lg border border-destructive/50 bg-card p-5 text-destructive shadow-sm">
+          <p className="font-semibold">Không thể tải dữ liệu DICOM.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Vui lòng kiểm tra kết nối PACS, quyền truy cập và URL ảnh DICOM.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ViewerWorkspace

@@ -4,6 +4,36 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['127.0.0.1'],
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "base-uri 'self'; frame-ancestors 'none'; object-src 'none'",
+          },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-DNS-Prefetch-Control', value: 'off' },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
+          },
+        ],
+      },
+      {
+        source: '/dicoms/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'private, no-store, max-age=0, must-revalidate',
+          },
+        ],
+      },
+    ];
+  },
   webpack: (config, { dev }) => {
     // 1. Tắt source map khi dev
     if (dev) {
@@ -21,7 +51,7 @@ const nextConfig: NextConfig = {
     // 3. Thêm alias '@' => 'src'
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
-      '@': path.resolve(__dirname, 'src'),
+      '@': path.resolve(process.cwd(), 'src'),
     };
 
     return config;
