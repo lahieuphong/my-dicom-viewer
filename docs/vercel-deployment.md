@@ -14,7 +14,8 @@ boundary:
 
 The build runs `yarn check:deploy` automatically. On Vercel it fails early when
 neither a remote API nor a deployable local manifest is available, instead of
-shipping an application that silently displays zero studies.
+shipping an application that silently displays zero studies. A deliberately
+empty UI smoke deployment must opt in with `ALLOW_EMPTY_DATA_SOURCE=1`.
 
 ## Vercel project settings
 
@@ -40,10 +41,16 @@ Configure variables separately for Preview and Production:
 | `NEXT_PUBLIC_PACS_API_BASE` | public/build-time | Required for the recommended remote deployment; must be an absolute HTTPS URL. |
 | `NEXT_PUBLIC_DICOM_ASSET_BASE` | public/build-time | Optional base for relative instance URLs. Prefer absolute signed URLs instead. |
 | `AUTH_BACKEND_BASE_URL` | server-only/runtime | Required only when the current login proxy is enabled; must be reachable from Vercel over HTTPS. |
+| `ALLOW_EMPTY_DATA_SOURCE` | server-only/build-time | Optional explicit opt-in (`1` or `true`) for a UI-only deployment with an empty studies list. |
 
 Never place credentials, API keys, or bearer tokens in a `NEXT_PUBLIC_*`
 variable. These values are embedded in browser JavaScript, and changes only
 apply after a new build/deployment.
+
+`ALLOW_EMPTY_DATA_SOURCE` does not expose or synthesize data. It only allows the
+application shell to build while local DICOM files remain excluded. Remove it
+when `NEXT_PUBLIC_PACS_API_BASE` is configured; it must not be treated as a
+clinical-production data mode.
 
 ## Remote API contract
 

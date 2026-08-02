@@ -100,6 +100,11 @@ Vercel CLI uploads. A Vercel deployment therefore needs a remote PACS/data API
 unless a separately reviewed, de-identified demo dataset is supplied through a
 controlled build process.
 
+For a UI-only smoke deployment before a PACS is available, explicitly set
+`ALLOW_EMPTY_DATA_SOURCE=1` in the target Vercel environment. This deploys an
+empty application shell and never includes local DICOM files; it is not a
+clinical-production data mode.
+
 See [docs/vercel-deployment.md](docs/vercel-deployment.md) for the required
 environment variables, build settings, CORS rules, privacy gates, and the final
 pre-deployment checklist.

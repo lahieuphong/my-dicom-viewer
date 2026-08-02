@@ -14,6 +14,16 @@ const pacsApiBase = process.env.NEXT_PUBLIC_PACS_API_BASE?.trim() ?? '';
 const dicomAssetBase =
   process.env.NEXT_PUBLIC_DICOM_ASSET_BASE?.trim() ?? '';
 const authBackendBase = process.env.AUTH_BACKEND_BASE_URL?.trim() ?? '';
+const allowEmptyDataSourceValue =
+  process.env.ALLOW_EMPTY_DATA_SOURCE?.trim().toLowerCase() ?? '';
+const allowEmptyDataSource = ['1', 'true'].includes(allowEmptyDataSourceValue);
+
+if (
+  allowEmptyDataSourceValue &&
+  !['0', '1', 'false', 'true'].includes(allowEmptyDataSourceValue)
+) {
+  errors.push('ALLOW_EMPTY_DATA_SOURCE must be 0, 1, false, or true.');
+}
 
 function isLoopback(hostname) {
   return (
@@ -131,9 +141,15 @@ if (manifest.missingFiles > 0) {
 }
 
 if (isVercelBuild && !pacsApiBase && !hasUsableManifest) {
-  errors.push(
-    'No deployable data source found. Configure NEXT_PUBLIC_PACS_API_BASE or provide a reviewed non-empty demo manifest; local DICOM data is intentionally excluded from Vercel uploads.'
-  );
+  if (allowEmptyDataSource) {
+    warnings.push(
+      'No PACS or demo manifest is configured. ALLOW_EMPTY_DATA_SOURCE is enabled, so only the empty application shell will be deployed.'
+    );
+  } else {
+    errors.push(
+      'No deployable data source found. Configure NEXT_PUBLIC_PACS_API_BASE, provide a reviewed non-empty demo manifest, or explicitly set ALLOW_EMPTY_DATA_SOURCE=1 for a UI-only shell deployment; local DICOM data is intentionally excluded from Vercel uploads.'
+    );
+  }
 }
 
 if (!isVercelBuild && !pacsApiBase && !hasUsableManifest) {
@@ -150,7 +166,9 @@ const dataSource = pacsApiBase
   ? 'remote PACS API'
   : manifest.exists
     ? `local manifest (${manifest.studyCount} studies, ${manifest.instanceCount} instances)`
-    : 'none';
+    : allowEmptyDataSource
+      ? 'empty application shell (explicitly allowed)'
+      : 'none';
 
 console.log(`Deployment readiness: data source = ${dataSource}.`);
 
