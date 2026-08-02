@@ -116,23 +116,6 @@ export default function Toolbar({
             bg-card
           "
         >
-          {renderButton('adjust', 'fas fa-adjust', 'Adjust')}
-          {renderButton('pan', 'fas fa-arrows-alt', 'Pan')}
-          {renderButton('zoom', 'fas fa-search-plus', 'Zoom')}
-
-          {/* Cine Controls */}
-          <CineControls
-            isPlaying={isPlaying}
-            fps={fps}
-            onTogglePlay={() => {
-              onTogglePlay();
-              onSelectTool('cine');
-            }}
-            onFpsChange={onFpsChange}
-            isLoading={isLoading}
-            isActive={isCineActive}
-          />
-
           {/* Measurement Tools Dropdown */}
           <DropdownMenu>
             <ToolbarTooltip
@@ -177,6 +160,13 @@ export default function Toolbar({
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {renderButton('zoom', 'fas fa-search-plus', 'Zoom')}
+          {renderButton('pan', 'fas fa-arrows-alt', 'Pan')}
+          {renderButton('adjust', 'fas fa-adjust', 'Adjust')}
+
+          {/* CaptureControl */}
+          <CaptureControl viewportEl={viewportEl ?? null} />
 
           {/* Other Tools Dropdown */}
           <DropdownMenu>
@@ -243,8 +233,18 @@ export default function Toolbar({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* CaptureControl */}
-          <CaptureControl viewportEl={viewportEl ?? null} />
+          {/* Cine Controls */}
+          <CineControls
+            isPlaying={isPlaying}
+            fps={fps}
+            onTogglePlay={() => {
+              onTogglePlay();
+              onSelectTool('cine');
+            }}
+            onFpsChange={onFpsChange}
+            isLoading={isLoading}
+            isActive={isCineActive}
+          />
         </div>
       </div>
     </TooltipProvider>
