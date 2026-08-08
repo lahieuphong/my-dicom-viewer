@@ -42,12 +42,15 @@ function buildPrefetchIndices(
  * 3.33's context prefetcher to fill a quarter of its multi-gigabyte cache.
  * Interactive viewport requests stay in their own higher-priority pool.
  */
-export function useStackPrefetch(element: HTMLDivElement | null) {
+export function useStackPrefetch(
+  element: HTMLDivElement | null,
+  disabled = false
+) {
   const ownerId = useId();
   const previousIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!element) return;
+    if (!element || disabled) return;
 
     const owner = `dicom-stack-prefetch-${ownerId}`;
     let schedulingFrame: number | null = null;
@@ -82,12 +85,16 @@ export function useStackPrefetch(element: HTMLDivElement | null) {
           ? Math.max(0, Math.min(rawCurrentIndex, imageIds.length - 1))
           : 0;
         const previousIndex = previousIndexRef.current;
+        const directDelta =
+          previousIndex == null ? 0 : currentIndex - previousIndex;
+        // Treat the last -> first and first -> last Cine/scroll transitions as
+        // adjacent cyclic frames instead of reversing the prefetch direction.
+        const cyclicDelta =
+          Math.abs(directDelta) > imageIds.length / 2
+            ? -Math.sign(directDelta)
+            : Math.sign(directDelta);
         const direction: -1 | 0 | 1 =
-          previousIndex == null || previousIndex === currentIndex
-            ? 0
-            : currentIndex > previousIndex
-              ? 1
-              : -1;
+          cyclicDelta < 0 ? -1 : cyclicDelta > 0 ? 1 : 0;
         previousIndexRef.current = currentIndex;
 
         clearQueuedRequests();
@@ -155,7 +162,7 @@ export function useStackPrefetch(element: HTMLDivElement | null) {
       clearQueuedRequests();
       previousIndexRef.current = null;
     };
-  }, [element, ownerId]);
+  }, [disabled, element, ownerId]);
 }
 
 export default useStackPrefetch;

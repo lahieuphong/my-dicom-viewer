@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Enums as CoreEnums } from '@cornerstonejs/core';
 
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { cn } from '@/lib/utils';
@@ -9,6 +10,7 @@ type ViewportStackScrollbarProps = {
   currentFrame: number;
   totalFrames: number;
   onFrameChange: (frame: number) => boolean | void | Promise<boolean | void>;
+  viewportEl?: HTMLDivElement | null;
   disabled?: boolean;
 };
 
@@ -22,6 +24,7 @@ export default function ViewportStackScrollbar({
   currentFrame,
   totalFrames,
   onFrameChange,
+  viewportEl = null,
   disabled = false,
 }: ViewportStackScrollbarProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -41,6 +44,35 @@ export default function ViewportStackScrollbar({
     displayFrameRef.current = normalizedFrame;
     setDisplayFrame(normalizedFrame);
   }, [normalizedFrame]);
+
+  useEffect(() => {
+    if (!viewportEl || normalizedTotal <= 1) return;
+
+    const handleStackNewImage = (event: Event) => {
+      if (dragRef.current) return;
+      const imageIndex = (
+        event as CustomEvent<{ imageIdIndex?: number }>
+      ).detail?.imageIdIndex;
+      if (!Number.isInteger(imageIndex)) return;
+
+      const nextFrame = clampFrame(Number(imageIndex) + 1, normalizedTotal);
+      if (displayFrameRef.current === nextFrame) return;
+      displayFrameRef.current = nextFrame;
+      setDisplayFrame(nextFrame);
+    };
+
+    viewportEl.addEventListener(
+      CoreEnums.Events.STACK_NEW_IMAGE,
+      handleStackNewImage as EventListener
+    );
+
+    return () => {
+      viewportEl.removeEventListener(
+        CoreEnums.Events.STACK_NEW_IMAGE,
+        handleStackNewImage as EventListener
+      );
+    };
+  }, [normalizedTotal, viewportEl]);
 
   useEffect(() => {
     return () => {

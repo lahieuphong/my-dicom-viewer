@@ -1,21 +1,141 @@
 // src/hooks/useCine.ts
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { utilities } from '@cornerstonejs/tools';
 import { clampCineFps } from '@/constants/cine';
+import {
+  prepareCineStack,
+  type CinePreloadMode,
+  type CinePreloadProgress,
+} from '@/lib/viewer/cinePreload';
+
+export type CinePreparationPhase =
+  | 'idle'
+  | 'preparing'
+  | 'ready'
+  | 'error';
+
+export type CinePreparationState = CinePreloadProgress & {
+  mode: CinePreloadMode;
+  phase: CinePreparationPhase;
+};
+
+type UseCineOptions = {
+  enabled: boolean;
+  element: HTMLDivElement | null;
+  fps: number;
+  isPlaying: boolean;
+  stackKey?: string | null;
+};
+
+const IDLE_PREPARATION: CinePreparationState = {
+  phase: 'idle',
+  loadedImages: 0,
+  totalImages: 0,
+  failedImages: 0,
+  mode: 'full',
+  percent: 0,
+};
 
 /**
- * Hook to control cine playback using Cornerstone Tools' utilities.cine API
- * @param isPlaying - whether playback is active
- * @param fps - frames per second for playback
- * @param element - the HTML element where Cornerstone viewport is attached
+ * Prepares the active stack and controls Cornerstone's Cine playback.
+ * Normal stacks are gated until every frame is decoded; oversized stacks are
+ * gated on a forward buffer and then use OHIF's expanding context prefetcher.
  */
-export function useCine(
-  isPlaying: boolean,
-  fps: number,
-  element: HTMLDivElement | null
-) {
+export function useCine({
+  enabled,
+  element,
+  fps,
+  isPlaying,
+  stackKey,
+}: UseCineOptions) {
+  const [preparation, setPreparation] =
+    useState<CinePreparationState>(IDLE_PREPARATION);
+  const [retryGeneration, setRetryGeneration] = useState(0);
+
+  const retryPreparation = useCallback(() => {
+    setRetryGeneration((generation) => generation + 1);
+  }, []);
+
   useEffect(() => {
-    if (!element || !isPlaying) return;
+    if (!enabled || !element) {
+      setPreparation(IDLE_PREPARATION);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    let lastPercent = -1;
+
+    setPreparation({
+      ...IDLE_PREPARATION,
+      phase: 'preparing',
+    });
+
+    void prepareCineStack(element, {
+      concurrency: 3,
+      signal: controller.signal,
+      onProgress: (progress) => {
+        if (!active || controller.signal.aborted) return;
+        // Keep progress responsive without producing redundant React renders.
+        if (progress.percent === lastPercent && progress.failedImages === 0) {
+          return;
+        }
+        lastPercent = progress.percent;
+        setPreparation({ ...progress, mode: 'full', phase: 'preparing' });
+      },
+    }).then((result) => {
+      if (!active || result.aborted) return;
+      setPreparation({
+        loadedImages: result.loadedImages,
+        totalImages: result.totalImages,
+        failedImages: result.failedImages,
+        mode: result.mode,
+        percent: result.percent,
+        phase: result.ready ? 'ready' : 'error',
+      });
+    });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [element, enabled, retryGeneration, stackKey]);
+
+  useEffect(() => {
+    if (
+      !enabled ||
+      !element ||
+      preparation.phase !== 'ready' ||
+      preparation.mode !== 'buffered'
+    ) {
+      return;
+    }
+
+    // Very large stacks cannot be held fully in cache. After a deterministic
+    // forward buffer is ready, use the same expanding context prefetcher as
+    // OHIF to keep feeding frames without permanently blocking Play.
+    try {
+      utilities.stackContextPrefetch.enable(element);
+    } catch {
+      return;
+    }
+
+    return () => {
+      try {
+        utilities.stackContextPrefetch.disable(element);
+      } catch {}
+    };
+  }, [element, enabled, preparation.mode, preparation.phase]);
+
+  useEffect(() => {
+    if (
+      !enabled ||
+      !element ||
+      !isPlaying ||
+      preparation.phase !== 'ready'
+    ) {
+      return;
+    }
 
     const framesPerSecond = clampCineFps(fps);
     utilities.cine.playClip(element, {
@@ -26,5 +146,10 @@ export function useCine(
     return () => {
       utilities.cine.stopClip(element);
     };
-  }, [isPlaying, fps, element]);
+  }, [element, enabled, fps, isPlaying, preparation.phase]);
+
+  return {
+    ...preparation,
+    retryPreparation,
+  };
 }

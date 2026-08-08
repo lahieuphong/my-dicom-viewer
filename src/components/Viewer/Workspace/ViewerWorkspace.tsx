@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ComponentProps, CSSProperties, Dispatch, RefObject, SetStateAction } from 'react';
 
 import { Loading } from '@/components/ui/loading';
@@ -10,6 +10,8 @@ import {
   VIEWER_RIGHT_PANEL_COLLAPSED,
 } from '@/constants/viewerLayout';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
+import { useCine } from '@/hooks/useCine';
+import { useStackPrefetch } from '@/hooks/useStackPrefetch';
 import type { ToolID } from '@/hooks/useToolManager';
 import { useViewerPanelResize } from '@/hooks/useViewerPanelResize';
 
@@ -145,6 +147,27 @@ export default function ViewerWorkspace({
   const totalFrames = selectedSeriesEntry?.files.length ?? 0;
   const measurementSeriesMap = seriesMap as MeasurementPanelProps['seriesMap'];
   const [cineOpen, setCineOpen] = useState(false);
+  const cineEnabled =
+    cineOpen &&
+    !loadingStack &&
+    imageAvailable &&
+    !isSeriesToolbarReadOnly;
+
+  const cinePreparation = useCine({
+    enabled: cineEnabled,
+    element: viewportEl,
+    fps,
+    isPlaying,
+    stackKey: selectedSeries,
+  });
+  // Normal wheel navigation uses a small bounded window. Cine owns prefetch
+  // while its panel is open, avoiding two loaders competing for the same
+  // decode workers during preparation.
+  useStackPrefetch(viewportEl, cineOpen);
+
+  useEffect(() => {
+    if (!cineEnabled && isPlaying) onPlayChange(false);
+  }, [cineEnabled, isPlaying, onPlayChange]);
 
   const toggleCine = useCallback(() => {
     // OHIF opens and closes the Cine panel in a paused state.
@@ -327,7 +350,12 @@ export default function ViewerWorkspace({
                 onPlayPauseChange={onPlayChange}
                 onFpsChange={onFpsChange}
                 onClose={closeCine}
-                isLoading={loadingStack}
+                isLoading={loadingStack || !imageAvailable}
+                preparationPhase={cinePreparation.phase}
+                preparationProgress={cinePreparation.percent}
+                preparedImages={cinePreparation.loadedImages}
+                totalImages={cinePreparation.totalImages}
+                onRetryPreparation={cinePreparation.retryPreparation}
               />
               <ViewportOverlay
                 studyDate={studyDate}
@@ -346,6 +374,7 @@ export default function ViewerWorkspace({
                 currentFrame={currentFrame}
                 totalFrames={totalFrames}
                 onFrameChange={onFrameChange}
+                viewportEl={viewportEl}
                 disabled={loadingStack || !imageAvailable}
               />
             </div>

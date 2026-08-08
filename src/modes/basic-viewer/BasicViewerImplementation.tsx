@@ -36,7 +36,6 @@ import {
   enableElement,
   measurementToolIDs,
   toolNameMap,
-  useCine,
   useEnsureImageRendered,
   useFlipHorizontal,
   useForceZoomOne,
@@ -47,7 +46,6 @@ import {
   useRenderingEngine,
   useResetViewer,
   useRotate,
-  useStackPrefetch,
   useStackScrollWheel,
   useStackVoiPersistence,
   useToolManager,
@@ -138,6 +136,20 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const [fps, setFps] = useState(DEFAULT_CINE_FPS);
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(isPlaying);
+
+  useLayoutEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  const handleViewportFrameIndexChange = useCallback(
+    (frame: number) => {
+      // Overlay and stack scrollbar subscribe to STACK_NEW_IMAGE themselves.
+      // Avoid rendering the entire workspace/sidebar tree for every Cine tick.
+      if (!isPlayingRef.current) setCurrentFrameBatched(frame);
+    },
+    [setCurrentFrameBatched]
+  );
 
   const [allMeasurements, setAllMeasurements] = useState<AnnotationMeasurement[]>([]);
   const [selectedMeasurementUID, setSelectedMeasurementUID] = useState<string | null>(null);
@@ -223,8 +235,18 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     selectedSeriesId: selectedSeries,
     mergedSeriesMap,
     voiDefaults,
-    onFrameIndexChange: setCurrentFrameBatched,
+    onFrameIndexChange: handleViewportFrameIndexChange,
   });
+
+  useEffect(() => {
+    if (isPlaying || !viewportInstance) return;
+    try {
+      const imageIndex = viewportInstance.getCurrentImageIdIndex?.();
+      if (Number.isInteger(imageIndex) && Number(imageIndex) >= 0) {
+        setCurrentFrame(Number(imageIndex) + 1);
+      }
+    } catch {}
+  }, [isPlaying, setCurrentFrame, viewportInstance]);
 
   const handleViewportFrameChange = useCallback(
     async (frameOneBased: number) => {
@@ -1054,9 +1076,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     resolveSeriesUID: resolveSeriesFromImageId,
   });
 
-  useStackPrefetch(viewportEl);
   useStackScrollWheel(viewportEl, selectedSeries);
-  useCine(isPlaying, fps, viewportEl);
 
   // ---------------- SR / measurement lists --------------
   const [loadedSrList, setLoadedSrList] = useState<
