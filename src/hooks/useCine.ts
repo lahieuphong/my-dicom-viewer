@@ -64,7 +64,17 @@ export function useCine({
 
     const controller = new AbortController();
     let active = true;
-    let lastPercent = -1;
+    let pendingProgress: CinePreloadProgress | null = null;
+    let progressTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushProgress = () => {
+      progressTimer = null;
+      if (!active || controller.signal.aborted || !pendingProgress) return;
+
+      const progress = pendingProgress;
+      pendingProgress = null;
+      setPreparation({ ...progress, mode: 'full', phase: 'preparing' });
+    };
 
     setPreparation({
       ...IDLE_PREPARATION,
@@ -76,28 +86,47 @@ export function useCine({
       signal: controller.signal,
       onProgress: (progress) => {
         if (!active || controller.signal.aborted) return;
-        // Keep progress responsive without producing redundant React renders.
-        if (progress.percent === lastPercent && progress.failedImages === 0) {
-          return;
+        // Decode completion can arrive in bursts. Publish only the latest
+        // snapshot at 10 Hz so the whole workspace is not rendered per image.
+        pendingProgress = progress;
+        if (progressTimer === null) {
+          progressTimer = setTimeout(flushProgress, 100);
         }
-        lastPercent = progress.percent;
-        setPreparation({ ...progress, mode: 'full', phase: 'preparing' });
       },
-    }).then((result) => {
-      if (!active || result.aborted) return;
-      setPreparation({
-        loadedImages: result.loadedImages,
-        totalImages: result.totalImages,
-        failedImages: result.failedImages,
-        mode: result.mode,
-        percent: result.percent,
-        phase: result.ready ? 'ready' : 'error',
+    })
+      .then((result) => {
+        if (!active || result.aborted) return;
+        if (progressTimer !== null) clearTimeout(progressTimer);
+        progressTimer = null;
+        pendingProgress = null;
+        setPreparation({
+          loadedImages: result.loadedImages,
+          totalImages: result.totalImages,
+          failedImages: result.failedImages,
+          mode: result.mode,
+          percent: result.percent,
+          phase: result.ready ? 'ready' : 'error',
+        });
+      })
+      .catch(() => {
+        if (!active || controller.signal.aborted) return;
+        if (progressTimer !== null) clearTimeout(progressTimer);
+        progressTimer = null;
+        pendingProgress = null;
+        setPreparation((current) => ({
+          ...current,
+          phase: 'error',
+          failedImages: Math.max(
+            current.failedImages,
+            current.totalImages - current.loadedImages
+          ),
+        }));
       });
-    });
 
     return () => {
       active = false;
       controller.abort();
+      if (progressTimer !== null) clearTimeout(progressTimer);
     };
   }, [element, enabled, retryGeneration, stackKey]);
 

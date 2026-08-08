@@ -35,6 +35,7 @@ interface ToolbarProps {
 
   // NEW prop: whether current series is SR (read-only)
   isSeriesSR?: boolean;
+  disabled?: boolean;
 }
 
 export default function Toolbar({
@@ -47,6 +48,7 @@ export default function Toolbar({
   onToggleCine,
   viewportEl,
   isSeriesSR = false,
+  disabled = false,
 }: ToolbarProps) {
   const renderButton = (tool: ToolID, iconClass: string, title: string) => {
     const isActive = activeTool === tool;
@@ -55,6 +57,7 @@ export default function Toolbar({
       <ToolbarTooltip label={tooltip.label} detail={tooltip.detail}>
         <Button
           onClick={() => onSelectTool(tool)}
+          disabled={disabled}
           variant={isActive ? 'default' : 'ghost'}
           className={`
             w-8 h-8 sm:w-9 sm:h-9 p-0 flex items-center justify-center
@@ -86,7 +89,11 @@ export default function Toolbar({
 
   return (
     <TooltipProvider>
-      <div className="h-full overflow-x-auto">
+      <div
+        className="h-full overflow-x-auto"
+        aria-busy={disabled}
+        data-interaction-disabled={disabled || undefined}
+      >
         <div
           role="toolbar"
           aria-label="Công cụ xem ảnh DICOM"
@@ -100,6 +107,7 @@ export default function Toolbar({
             activeTool={activeTool}
             onSelectTool={onSelectTool}
             readOnly={isSeriesSR}
+            disabled={disabled}
           />
 
           {renderButton('zoom', 'fas fa-search-plus', 'Zoom')}
@@ -107,7 +115,10 @@ export default function Toolbar({
           {renderButton('adjust', 'fas fa-adjust', 'Adjust')}
 
           {/* CaptureControl */}
-          <CaptureControl viewportEl={viewportEl ?? null} />
+          <CaptureControl
+            viewportEl={viewportEl ?? null}
+            disabled={disabled}
+          />
 
           {/* Other Tools Dropdown */}
           <DropdownMenu>
@@ -133,7 +144,10 @@ export default function Toolbar({
               <DropdownMenuGroup>
                 {/* Cine is a viewport state, not an active mouse tool. */}
                 <DropdownMenuItem
-                  onSelect={onToggleCine}
+                  disabled={isSeriesSR}
+                  onSelect={() => {
+                    if (!isSeriesSR) onToggleCine();
+                  }}
                   className={isCineOpen ? 'bg-muted text-foreground' : undefined}
                   aria-label={isCineOpen ? 'Đóng Cine' : 'Mở Cine'}
                 >
@@ -143,21 +157,23 @@ export default function Toolbar({
                 {/* Angle Tool */}
                 <DropdownMenuItem
                   onClick={(e) => {
-                    if (isSeriesSR) {
+                    if (isSeriesSR || disabled) {
                       e.stopPropagation();
                       return;
                     }
                     onSelectTool('angle');
                   }}
-                  className={`w-full text-left flex items-center px-2 py-2 ${isSeriesSR ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'}`}
-                  aria-disabled={isSeriesSR}
+                  disabled={isSeriesSR || disabled}
+                  className="w-full text-left flex items-center px-2 py-2"
                 >
                   <i className="fas fa-angle-right mr-2" /> Angle
                 </DropdownMenuItem>
 
                 {/* Rotate 90° */}
                 <DropdownMenuItem
+                  disabled={disabled}
                   onClick={() => {
+                    if (disabled) return;
                     onRotate90();
                     onSelectTool('rotate90');
                   }}
@@ -167,7 +183,9 @@ export default function Toolbar({
 
                 {/* Flip Horizontal */}
                 <DropdownMenuItem
+                  disabled={disabled}
                   onClick={() => {
+                    if (disabled) return;
                     onFlipHorizontal();
                     onSelectTool('flipHorizontal');
                   }}
@@ -177,7 +195,9 @@ export default function Toolbar({
 
                 {/* Reset */}
                 <DropdownMenuItem
+                  disabled={disabled}
                   onClick={() => {
+                    if (disabled) return;
                     onReset();
                     onSelectTool('reset');
                   }}

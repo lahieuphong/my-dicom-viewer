@@ -16,6 +16,7 @@ type Props = {
   seriesMap?: ViewportSeriesMap;
   selectedSeriesUID?: string;
   onSelectSeries?: (seriesUID: string) => void;
+  interactionDisabled?: boolean;
 };
 
 type VoiRange = { lower: number; upper: number };
@@ -136,6 +137,7 @@ export default function ViewportOverlay({
   seriesMap,
   selectedSeriesUID = '',
   onSelectSeries,
+  interactionDisabled = false,
 }: Props): React.ReactElement {
   const [windowWidth, setWindowWidth] = useState<number | null>(null);
   const [windowCenter, setWindowCenter] = useState<number | null>(null);
@@ -154,6 +156,8 @@ export default function ViewportOverlay({
   const mountedRef = useRef(true);
   const pollTimerRef = useRef<number | null>(null);
   const lastStackEventAtRef = useRef(0);
+  const stackSyncFrameRef = useRef<number | null>(null);
+  const pendingStackIndexRef = useRef<number | null>(null);
 
   // Safe event names
   const VOI_MODIFIED_EVENT =
@@ -288,21 +292,35 @@ export default function ViewportOverlay({
     } catch {}
 
     /* -------------------- STACK_NEW_IMAGE event listener -------------------- */
-    const stackHandler = (e: any) => {
+    const flushLatestStackImage = () => {
+      stackSyncFrameRef.current = null;
+      const idx = pendingStackIndexRef.current;
+      pendingStackIndexRef.current = null;
+      if (!mountedRef.current || idx == null) return;
+
       try {
-        lastStackEventAtRef.current = Date.now();
-        const idx = typeof e?.detail?.imageIdIndex === 'number' ? e.detail.imageIdIndex : undefined;
-        if (typeof idx === 'number' && !Number.isNaN(idx)) {
-          const newVal = idx + 1;
-          if (displayFrameRef.current !== newVal) {
-            setDisplayFrame(newVal);
-            displayFrameRef.current = newVal;
-          }
+        const newVal = idx + 1;
+        if (displayFrameRef.current !== newVal) {
+          setDisplayFrame(newVal);
+          displayFrameRef.current = newVal;
         }
 
         const enabled = getEnabledElement(currentEl);
         if (enabled) syncInstanceNumber(enabled.viewport as StackViewport);
       } catch {}
+    };
+
+    const stackHandler = (e: any) => {
+      lastStackEventAtRef.current = Date.now();
+      const idx = e?.detail?.imageIdIndex;
+      if (!Number.isInteger(idx)) return;
+
+      pendingStackIndexRef.current = Number(idx);
+      if (stackSyncFrameRef.current == null) {
+        stackSyncFrameRef.current = window.requestAnimationFrame(
+          flushLatestStackImage
+        );
+      }
     };
 
     try {
@@ -438,6 +456,11 @@ export default function ViewportOverlay({
         window.clearTimeout(pollTimerRef.current);
         pollTimerRef.current = null;
       }
+      if (stackSyncFrameRef.current != null) {
+        window.cancelAnimationFrame(stackSyncFrameRef.current);
+        stackSyncFrameRef.current = null;
+      }
+      pendingStackIndexRef.current = null;
     };
   }, [
     viewportEl,
@@ -465,6 +488,7 @@ export default function ViewportOverlay({
             seriesMap={seriesMap}
             selectedSeriesUID={selectedSeriesUID}
             onSelectSeries={onSelectSeries}
+            disabled={interactionDisabled}
           />
         </div>
 

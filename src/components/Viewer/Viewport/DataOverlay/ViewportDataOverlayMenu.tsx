@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import BackgroundSeriesSelect from './BackgroundSeriesSelect';
 import { buildViewportSeriesOptions } from './seriesOptions';
@@ -10,6 +10,7 @@ type ViewportDataOverlayMenuProps = {
   seriesMap?: ViewportSeriesMap;
   selectedSeriesUID?: string;
   onSelectSeries?: (seriesUID: string) => void;
+  disabled?: boolean;
 };
 
 function ViewportViewsIcon({ className = '' }: { className?: string }) {
@@ -41,11 +42,18 @@ export default function ViewportDataOverlayMenu({
   seriesMap,
   selectedSeriesUID = '',
   onSelectSeries,
+  disabled = false,
 }: ViewportDataOverlayMenuProps) {
   const options = useMemo(() => buildViewportSeriesOptions(seriesMap), [seriesMap]);
   const canSelectSeries = options.length > 0 && typeof onSelectSeries === 'function';
   const [panelOpen, setPanelOpen] = useState(false);
   const [backgroundSelectOpen, setBackgroundSelectOpen] = useState(false);
+
+  useEffect(() => {
+    if (!disabled) return;
+    setPanelOpen(false);
+    setBackgroundSelectOpen(false);
+  }, [disabled]);
 
   if (!canSelectSeries) {
     return <ViewportViewsIcon className="size-5 shrink-0" />;
@@ -53,8 +61,9 @@ export default function ViewportDataOverlayMenu({
 
   return (
     <Popover
-      open={panelOpen}
+      open={!disabled && panelOpen}
       onOpenChange={(open) => {
+        if (disabled) return;
         setPanelOpen(open);
         if (!open) setBackgroundSelectOpen(false);
       }}
@@ -62,8 +71,9 @@ export default function ViewportDataOverlayMenu({
       <PopoverTrigger asChild>
         <button
           type="button"
+          disabled={disabled}
           data-testid="viewport-data-overlay-trigger"
-          className="pointer-events-auto inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-[#348cfd] transition-colors hover:bg-[#348cfd]/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#348cfd]/70 data-[state=open]:bg-[#348cfd]/15"
+          className="pointer-events-auto inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-[#348cfd] transition-colors hover:bg-[#348cfd]/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#348cfd]/70 data-[state=open]:bg-[#348cfd]/15 disabled:pointer-events-none disabled:opacity-45"
           aria-label="Cấu hình lớp hiển thị"
           title="Cấu hình lớp hiển thị"
         >
@@ -92,9 +102,13 @@ export default function ViewportDataOverlayMenu({
         <BackgroundSeriesSelect
           options={options}
           value={selectedSeriesUID}
-          open={backgroundSelectOpen}
-          onOpenChange={setBackgroundSelectOpen}
-          onValueChange={(seriesUID) => onSelectSeries?.(seriesUID)}
+          open={!disabled && backgroundSelectOpen}
+          onOpenChange={(open) => {
+            if (!disabled) setBackgroundSelectOpen(open);
+          }}
+          onValueChange={(seriesUID) => {
+            if (!disabled) onSelectSeries?.(seriesUID);
+          }}
         />
       </PopoverContent>
     </Popover>

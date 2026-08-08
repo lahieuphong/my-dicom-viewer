@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Enums as CoreEnums } from '@cornerstonejs/core';
+import { Enums as CoreEnums, getEnabledElement } from '@cornerstonejs/core';
 
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,24 @@ function clampFrame(frame: number, totalFrames: number) {
   return Math.min(totalFrames, Math.max(1, Math.round(Number(frame) || 1)));
 }
 
+function readViewportFrame(
+  viewportEl: HTMLDivElement | null,
+  totalFrames: number
+) {
+  if (!viewportEl || totalFrames <= 0) return null;
+  try {
+    const viewport = getEnabledElement(viewportEl)?.viewport as {
+      getCurrentImageIdIndex?: () => number;
+    };
+    const imageIndex = viewport?.getCurrentImageIdIndex?.();
+    return Number.isInteger(imageIndex)
+      ? clampFrame(Number(imageIndex) + 1, totalFrames)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function ViewportStackScrollbar({
   currentFrame,
   totalFrames,
@@ -32,12 +50,16 @@ export default function ViewportStackScrollbar({
   const dragRef = useRef<{ pointerId: number; grabOffset: number } | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const pendingFrameRef = useRef<number | null>(null);
+  const stackSyncFrameRef = useRef<number | null>(null);
+  const pendingStackFrameRef = useRef<number | null>(null);
   const normalizedTotal = Math.max(0, Math.floor(Number(totalFrames) || 0));
   const normalizedFrame =
     normalizedTotal > 0 ? clampFrame(currentFrame, normalizedTotal) : 1;
   const displayFrameRef = useRef(normalizedFrame);
   const [displayFrame, setDisplayFrame] = useState(normalizedFrame);
   const [isDragging, setIsDragging] = useState(false);
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
 
   useEffect(() => {
     if (dragRef.current) return;
@@ -48,17 +70,40 @@ export default function ViewportStackScrollbar({
   useEffect(() => {
     if (!viewportEl || normalizedTotal <= 1) return;
 
-    const handleStackNewImage = (event: Event) => {
+    const commitPendingStackFrame = () => {
+      stackSyncFrameRef.current = null;
+      const nextFrame = pendingStackFrameRef.current;
+      pendingStackFrameRef.current = null;
+      if (nextFrame == null || dragRef.current) return;
+
+      setDisplayFrame((current) =>
+        current === nextFrame ? current : nextFrame
+      );
+    };
+
+    const queueStackFrame = (frame: number) => {
       if (dragRef.current) return;
+      const nextFrame = clampFrame(frame, normalizedTotal);
+
+      // Keep imperative interactions on the newest rendered frame even when
+      // several Cine events arrive before the browser's next paint.
+      displayFrameRef.current = nextFrame;
+      pendingStackFrameRef.current = nextFrame;
+
+      if (stackSyncFrameRef.current == null) {
+        stackSyncFrameRef.current = window.requestAnimationFrame(
+          commitPendingStackFrame
+        );
+      }
+    };
+
+    const handleStackNewImage = (event: Event) => {
       const imageIndex = (
         event as CustomEvent<{ imageIdIndex?: number }>
       ).detail?.imageIdIndex;
       if (!Number.isInteger(imageIndex)) return;
 
-      const nextFrame = clampFrame(Number(imageIndex) + 1, normalizedTotal);
-      if (displayFrameRef.current === nextFrame) return;
-      displayFrameRef.current = nextFrame;
-      setDisplayFrame(nextFrame);
+      queueStackFrame(Number(imageIndex) + 1);
     };
 
     viewportEl.addEventListener(
@@ -66,11 +111,22 @@ export default function ViewportStackScrollbar({
       handleStackNewImage as EventListener
     );
 
+    // The parent intentionally pauses its frame-state updates during Cine.
+    // Read Cornerstone once when subscribing so a remount never starts from
+    // that deliberately frozen prop value.
+    const viewportFrame = readViewportFrame(viewportEl, normalizedTotal);
+    if (viewportFrame != null) queueStackFrame(viewportFrame);
+
     return () => {
       viewportEl.removeEventListener(
         CoreEnums.Events.STACK_NEW_IMAGE,
         handleStackNewImage as EventListener
       );
+      if (stackSyncFrameRef.current != null) {
+        window.cancelAnimationFrame(stackSyncFrameRef.current);
+        stackSyncFrameRef.current = null;
+      }
+      pendingStackFrameRef.current = null;
     };
   }, [normalizedTotal, viewportEl]);
 
@@ -79,8 +135,45 @@ export default function ViewportStackScrollbar({
       if (animationFrameRef.current != null) {
         window.cancelAnimationFrame(animationFrameRef.current);
       }
+      if (stackSyncFrameRef.current != null) {
+        window.cancelAnimationFrame(stackSyncFrameRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!disabled) return;
+
+    const drag = dragRef.current;
+    dragRef.current = null;
+    pendingFrameRef.current = null;
+    setIsDragging(false);
+
+    if (animationFrameRef.current != null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
+    if (stackSyncFrameRef.current != null) {
+      window.cancelAnimationFrame(stackSyncFrameRef.current);
+      stackSyncFrameRef.current = null;
+    }
+    pendingStackFrameRef.current = null;
+
+    const actualFrame =
+      readViewportFrame(viewportEl, normalizedTotal) ?? normalizedFrame;
+    displayFrameRef.current = actualFrame;
+    setDisplayFrame(actualFrame);
+
+    if (
+      drag &&
+      trackRef.current?.hasPointerCapture?.(drag.pointerId)
+    ) {
+      try {
+        trackRef.current.releasePointerCapture(drag.pointerId);
+      } catch {}
+    }
+  }, [disabled, normalizedFrame, normalizedTotal, viewportEl]);
 
   const requestFrame = useCallback(
     (frame: number) => {
@@ -96,7 +189,7 @@ export default function ViewportStackScrollbar({
         animationFrameRef.current = null;
         const pendingFrame = pendingFrameRef.current;
         pendingFrameRef.current = null;
-        if (pendingFrame == null) return;
+        if (pendingFrame == null || disabledRef.current) return;
 
         try {
           const result = onFrameChange(pendingFrame);
@@ -239,6 +332,7 @@ export default function ViewportStackScrollbar({
       onPointerMove={handlePointerMove}
       onPointerUp={finishPointerInteraction}
       onPointerCancel={finishPointerInteraction}
+      onLostPointerCapture={finishPointerInteraction}
       onKeyDown={handleKeyDown}
       onWheel={handleWheel}
     >
@@ -247,10 +341,10 @@ export default function ViewportStackScrollbar({
           ref={thumbRef}
           className={cn(
             'absolute left-0 right-0 rounded-full bg-slate-300/80 shadow-[0_0_10px_rgba(147,197,253,0.28)]',
-            'group-hover:bg-slate-200 group-focus-visible:bg-blue-200',
+            'transition-colors duration-75 ease-linear group-hover:bg-slate-200 group-focus-visible:bg-blue-200',
             isDragging
-              ? 'bg-blue-200 transition-colors'
-              : 'transition-[top,transform,background-color] duration-75 ease-linear'
+              ? 'bg-blue-200'
+              : undefined
           )}
           style={{
             height: `min(100%, max(${MIN_THUMB_HEIGHT}px, ${relativeThumbHeight}%))`,

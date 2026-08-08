@@ -265,6 +265,10 @@ export function useViewerPanelResize({
 
   useEffect(() => finishResize, [finishResize]);
 
+  useEffect(() => {
+    if (disabled) finishResize();
+  }, [disabled, finishResize]);
+
   const beginResize = useCallback<ViewerPanelResizeStartHandler>(
     (side, event) => {
       if (disabled) return;
@@ -380,6 +384,7 @@ export function useViewerPanelResize({
 
   const handleResizeKeyDown = useCallback<ViewerPanelResizeKeyHandler>(
     (side, event) => {
+      if (disabled) return;
       const step = event.shiftKey ? 32 : 12;
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
 
@@ -444,6 +449,7 @@ export function useViewerPanelResize({
       );
     },
     [
+      disabled,
       leftPanelWidth,
       measurementCollapsed,
       rightPanelWidth,

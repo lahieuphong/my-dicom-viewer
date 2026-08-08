@@ -160,6 +160,13 @@ export default function ViewerWorkspace({
     isPlaying,
     stackKey: selectedSeries,
   });
+  const cineInteractionLocked =
+    cineOpen &&
+    !isSeriesToolbarReadOnly &&
+    (loadingStack ||
+      !imageAvailable ||
+      cinePreparation.phase === 'idle' ||
+      cinePreparation.phase === 'preparing');
   // Normal wheel navigation uses a small bounded window. Cine owns prefetch
   // while its panel is open, avoiding two loaders competing for the same
   // decode workers during preparation.
@@ -168,6 +175,23 @@ export default function ViewerWorkspace({
   useEffect(() => {
     if (!cineEnabled && isPlaying) onPlayChange(false);
   }, [cineEnabled, isPlaying, onPlayChange]);
+
+  useEffect(() => {
+    if (!cineInteractionLocked) return;
+
+    blurViewportActiveElement();
+    try {
+      const activeElement = document.activeElement as HTMLElement | null;
+      activeElement?.blur?.();
+    } catch {}
+    setMobileSeriesOpen(false);
+    setMobileMeasurementsOpen(false);
+  }, [
+    blurViewportActiveElement,
+    cineInteractionLocked,
+    setMobileMeasurementsOpen,
+    setMobileSeriesOpen,
+  ]);
 
   const toggleCine = useCallback(() => {
     // OHIF opens and closes the Cine panel in a paused state.
@@ -179,6 +203,23 @@ export default function ViewerWorkspace({
     onPlayChange(false);
     setCineOpen(false);
   }, [onPlayChange]);
+
+  useEffect(() => {
+    if (!cineOpen) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      closeCine();
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [cineOpen, closeCine]);
+
+  useEffect(() => {
+    if (cineOpen && isSeriesToolbarReadOnly) closeCine();
+  }, [cineOpen, closeCine, isSeriesToolbarReadOnly]);
 
   const measurementPanelProps = {
     measurements,
@@ -194,6 +235,7 @@ export default function ViewerWorkspace({
     hiddenMeasurements,
     onToggleVisibility,
     onCreateSR,
+    interactionDisabled: cineInteractionLocked,
     isExportDisabled:
       isSeriesToolbarReadOnly || measurements.length === 0,
     srList: loadedSrList,
@@ -210,7 +252,7 @@ export default function ViewerWorkspace({
     handleResizeEnd,
     handleResizeKeyDown,
   } = useViewerPanelResize({
-    disabled: loadingSeries,
+    disabled: loadingSeries || cineInteractionLocked,
     sidebarCollapsed,
     setSidebarCollapsed,
     measurementCollapsed,
@@ -240,6 +282,7 @@ export default function ViewerWorkspace({
           loadedSrList={loadedSrList}
           activeSrId={activeSrId}
           onSelectSr={onSelectSr}
+          interactionDisabled={cineInteractionLocked}
         />
       )}
 
@@ -254,6 +297,8 @@ export default function ViewerWorkspace({
 
       <div
         ref={gridRef}
+        aria-busy={cineInteractionLocked}
+        data-cine-preparing={cineInteractionLocked || undefined}
         className="viewer-workspace-grid h-full items-stretch min-h-0"
         style={{
           '--viewer-grid-columns': gridCols,
@@ -278,12 +323,15 @@ export default function ViewerWorkspace({
             loadedSrList={loadedSrList}
             activeSrId={activeSrId}
             onSelectSr={onSelectSr}
+            interactionDisabled={cineInteractionLocked}
           />
         )}
 
         <main className="flex flex-col w-full h-full min-h-0">
           <>
             <div
+              inert={cineInteractionLocked ? true : undefined}
+              aria-disabled={cineInteractionLocked || undefined}
               className="
                 flex items-center justify-between md:hidden w-full p-2
                 bg-background dark:bg-background-dark
@@ -328,6 +376,7 @@ export default function ViewerWorkspace({
                 onToggleCine={toggleCine}
                 viewportEl={viewportEl}
                 isSeriesSR={isSeriesToolbarReadOnly}
+                disabled={cineInteractionLocked}
               />
             </div>
 
@@ -342,7 +391,27 @@ export default function ViewerWorkspace({
               <DicomViewport
                 elementRef={elementRef}
                 crosshair={activeTool !== 'adjust'}
+                interactionDisabled={cineInteractionLocked}
               />
+              {cineInteractionLocked && (
+                <div
+                  data-testid="cine-preparation-interaction-lock"
+                  className="absolute inset-0 z-[55] cursor-wait touch-none overscroll-contain bg-black/5"
+                  aria-hidden="true"
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onWheel={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                />
+              )}
               <CineControls
                 open={cineOpen}
                 isPlaying={isPlaying}
@@ -366,16 +435,20 @@ export default function ViewerWorkspace({
                 seriesMap={seriesMap}
                 selectedSeriesUID={selectedSeries}
                 onSelectSeries={(seriesUID) => {
+                  if (cineInteractionLocked) return;
                   onSelectSr?.(null);
                   onSelectSeries(seriesUID);
                 }}
+                interactionDisabled={cineInteractionLocked}
               />
               <ViewportStackScrollbar
                 currentFrame={currentFrame}
                 totalFrames={totalFrames}
                 onFrameChange={onFrameChange}
                 viewportEl={viewportEl}
-                disabled={loadingStack || !imageAvailable}
+                disabled={
+                  loadingStack || !imageAvailable || cineInteractionLocked
+                }
               />
             </div>
           </>
@@ -397,6 +470,7 @@ export default function ViewerWorkspace({
             onResizeMove={handleResizeMove}
             onResizeEnd={handleResizeEnd}
             onResizeKeyDown={handleResizeKeyDown}
+            disabled={cineInteractionLocked}
           />
         )}
 
@@ -408,6 +482,7 @@ export default function ViewerWorkspace({
             onResizeMove={handleResizeMove}
             onResizeEnd={handleResizeEnd}
             onResizeKeyDown={handleResizeKeyDown}
+            disabled={cineInteractionLocked}
           />
         )}
       </div>

@@ -68,6 +68,7 @@ interface MeasurementPanelProps {
   srList?: LocalStructuredReport[];
   activeSrId?: string | null;
   onSelectSr?: (srId: string | null) => void;
+  interactionDisabled?: boolean;
 }
 
 export default function MeasurementPanel({
@@ -91,6 +92,7 @@ export default function MeasurementPanel({
   srList,
   activeSrId,
   onSelectSr,
+  interactionDisabled = false,
 }: MeasurementPanelProps) {
   const [editingLabel, setEditingLabel] = useState<{
     annotationUID: string;
@@ -172,10 +174,13 @@ export default function MeasurementPanel({
 
   return (
     <aside
+      inert={interactionDisabled ? true : undefined}
+      data-interaction-disabled={interactionDisabled || undefined}
       className={cn(
         'relative bg-card text-foreground flex h-full min-h-0 min-w-0 flex-col overflow-hidden transition-[background-color,border-color] duration-200',
         mobileSidebarOpen ? 'absolute inset-y-0 right-0 w-2/3 z-50' : 'hidden md:flex',
         !mobileSidebarOpen && 'border-l border-border',
+        interactionDisabled && 'cursor-wait select-none opacity-55',
         className
       )}
     >

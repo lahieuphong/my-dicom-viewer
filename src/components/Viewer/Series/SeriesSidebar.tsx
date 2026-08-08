@@ -25,6 +25,7 @@ interface SeriesSidebarProps {
   loadedSrList?: LocalStructuredReport[];
   activeSrId?: string | null;
   onSelectSr?: (srId: string | null) => void;
+  interactionDisabled?: boolean;
 }
 
 function truncateText(text?: string | null, max = 9) {
@@ -48,6 +49,7 @@ function SeriesSidebar({
   loadedSrList,
   activeSrId,
   onSelectSr,
+  interactionDisabled = false,
 }: SeriesSidebarProps) {
   const [listCollapsed, setListCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<SeriesViewMode>('list');
@@ -64,10 +66,13 @@ function SeriesSidebar({
 
   return (
     <aside
+      inert={interactionDisabled ? true : undefined}
+      data-interaction-disabled={interactionDisabled || undefined}
       className={cn(
         'relative bg-card text-foreground flex h-full min-h-0 min-w-0 flex-col overflow-hidden transition-[background-color,border-color] duration-200',
         mobileSidebarOpen ? 'absolute inset-y-0 left-0 w-2/3 z-50' : 'hidden md:flex',
         !mobileSidebarOpen && 'border-r border-border',
+        interactionDisabled && 'cursor-wait select-none opacity-55',
         className
       )}
     >

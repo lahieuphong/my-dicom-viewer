@@ -1014,7 +1014,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     }
   }, [isRenderingEngineAlive, renderingEngineRef]);
 
-  function blurViewportActiveElement() {
+  const blurViewportActiveElement = useCallback(() => {
     try {
       const active = document.activeElement as HTMLElement | null;
       if (!active) return;
@@ -1025,7 +1025,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         try { (document.body as HTMLElement).focus?.(); } catch {}
       }
     } catch {}
-  }
+  }, []);
 
   /**
    * Wrapper used when user clicks a measurement in UI.

@@ -63,6 +63,7 @@ export default function CineControls({
   const [fpsPopoverOpen, setFpsPopoverOpen] = useState(false);
   const fpsUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onFpsChangeRef = useRef(onFpsChange);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     onFpsChangeRef.current = onFpsChange;
@@ -86,6 +87,18 @@ export default function CineControls({
     };
   }, []);
 
+  const preparationBusy =
+    preparationPhase === 'idle' || preparationPhase === 'preparing';
+
+  useEffect(() => {
+    if (!open || !preparationBusy) return;
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [open, preparationBusy]);
+
   const updateFps = useCallback((nextValue: number) => {
     const nextFps = clampCineFps(nextValue);
     setDisplayFps(nextFps);
@@ -102,7 +115,7 @@ export default function CineControls({
 
   if (!open) return null;
 
-  const isPreparing = preparationPhase === 'preparing';
+  const isPreparing = preparationBusy;
   const hasPreparationError = preparationPhase === 'error';
   const playDisabled = isLoading || preparationPhase !== 'ready';
   const cineTooltip = hasPreparationError
@@ -120,11 +133,29 @@ export default function CineControls({
         data-testid="cine-player"
         role="region"
         aria-label="Điều khiển phát chuỗi ảnh Cine"
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return;
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        }}
         className={cn(
           'pointer-events-none absolute left-1/2 top-10 z-[60] -translate-x-1/2',
           className
         )}
       >
+        <div
+          className="sr-only"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {hasPreparationError
+            ? 'Không thể chuẩn bị đủ ảnh cho Cine.'
+            : isPreparing
+              ? 'Đang chuẩn bị Cine. Các công cụ xem ảnh tạm thời bị khóa; bạn vẫn có thể chỉnh FPS hoặc đóng Cine.'
+              : 'Cine đã sẵn sàng.'}
+        </div>
         <div className="pointer-events-auto select-none rounded-lg border border-[#1e3a8a] bg-[#080b2e] p-2 text-white shadow-2xl">
           <div className="inline-flex items-center gap-2">
             <ToolbarTooltip
@@ -142,7 +173,7 @@ export default function CineControls({
                 aria-label={`${cineTooltip.label} — ${cineTooltip.detail}`}
                 data-testid="cine-play-pause"
               >
-                {isPreparing || (isLoading && preparationPhase === 'idle') ? (
+                {isPreparing || isLoading ? (
                   <LoaderCircle className="animate-spin" aria-hidden="true" />
                 ) : isPlaying ? (
                   <Pause aria-hidden="true" />
@@ -226,6 +257,7 @@ export default function CineControls({
                 variant="ghost"
                 size="icon"
                 onClick={onClose}
+                ref={closeButtonRef}
                 className="size-9 text-[#2f81f7] hover:bg-[#11184d] hover:text-[#60a5fa]"
                 aria-label="Đóng bảng điều khiển Cine"
                 data-testid="cine-close"
@@ -235,11 +267,9 @@ export default function CineControls({
             </ToolbarTooltip>
           </div>
 
-          {(isPreparing || (isLoading && preparationPhase === 'idle')) && (
+          {(isPreparing || isLoading) && (
             <div
               className="mt-2 min-w-[11.75rem] px-1"
-              role="status"
-              aria-live="polite"
             >
               <div className="mb-1 flex items-center justify-between gap-3 text-[11px] text-slate-300">
                 <span>Đang chuẩn bị Cine</span>
@@ -249,12 +279,27 @@ export default function CineControls({
                     : 'Đang tải…'}
                 </span>
               </div>
-              <div className="h-1 overflow-hidden rounded-full bg-[#1e293b]">
+              <div
+                className="h-1 overflow-hidden rounded-full bg-[#1e293b]"
+                role="progressbar"
+                aria-label="Tiến độ chuẩn bị Cine"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={safeProgress}
+                aria-valuetext={
+                  totalImages > 0
+                    ? `${preparedImages} trên ${totalImages} ảnh`
+                    : 'Đang khởi tạo'
+                }
+              >
                 <div
                   className="h-full rounded-full bg-[#2f81f7] transition-[width] duration-150 ease-out"
                   style={{ width: `${safeProgress}%` }}
                 />
               </div>
+              <p className="mt-1.5 text-[10px] leading-4 text-slate-400">
+                Các công cụ xem ảnh đang tạm khóa.
+              </p>
             </div>
           )}
 

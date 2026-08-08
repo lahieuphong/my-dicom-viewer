@@ -32,6 +32,7 @@ import { CAPTURE_TOOLTIP } from './tooltips';
 
 interface CaptureControlProps {
   viewportEl: HTMLDivElement | null;
+  disabled?: boolean;
 }
 
 const MAX_CAPTURE_DIMENSION = 8192;
@@ -102,7 +103,10 @@ function FormatDropdown({
   );
 }
 
-export default function CaptureControl({ viewportEl }: CaptureControlProps) {
+export default function CaptureControl({
+  viewportEl,
+  disabled = false,
+}: CaptureControlProps) {
   const [open, setOpen] = useState(false);
   const [filename, setFilename] = useState(() => createDefaultCaptureFilename());
   const [format, setFormat] = useState<CaptureFormat>('png');
@@ -322,6 +326,7 @@ export default function CaptureControl({ viewportEl }: CaptureControlProps) {
         <Button
           variant="ghost"
           onClick={handleOpen}
+          disabled={disabled}
           className="flex size-8 items-center justify-center rounded-md border border-border p-0 sm:size-9"
           aria-label={`${CAPTURE_TOOLTIP.label} — ${CAPTURE_TOOLTIP.detail}`}
         >

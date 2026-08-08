@@ -23,12 +23,14 @@ type MeasurementToolsControlProps = {
   activeTool: ToolID;
   onSelectTool: (tool: ToolID) => void;
   readOnly?: boolean;
+  disabled?: boolean;
 };
 
 export default function MeasurementToolsControl({
   activeTool,
   onSelectTool,
   readOnly = false,
+  disabled = false,
 }: MeasurementToolsControlProps) {
   const activeDefinition = getMeasurementMenuTool(activeTool);
   const primaryDefinition = activeDefinition ?? MEASUREMENT_MENU_TOOLS[0];
@@ -50,7 +52,7 @@ export default function MeasurementToolsControl({
         <Button
           type="button"
           variant="ghost"
-          disabled={readOnly}
+          disabled={readOnly || disabled}
           onClick={() => onSelectTool(primaryDefinition.id)}
           className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent p-0 has-[>svg]:px-0 hover:bg-muted hover:text-foreground"
           aria-label={`${tooltip.label} — ${tooltip.detail}`}
@@ -69,6 +71,7 @@ export default function MeasurementToolsControl({
             <Button
               type="button"
               variant="ghost"
+              disabled={readOnly || disabled}
               className="h-full w-5 min-w-5 max-w-5 rounded-none border-0 bg-transparent p-0 text-current has-[>svg]:px-0 hover:bg-muted hover:text-foreground"
               aria-label="Mở danh sách công cụ đo lường"
               data-testid="measurement-tools-menu-trigger"
@@ -90,7 +93,7 @@ export default function MeasurementToolsControl({
             {MEASUREMENT_MENU_TOOLS.map(({ id, label, detail, Icon: ItemIcon }) => (
               <DropdownMenuItem
                 key={id}
-                disabled={readOnly}
+                disabled={readOnly || disabled}
                 onSelect={() => onSelectTool(id)}
                 className="flex w-full items-center px-2 py-2 text-left"
                 aria-label={`${label} — ${detail}`}

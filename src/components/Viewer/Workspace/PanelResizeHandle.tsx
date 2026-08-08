@@ -15,6 +15,7 @@ type PanelResizeHandleProps = {
   onResizeMove: ViewerPanelResizeMoveHandler;
   onResizeEnd: ViewerPanelResizeEndHandler;
   onResizeKeyDown: ViewerPanelResizeKeyHandler;
+  disabled?: boolean;
 };
 
 export default function PanelResizeHandle({
@@ -24,19 +25,31 @@ export default function PanelResizeHandle({
   onResizeMove,
   onResizeEnd,
   onResizeKeyDown,
+  disabled = false,
 }: PanelResizeHandleProps) {
   return (
     <div
       role="separator"
       aria-orientation="vertical"
       aria-label={label}
-      tabIndex={0}
-      className={`viewer-panel-resize-handle viewer-panel-resize-handle-${side} hidden md:block`}
-      onPointerDown={(event) => onResizeStart(side, event)}
-      onPointerMove={onResizeMove}
-      onPointerUp={onResizeEnd}
-      onPointerCancel={onResizeEnd}
-      onKeyDown={(event) => onResizeKeyDown(side, event)}
+      aria-disabled={disabled || undefined}
+      tabIndex={disabled ? -1 : 0}
+      className={`viewer-panel-resize-handle viewer-panel-resize-handle-${side} hidden md:block ${disabled ? 'pointer-events-none opacity-40' : ''}`}
+      onPointerDown={(event) => {
+        if (!disabled) onResizeStart(side, event);
+      }}
+      onPointerMove={(event) => {
+        if (!disabled) onResizeMove(event);
+      }}
+      onPointerUp={(event) => {
+        if (!disabled) onResizeEnd(event);
+      }}
+      onPointerCancel={(event) => {
+        if (!disabled) onResizeEnd(event);
+      }}
+      onKeyDown={(event) => {
+        if (!disabled) onResizeKeyDown(side, event);
+      }}
     />
   );
 }
