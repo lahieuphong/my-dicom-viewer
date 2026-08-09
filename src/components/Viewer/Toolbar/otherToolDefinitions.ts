@@ -110,13 +110,13 @@ export const OTHER_TOOL_DEFINITIONS = {
 
 /** Display order used by the Other Tools menu. */
 export const OTHER_TOOL_ITEMS: readonly OtherToolDefinition[] = [
-  OTHER_TOOL_DEFINITIONS.cine,
-  OTHER_TOOL_DEFINITIONS.invert,
-  OTHER_TOOL_DEFINITIONS.probe,
-  OTHER_TOOL_DEFINITIONS.angle,
+  OTHER_TOOL_DEFINITIONS.reset,
   OTHER_TOOL_DEFINITIONS.rotate90,
   OTHER_TOOL_DEFINITIONS.flipHorizontal,
-  OTHER_TOOL_DEFINITIONS.reset,
+  OTHER_TOOL_DEFINITIONS.invert,
+  OTHER_TOOL_DEFINITIONS.probe,
+  OTHER_TOOL_DEFINITIONS.cine,
+  OTHER_TOOL_DEFINITIONS.angle,
 ];
 
 export function isOtherTool(tool: ToolID): tool is OtherToolID {
