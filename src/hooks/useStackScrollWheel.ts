@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { Enums as CoreEnums } from '@cornerstonejs/core';
 
+import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 import { ensureStackScrollWheelActive } from '@/lib/cornerstone/stackScroll';
 
 /**
@@ -22,6 +23,10 @@ export function useStackScrollWheel(
       ensureStackScrollWheelActive();
     };
 
+    const handleWheelNavigation = () => {
+      cancelActiveAnnotationInteraction(element);
+    };
+
     const handleNewImageSet = (event: Event) => {
       const eventElement = (event as CustomEvent<{ element?: HTMLDivElement }>).detail?.element;
       if (eventElement && eventElement !== element) return;
@@ -32,6 +37,10 @@ export function useStackScrollWheel(
       CoreEnums.Events.VIEWPORT_NEW_IMAGE_SET,
       handleNewImageSet as EventListener
     );
+    element.addEventListener('wheel', handleWheelNavigation, {
+      capture: true,
+      passive: true,
+    });
 
     // The viewport is added to its ToolGroup immediately before this hook sees
     // the element. One RAF keeps activation ordered after that attachment.
@@ -45,6 +54,7 @@ export function useStackScrollWheel(
         CoreEnums.Events.VIEWPORT_NEW_IMAGE_SET,
         handleNewImageSet as EventListener
       );
+      element.removeEventListener('wheel', handleWheelNavigation, true);
     };
   }, [element, stackKey]);
 }

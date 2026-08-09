@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ToolID } from '@/hooks/useToolManager';
+import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 
 import CaptureControl from './CaptureControl';
 import MeasurementToolsControl from './MeasurementToolsControl';
@@ -52,15 +53,23 @@ export default function Toolbar({
     if (isCineOpen) onCloseCine();
   };
 
-  const selectNonCineTool = (tool: ToolID, action?: () => void) => {
+  const selectNonCineTool = (tool: ToolID) => {
     closeCineForNonCineAction();
-    action?.();
     onSelectTool(tool);
+  };
+
+  const runViewportAction = (action: () => void) => {
+    closeCineForNonCineAction();
+    cancelActiveAnnotationInteraction(viewportEl);
+    action();
   };
 
   const handleOtherItemSelect = (item: OtherItemID) => {
     switch (item) {
       case 'cine':
+        if (!isCineOpen) {
+          cancelActiveAnnotationInteraction(viewportEl);
+        }
         onToggleCine();
         return;
       case 'invert':
@@ -73,14 +82,17 @@ export default function Toolbar({
       case 'angle':
         selectNonCineTool('angle');
         return;
+      case 'cobbAngle':
+        selectNonCineTool('cobbAngle');
+        return;
       case 'rotate90':
-        selectNonCineTool('rotate90', onRotate90);
+        runViewportAction(onRotate90);
         return;
       case 'flipHorizontal':
-        selectNonCineTool('flipHorizontal', onFlipHorizontal);
+        runViewportAction(onFlipHorizontal);
         return;
       case 'reset':
-        selectNonCineTool('reset', onReset);
+        runViewportAction(onReset);
     }
   };
 

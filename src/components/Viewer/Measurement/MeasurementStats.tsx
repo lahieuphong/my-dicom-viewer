@@ -1,5 +1,6 @@
 // src/components/Viewer/Measurement/MeasurementStats.tsx
 import ProbeMeasurementStats from './ProbeMeasurementStats';
+import CobbAngleMeasurementStats from './CobbAngleMeasurementStats';
 
 interface MeasurementStatsProps {
   type: string;
@@ -137,6 +138,14 @@ export default function MeasurementStats({ type, stats }: MeasurementStatsProps)
           Góc • {safeNumberToFixed(stats.angle)}°
           {renderPoints()}
         </div>
+      );
+
+    case 'cobbAngle':
+      return (
+        <>
+          <CobbAngleMeasurementStats angle={stats.angle} />
+          {renderPoints()}
+        </>
       );
 
     case 'probe':

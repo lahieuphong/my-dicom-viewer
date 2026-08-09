@@ -2,6 +2,7 @@
 
 import { metaData } from '@cornerstonejs/core';
 import {
+  CobbAngleTool,
   LivewireContourTool,
   SplineROITool,
   ToolGroupManager,
@@ -28,6 +29,7 @@ const DOMAIN_TYPE_BY_TOOL_NAME: Record<
   LivewireContour: 'livewireContour',
   Probe: 'probe',
   Angle: 'angle',
+  CobbAngle: 'cobbAngle',
 };
 
 function readCodeMeaning(code: any): string {
@@ -233,6 +235,7 @@ function createFlatStats(
       result.modalityUnit = stats.modalityUnit;
       break;
     case 'Angle':
+    case 'CobbAngle':
       result.angle = stats.angle;
       result.angleUnit = stats.angleUnit;
       break;
@@ -370,6 +373,22 @@ function prepareLivewireAnnotation(annotation: any): void {
     ...(annotation.data.contour ?? {}),
     closed: true,
   };
+}
+
+/**
+ * adapters 3.33 hydrates CobbAngle with its numeric angle but omits the arc
+ * geometry that CobbAngleTool reads while rendering. Force one native,
+ * synchronous stats calculation on first render so the two source lines,
+ * connector and text box all use the tool's own geometry implementation.
+ */
+function prepareCobbAngleAnnotation(annotation: any): void {
+  const points = annotation?.data?.handles?.points;
+  if (!Array.isArray(points) || points.length !== 4) {
+    throw new Error('Hydrated CobbAngle does not contain four handles.');
+  }
+
+  annotation.data.cachedStats = {};
+  annotation.invalidated = true;
 }
 
 function getImageFrameNumber(imageId: string): number {
@@ -618,11 +637,18 @@ export async function hydrateStructuredReportForLocalViewer({
           annotationUID,
         },
       };
+      const hydratedCobbStats =
+        toolName === CobbAngleTool.toolName
+          ? createFlatStats(toolName, annotation.data, label)
+          : null;
       if (toolName === SplineROITool.toolName) {
         prepareSplineAnnotation(annotation);
       }
       if (toolName === LivewireContourTool.toolName) {
         prepareLivewireAnnotation(annotation);
+      }
+      if (toolName === CobbAngleTool.toolName) {
+        prepareCobbAngleAnnotation(annotation);
       }
       const frameIndex = findFrameIndex(
         referencedImageId,
@@ -636,7 +662,9 @@ export async function hydrateStructuredReportForLocalViewer({
           toolName,
           label,
           type: domainType,
-          data: createFlatStats(toolName, annotation.data, label),
+          data:
+            hydratedCobbStats ??
+            createFlatStats(toolName, annotation.data, label),
           metadata: {
             seriesUID: sourceSeriesInstanceUID,
             reportSeriesUID: reportSeriesInstanceUID,

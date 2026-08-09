@@ -10,11 +10,12 @@ import {
 
 import type { ToolID } from '@/hooks/useToolManager';
 
-import { InvertIcon, ProbeIcon } from './OtherToolIcons';
+import { CobbAngleIcon, InvertIcon, ProbeIcon } from './OtherToolIcons';
 
 export const OTHER_TOOL_IDS = [
   'probe',
   'angle',
+  'cobbAngle',
   'rotate90',
   'flipHorizontal',
   'reset',
@@ -79,6 +80,15 @@ export const OTHER_TOOL_DEFINITIONS = {
     kind: 'mouse-tool',
     disabledForSR: true,
   },
+  cobbAngle: {
+    id: 'cobbAngle',
+    menuLabel: 'Cobb Angle',
+    label: 'Thước đo góc Cobb',
+    detail: 'Cobb Angle Tool',
+    Icon: CobbAngleIcon,
+    kind: 'mouse-tool',
+    disabledForSR: true,
+  },
   rotate90: {
     id: 'rotate90',
     menuLabel: 'Rotate 90°',
@@ -117,6 +127,7 @@ export const OTHER_TOOL_ITEMS: readonly OtherToolDefinition[] = [
   OTHER_TOOL_DEFINITIONS.probe,
   OTHER_TOOL_DEFINITIONS.cine,
   OTHER_TOOL_DEFINITIONS.angle,
+  OTHER_TOOL_DEFINITIONS.cobbAngle,
 ];
 
 export function isOtherTool(tool: ToolID): tool is OtherToolID {

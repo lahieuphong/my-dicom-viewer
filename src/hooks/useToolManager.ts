@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { getEnabledElementByViewportId } from '@cornerstonejs/core';
 import {
   WindowLevelTool,
   PanTool,
@@ -16,6 +17,7 @@ import {
   SplineROITool,
   LivewireContourTool,
   AngleTool,
+  CobbAngleTool,
   ProbeTool,
   ToolGroupManager,
   Enums as ToolEnums,
@@ -23,6 +25,8 @@ import {
 
 import { initCornerstone } from '@/lib/cornerstone';
 import { TOOL_GROUP } from '@/constants/toolgroup';
+import { VIEWPORT_ID } from '@/constants/viewport';
+import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 import {
   registerToolsOnce,
 } from '@/lib/cornerstone/tools';
@@ -42,6 +46,7 @@ export type ToolID =
   | 'livewireContour'
   | 'probe'
   | 'angle'
+  | 'cobbAngle'
   | 'rotate90'
   | 'flipHorizontal'
   | 'reset';
@@ -64,6 +69,7 @@ export const toolNameMap: Record<ToolID, string> = {
   livewireContour: LivewireContourTool.toolName,
   probe: ProbeTool.toolName,
   angle: AngleTool.toolName,
+  cobbAngle: CobbAngleTool.toolName,
   // UI-only actions
   rotate90: 'rotate90',
   flipHorizontal: 'flipHorizontal',
@@ -82,6 +88,7 @@ export const measurementToolIDs: ToolID[] = [
   'livewireContour',
   'probe',
   'angle',
+  'cobbAngle',
 ];
 
 const CORNERSTONE_TOOL_NAMES = [
@@ -99,6 +106,7 @@ const CORNERSTONE_TOOL_NAMES = [
   LivewireContourTool.toolName,
   ProbeTool.toolName,
   AngleTool.toolName,
+  CobbAngleTool.toolName,
 ];
 
 /**
@@ -120,6 +128,7 @@ const TOOL_CLASS_MAP: Partial<Record<ToolID, any>> = {
   livewireContour: LivewireContourTool,
   probe: ProbeTool,
   angle: AngleTool,
+  cobbAngle: CobbAngleTool,
 };
 
 /* ================= Robust ToolGroup helpers ================= */
@@ -292,6 +301,14 @@ function forceDeactivateAllTools(tg: any) {
   }
 }
 
+function cancelActiveToolInteraction(): void {
+  try {
+    const element = getEnabledElementByViewportId(VIEWPORT_ID)?.viewport
+      ?.element as HTMLDivElement | undefined;
+    cancelActiveAnnotationInteraction(element);
+  } catch {}
+}
+
 /* ================= Hook implementation ================= */
 
 export function useToolManager() {
@@ -312,6 +329,11 @@ export function useToolManager() {
   }, []);
 
   const activateTool = useCallback((tool: ToolID, opts?: { isSeriesSR?: boolean }) => {
+    // Toolbar actions also represent an intentional interaction boundary.
+    // This removes any unfinished multi-part measurement before the action or
+    // the next mouse tool takes over.
+    cancelActiveToolInteraction();
+
     // UI-only shortcuts
     if (tool === 'rotate90' || tool === 'flipHorizontal' || tool === 'reset') {
       return true;

@@ -14,6 +14,7 @@ import { useCine } from '@/hooks/useCine';
 import { useStackPrefetch } from '@/hooks/useStackPrefetch';
 import type { ToolID } from '@/hooks/useToolManager';
 import { useViewerPanelResize } from '@/hooks/useViewerPanelResize';
+import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 
 import { MeasurementPanel } from '@/components/Viewer/Measurement';
 import { SeriesSidebar } from '@/components/Viewer/Series';
@@ -210,6 +211,22 @@ export default function ViewerWorkspace({
     setCineOpen(false);
   }, [onPlayChange]);
 
+  const selectSeriesSafely = useCallback(
+    (seriesUID: string) => {
+      cancelActiveAnnotationInteraction(viewportEl);
+      onSelectSeries(seriesUID);
+    },
+    [onSelectSeries, viewportEl]
+  );
+
+  const selectMobileSeriesSafely = useCallback(
+    (seriesUID: string) => {
+      cancelActiveAnnotationInteraction(viewportEl);
+      onSelectMobileSeries(seriesUID);
+    },
+    [onSelectMobileSeries, viewportEl]
+  );
+
   useEffect(() => {
     if (!cineOpen) return;
 
@@ -280,7 +297,7 @@ export default function ViewerWorkspace({
           className="md:hidden"
           seriesMap={seriesMap}
           selectedSeries={selectedSeries}
-          onSelectSeries={onSelectMobileSeries}
+          onSelectSeries={selectMobileSeriesSafely}
           studyDate={studyDate}
           studyDescription={studyDescription}
           collapsed={sidebarCollapsed}
@@ -321,7 +338,7 @@ export default function ViewerWorkspace({
             className="hidden md:flex"
             seriesMap={seriesMap}
             selectedSeries={selectedSeries}
-            onSelectSeries={onSelectSeries}
+            onSelectSeries={selectSeriesSafely}
             studyDate={studyDate}
             studyDescription={studyDescription}
             collapsed={renderedSidebarCollapsed}
@@ -447,7 +464,7 @@ export default function ViewerWorkspace({
                 onSelectSeries={(seriesUID) => {
                   if (cineInteractionLocked) return;
                   onSelectSr?.(null);
-                  onSelectSeries(seriesUID);
+                  selectSeriesSafely(seriesUID);
                 }}
                 interactionDisabled={cineInteractionLocked}
               />

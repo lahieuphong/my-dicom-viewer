@@ -17,6 +17,7 @@ import {
   LivewireContourTool,
   ProbeTool,
   AngleTool,
+  CobbAngleTool,
   Enums as ToolEnums,
 } from '@cornerstonejs/tools';
 import { VIEWPORT_ID } from '@/constants/viewport';
@@ -245,6 +246,7 @@ export const useMeasurements = ({
             flat.modality = stats.Modality ?? stats.modality;
             break;
           case 'angle':
+          case 'cobbAngle':
             flat.angle = stats.angle;
             break;
         }
@@ -296,6 +298,7 @@ export const useMeasurements = ({
       );
       result.push(...collect(ProbeTool.toolName, 'probe'));
       result.push(...collect(AngleTool.toolName, 'angle'));
+      result.push(...collect(CobbAngleTool.toolName, 'cobbAngle'));
     } catch (err) {
     }
 

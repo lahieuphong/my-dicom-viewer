@@ -482,6 +482,69 @@ function angleDegrees(first: any, vertex: any, last: any): number {
   return (Math.acos(cosine) * 180) / Math.PI;
 }
 
+/** Match CobbAngleTool 3.33's closest-endpoint line orientation exactly. */
+function cobbAngleDegrees(points: any[]): number {
+  if (!Array.isArray(points) || points.length < 4) return Number.NaN;
+
+  let closestFirst: any = null;
+  let otherFirst: any = null;
+  let closestSecond: any = null;
+  let otherSecond: any = null;
+  let minimumDistance = Number.MAX_VALUE;
+
+  for (let firstIndex = 0; firstIndex < 2; firstIndex += 1) {
+    for (let secondIndex = 2; secondIndex < 4; secondIndex += 1) {
+      const candidateDistance = distance3(
+        points[firstIndex],
+        points[secondIndex]
+      );
+      if (candidateDistance < minimumDistance) {
+        minimumDistance = candidateDistance;
+        closestFirst = points[firstIndex];
+        otherFirst = points[(firstIndex + 1) % 2];
+        closestSecond = points[secondIndex];
+        otherSecond = points[2 + ((secondIndex - 1) % 2)];
+      }
+    }
+  }
+
+  const firstStart = toPoint3(otherFirst);
+  const firstEnd = toPoint3(closestFirst);
+  const secondStart = toPoint3(closestSecond);
+  const secondEnd = toPoint3(otherSecond);
+  if (!firstStart || !firstEnd || !secondStart || !secondEnd) {
+    return Number.NaN;
+  }
+
+  const firstVector = [
+    firstEnd[0] - firstStart[0],
+    firstEnd[1] - firstStart[1],
+    firstEnd[2] - firstStart[2],
+  ];
+  // Cornerstone's angleBetweenLines reverses the second segment.
+  const secondVector = [
+    secondStart[0] - secondEnd[0],
+    secondStart[1] - secondEnd[1],
+    secondStart[2] - secondEnd[2],
+  ];
+  const firstLength = Math.hypot(...firstVector);
+  const secondLength = Math.hypot(...secondVector);
+  if (!firstLength || !secondLength) return Number.NaN;
+
+  const cosine = Math.max(
+    -1,
+    Math.min(
+      1,
+      firstVector.reduce(
+        (sum, value, index) => sum + value * secondVector[index],
+        0
+      ) /
+        (firstLength * secondLength)
+    )
+  );
+  return (Math.acos(cosine) * 180) / Math.PI;
+}
+
 function requireFiniteStat(
   stats: Record<string, any>,
   key: string,
@@ -696,6 +759,15 @@ function normalizeCachedStats(
         stats,
         'angle',
         angleDegrees(handlePoints[0], handlePoints[1], handlePoints[2]),
+        annotationUID
+      );
+      break;
+    }
+    case 'CobbAngle': {
+      requireFiniteStat(
+        stats,
+        'angle',
+        cobbAngleDegrees(handlePoints),
         annotationUID
       );
       break;

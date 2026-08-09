@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  annotation as cornerstoneAnnotation,
+  cancelActiveManipulations,
   state as cornerstoneToolsState,
   ToolGroupManager,
 } from '@cornerstonejs/tools';
@@ -10,6 +12,48 @@ type ActiveAnnotationInteraction = {
   isNewAnnotation: boolean;
   isDrawing: boolean;
 };
+
+/** Safely end the current draw/edit gesture before changing viewer modes. */
+export function cancelActiveAnnotationInteraction(
+  element: HTMLDivElement | null | undefined
+): void {
+  if (!element) return;
+  if (
+    !cornerstoneToolsState.isInteractingWithTool &&
+    !cornerstoneToolsState.isMultiPartToolActive
+  ) {
+    return;
+  }
+
+  // CobbAngleTool appends both second-line handles on pointer-down. Its native
+  // cancel() therefore sees four handles and emits COMPLETED even though that
+  // line has not been released. Remember these drafts and remove them after
+  // native cancel has torn down its DOM listeners and interaction state.
+  const cobbDrafts = getActiveAnnotationInteractions().filter(
+    ({ annotation, isNewAnnotation, isDrawing }) =>
+      isNewAnnotation &&
+      isDrawing &&
+      annotation?.metadata?.toolName === 'CobbAngle'
+  );
+  for (const { annotation } of cobbDrafts) {
+    const points = annotation?.data?.handles?.points;
+    if (Array.isArray(points) && points.length >= 4) {
+      annotation.data.handles.points = points.slice(0, 2);
+    }
+  }
+
+  try {
+    cancelActiveManipulations(element);
+  } catch {}
+
+  for (const { annotation } of cobbDrafts) {
+    const annotationUID = String(annotation?.annotationUID ?? '');
+    if (!annotationUID) continue;
+    try {
+      cornerstoneAnnotation.state.removeAnnotation(annotationUID);
+    } catch {}
+  }
+}
 
 function getActiveAnnotationInteractions(): ActiveAnnotationInteraction[] {
   try {

@@ -9,6 +9,7 @@ import {
   findMatchingImageIdIndex,
 } from '@/lib/cornerstone/helpers';
 import { ensureAnnotationAvailable } from '@/lib/cornerstone/annotations';
+import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import {
   isAnnotationRemovalTombstoned,
@@ -157,6 +158,8 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
   const handleSelectMeasurement = useCallback(async (m: any) => {
     const annotationUID = String(m?.annotationUID ?? '');
     if (!annotationUID || isAnnotationRemovalTombstoned(annotationUID)) return;
+
+    cancelActiveAnnotationInteraction(viewportEl);
 
     // Guard: avoid re-entrant selection for same uid
     if (selectingRef.current && lastSelectingUIDRef.current === (m?.annotationUID ?? null)) {

@@ -59,3 +59,33 @@ export function ProbeIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+/** Decorative icon for the four-point Cobb Angle measurement tool. */
+export function CobbAngleIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      focusable="false"
+      {...props}
+    >
+      <path
+        d="M4.5 5.25 13.5 8M10.5 16 19.5 13.25"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="m10.75 8.25 2.5 5.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeDasharray="1 2"
+      />
+      <circle cx="4.5" cy="5.25" r="1.4" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="13.5" cy="8" r="1.4" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="10.5" cy="16" r="1.4" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="19.5" cy="13.25" r="1.4" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}

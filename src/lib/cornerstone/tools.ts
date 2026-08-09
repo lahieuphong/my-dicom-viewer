@@ -17,6 +17,7 @@ import {
   SplineROITool,
   LivewireContourTool,
   AngleTool,
+  CobbAngleTool,
   ProbeTool,
   StackScrollTool,
 } from '@cornerstonejs/tools';
@@ -92,6 +93,7 @@ export function registerToolsOnce(): void {
       SplineROITool,
       LivewireContourTool,
       AngleTool,
+      CobbAngleTool,
       ProbeTool,
       StackScrollTool,
     ];

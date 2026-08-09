@@ -24,6 +24,7 @@ export const SUPPORTED_SR_TOOL_NAMES = new Set([
   'LivewireContour',
   'Probe',
   'Angle',
+  'CobbAngle',
 ]);
 
 function registerPlanarContourSubtype(

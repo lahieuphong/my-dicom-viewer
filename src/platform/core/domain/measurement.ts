@@ -11,7 +11,8 @@ export type MeasurementType =
   | 'splineROI'
   | 'livewireContour'
   | 'probe'
-  | 'angle';
+  | 'angle'
+  | 'cobbAngle';
 
 export interface MeasurementMetadata {
   seriesUID: DicomUID;

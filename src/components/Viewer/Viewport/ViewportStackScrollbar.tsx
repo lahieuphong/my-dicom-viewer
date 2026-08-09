@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Enums as CoreEnums, getEnabledElement } from '@cornerstonejs/core';
 
 import { VIEWPORT_ID } from '@/constants/viewport';
+import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 import { cn } from '@/lib/utils';
 
 type ViewportStackScrollbarProps = {
@@ -253,6 +254,7 @@ export default function ViewportStackScrollbar({
 
       event.preventDefault();
       event.stopPropagation();
+      cancelActiveAnnotationInteraction(viewportEl);
       const thumbRect = thumbRef.current.getBoundingClientRect();
       const isOnThumb = event.clientY >= thumbRect.top && event.clientY <= thumbRect.bottom;
       const grabOffset = isOnThumb
@@ -267,7 +269,7 @@ export default function ViewportStackScrollbar({
         requestFrame(getFrameAtPosition(event.clientY, grabOffset));
       }
     },
-    [disabled, getFrameAtPosition, normalizedTotal, requestFrame]
+    [disabled, getFrameAtPosition, normalizedTotal, requestFrame, viewportEl]
   );
 
   const handlePointerMove = useCallback(
@@ -313,9 +315,10 @@ export default function ViewportStackScrollbar({
 
       event.preventDefault();
       event.stopPropagation();
+      cancelActiveAnnotationInteraction(viewportEl);
       requestFrame(targetFrame);
     },
-    [normalizedTotal, requestFrame]
+    [normalizedTotal, requestFrame, viewportEl]
   );
 
   const handleWheel = useCallback(
@@ -327,9 +330,10 @@ export default function ViewportStackScrollbar({
 
       event.preventDefault();
       event.stopPropagation();
+      cancelActiveAnnotationInteraction(viewportEl);
       requestFrame(displayFrameRef.current + (delta > 0 ? 1 : -1));
     },
-    [requestFrame]
+    [requestFrame, viewportEl]
   );
 
   if (normalizedTotal <= 1) return null;
