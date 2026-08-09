@@ -1,7 +1,10 @@
 // src/hooks/useCine.ts
 import { useCallback, useEffect, useState } from 'react';
 import { utilities } from '@cornerstonejs/tools';
-import { clampCineFps } from '@/constants/cine';
+import {
+  CINE_WAIT_FOR_RENDERED_TICKS,
+  clampCineFps,
+} from '@/constants/cine';
 import {
   prepareCineStack,
   type CinePreloadMode,
@@ -170,6 +173,7 @@ export function useCine({
     utilities.cine.playClip(element, {
       framesPerSecond,
       loop: true,
+      waitForRendered: CINE_WAIT_FOR_RENDERED_TICKS,
     });
 
     return () => {

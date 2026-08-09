@@ -446,6 +446,7 @@ export default function ViewerWorkspace({
                 totalFrames={totalFrames}
                 onFrameChange={onFrameChange}
                 viewportEl={viewportEl}
+                followTargetFrame={isPlaying}
                 disabled={
                   loadingStack || !imageAvailable || cineInteractionLocked
                 }

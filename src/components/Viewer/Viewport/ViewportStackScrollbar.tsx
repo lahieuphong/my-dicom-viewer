@@ -12,6 +12,7 @@ type ViewportStackScrollbarProps = {
   onFrameChange: (frame: number) => boolean | void | Promise<boolean | void>;
   viewportEl?: HTMLDivElement | null;
   disabled?: boolean;
+  followTargetFrame?: boolean;
 };
 
 const MIN_THUMB_HEIGHT = 42;
@@ -44,6 +45,7 @@ export default function ViewportStackScrollbar({
   onFrameChange,
   viewportEl = null,
   disabled = false,
+  followTargetFrame = false,
 }: ViewportStackScrollbarProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const thumbRef = useRef<HTMLDivElement | null>(null);
@@ -85,7 +87,7 @@ export default function ViewportStackScrollbar({
       if (dragRef.current) return;
       const nextFrame = clampFrame(frame, normalizedTotal);
 
-      // Keep imperative interactions on the newest rendered frame even when
+      // Keep imperative interactions on the newest stack position even when
       // several Cine events arrive before the browser's next paint.
       displayFrameRef.current = nextFrame;
       pendingStackFrameRef.current = nextFrame;
@@ -106,10 +108,29 @@ export default function ViewportStackScrollbar({
       queueStackFrame(Number(imageIndex) + 1);
     };
 
+    const handleStackViewportScroll = (event: Event) => {
+      const imageIndex = (
+        event as CustomEvent<{ newImageIdIndex?: number }>
+      ).detail?.newImageIdIndex;
+      if (!Number.isInteger(imageIndex)) return;
+
+      // STACK_VIEWPORT_SCROLL follows Cornerstone's target index immediately.
+      // At high Cine FPS several target changes can occur before an image has
+      // completed rendering, so STACK_NEW_IMAGE alone makes the thumb appear
+      // stalled even though playback is still advancing.
+      queueStackFrame(Number(imageIndex) + 1);
+    };
+
     viewportEl.addEventListener(
       CoreEnums.Events.STACK_NEW_IMAGE,
       handleStackNewImage as EventListener
     );
+    if (followTargetFrame) {
+      viewportEl.addEventListener(
+        CoreEnums.Events.STACK_VIEWPORT_SCROLL,
+        handleStackViewportScroll as EventListener
+      );
+    }
 
     // The parent intentionally pauses its frame-state updates during Cine.
     // Read Cornerstone once when subscribing so a remount never starts from
@@ -122,13 +143,19 @@ export default function ViewportStackScrollbar({
         CoreEnums.Events.STACK_NEW_IMAGE,
         handleStackNewImage as EventListener
       );
+      if (followTargetFrame) {
+        viewportEl.removeEventListener(
+          CoreEnums.Events.STACK_VIEWPORT_SCROLL,
+          handleStackViewportScroll as EventListener
+        );
+      }
       if (stackSyncFrameRef.current != null) {
         window.cancelAnimationFrame(stackSyncFrameRef.current);
         stackSyncFrameRef.current = null;
       }
       pendingStackFrameRef.current = null;
     };
-  }, [normalizedTotal, viewportEl]);
+  }, [followTargetFrame, normalizedTotal, viewportEl]);
 
   useEffect(() => {
     return () => {
