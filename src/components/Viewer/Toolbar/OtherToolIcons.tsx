@@ -89,3 +89,38 @@ export function CobbAngleIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+/** Decorative ruler and double-arrow icon for OHIF's Calibration tool. */
+export function CalibrationIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      focusable="false"
+      {...props}
+    >
+      <rect
+        x="4"
+        y="4"
+        width="16"
+        height="5"
+        rx="1.25"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M7 5.5v2M10 5.5v2M13 5.5v2M16 5.5v2"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+      />
+      <path
+        d="M4.5 16.5h15M4.5 16.5l2.75-2.75M4.5 16.5l2.75 2.75M19.5 16.5l-2.75-2.75M19.5 16.5l-2.75 2.75"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

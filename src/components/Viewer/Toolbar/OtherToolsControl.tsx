@@ -29,6 +29,7 @@ type OtherToolsControlProps = {
   isCineOpen: boolean;
   isInverted: boolean;
   canInvert: boolean;
+  canCalibrate: boolean;
   onSelectItem: (item: OtherItemID) => void;
   readOnly?: boolean;
   disabled?: boolean;
@@ -50,6 +51,7 @@ export default function OtherToolsControl({
   isCineOpen,
   isInverted,
   canInvert,
+  canCalibrate,
   onSelectItem,
   readOnly = false,
   disabled = false,
@@ -136,7 +138,8 @@ export default function OtherToolsControl({
             const itemDisabled =
               disabled ||
               (readOnly && disabledForSR) ||
-              (id === 'invert' && !canInvert);
+              (id === 'invert' && !canInvert) ||
+              (id === 'calibrationLine' && !canCalibrate);
             const isToggle = id === 'cine' || id === 'invert';
 
             return (

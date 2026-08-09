@@ -11,13 +11,19 @@ import {
 
 import type { ToolID } from '@/hooks/useToolManager';
 
-import { CobbAngleIcon, InvertIcon, ProbeIcon } from './OtherToolIcons';
+import {
+  CalibrationIcon,
+  CobbAngleIcon,
+  InvertIcon,
+  ProbeIcon,
+} from './OtherToolIcons';
 
 export const OTHER_TOOL_IDS = [
   'probe',
   'angle',
   'cobbAngle',
   'magnify',
+  'calibrationLine',
   'rotate90',
   'flipHorizontal',
   'reset',
@@ -100,6 +106,15 @@ export const OTHER_TOOL_DEFINITIONS = {
     kind: 'mouse-tool',
     disabledForSR: true,
   },
+  calibrationLine: {
+    id: 'calibrationLine',
+    menuLabel: 'Calibration',
+    label: 'Hiệu chuẩn khoảng cách',
+    detail: 'Calibration Line',
+    Icon: CalibrationIcon,
+    kind: 'mouse-tool',
+    disabledForSR: true,
+  },
   rotate90: {
     id: 'rotate90',
     menuLabel: 'Rotate 90°',
@@ -140,6 +155,7 @@ export const OTHER_TOOL_ITEMS: readonly OtherToolDefinition[] = [
   OTHER_TOOL_DEFINITIONS.angle,
   OTHER_TOOL_DEFINITIONS.cobbAngle,
   OTHER_TOOL_DEFINITIONS.magnify,
+  OTHER_TOOL_DEFINITIONS.calibrationLine,
 ];
 
 export function isOtherTool(tool: ToolID): tool is OtherToolID {

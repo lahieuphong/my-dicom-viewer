@@ -21,6 +21,7 @@ interface ToolbarProps {
   isInverted: boolean;
   canInvert: boolean;
   onToggleInvert: () => void;
+  canCalibrate: boolean;
 
   isCineOpen: boolean;
   onToggleCine: () => void;
@@ -42,6 +43,7 @@ export default function Toolbar({
   isInverted,
   canInvert,
   onToggleInvert,
+  canCalibrate,
   isCineOpen,
   onToggleCine,
   onCloseCine,
@@ -69,6 +71,11 @@ export default function Toolbar({
       case 'cine':
         if (!isCineOpen) {
           cancelActiveAnnotationInteraction(viewportEl);
+          // Calibration is a transient, image-specific mode. Do not leave it
+          // bound to primary drag while Cine advances through other images.
+          if (activeTool === 'calibrationLine') {
+            onSelectTool('adjust');
+          }
         }
         onToggleCine();
         return;
@@ -87,6 +94,9 @@ export default function Toolbar({
         return;
       case 'magnify':
         selectNonCineTool('magnify');
+        return;
+      case 'calibrationLine':
+        selectNonCineTool('calibrationLine');
         return;
       case 'rotate90':
         runViewportAction(onRotate90);
@@ -163,6 +173,7 @@ export default function Toolbar({
             isCineOpen={isCineOpen}
             isInverted={isInverted}
             canInvert={canInvert}
+            canCalibrate={canCalibrate}
             onSelectItem={handleOtherItemSelect}
             readOnly={isSeriesSR}
             disabled={disabled}

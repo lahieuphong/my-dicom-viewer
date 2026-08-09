@@ -28,6 +28,7 @@ import { initCornerstone } from '@/lib/cornerstone';
 import { TOOL_GROUP } from '@/constants/toolgroup';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
+import { CalibrationLineTool } from '@/lib/cornerstone/calibration';
 import {
   registerToolsOnce,
 } from '@/lib/cornerstone/tools';
@@ -37,6 +38,7 @@ export type ToolID =
   | 'pan'
   | 'zoom'
   | 'magnify'
+  | 'calibrationLine'
   | 'length'
   | 'bidirectional'
   | 'arrowAnnotate'
@@ -61,6 +63,7 @@ export const toolNameMap: Record<ToolID, string> = {
   pan: PanTool.toolName,
   zoom: ZoomTool.toolName,
   magnify: MagnifyTool.toolName,
+  calibrationLine: CalibrationLineTool.toolName,
   length: LengthTool.toolName,
   bidirectional: BidirectionalTool.toolName,
   arrowAnnotate: ArrowAnnotateTool.toolName,
@@ -94,6 +97,12 @@ export const measurementToolIDs: ToolID[] = [
   'cobbAngle',
 ];
 
+/** Mouse tools that must be passive while a DICOM SR series is active. */
+export const readOnlyBlockedToolIDs: ToolID[] = [
+  ...measurementToolIDs,
+  'calibrationLine',
+];
+
 const CORNERSTONE_TOOL_NAMES = [
   WindowLevelTool.toolName,
   PanTool.toolName,
@@ -111,6 +120,7 @@ const CORNERSTONE_TOOL_NAMES = [
   ProbeTool.toolName,
   AngleTool.toolName,
   CobbAngleTool.toolName,
+  CalibrationLineTool.toolName,
 ];
 
 /**
@@ -134,6 +144,7 @@ const TOOL_CLASS_MAP: Partial<Record<ToolID, any>> = {
   probe: ProbeTool,
   angle: AngleTool,
   cobbAngle: CobbAngleTool,
+  calibrationLine: CalibrationLineTool,
 };
 
 /* ================= Robust ToolGroup helpers ================= */
@@ -356,7 +367,7 @@ export function useToolManager() {
       return false;
     }
 
-    if (isSeriesSR && measurementToolIDs.includes(tool)) {
+    if (isSeriesSR && readOnlyBlockedToolIDs.includes(tool)) {
       const name = toolNameMap[tool];
       try {
         if (toolGroupHasTool(tg, name)) {

@@ -25,6 +25,7 @@ import {
 
 import { ensureStackScrollWheelActive } from './stackScroll';
 import { configureMeasurementToolGroupStyles } from './measurementStyles';
+import { CalibrationLineTool } from './calibration';
 
 const TOOL_GROUP_ID = 'toolGroup';
 
@@ -97,6 +98,7 @@ export function registerToolsOnce(): void {
       AngleTool,
       CobbAngleTool,
       ProbeTool,
+      CalibrationLineTool,
       StackScrollTool,
     ];
 

@@ -6,6 +6,7 @@ import { init as initTools, ToolGroupManager } from '@cornerstonejs/tools';
 import { TOOL_GROUP } from '@/constants/toolgroup';
 // import { registerCornerstoneToolsOnce } from './registerCornerstoneTools';
 import { registerToolsOnce } from './tools';
+import { registerCalibrationMetadataProvider } from './calibration';
 
 
 /**
@@ -319,6 +320,18 @@ async function initCornerstoneInternal() {
       }
     }
   } catch (err) {
+  }
+
+  // User Calibration writes through this provider. Register it after the
+  // DICOM loader initializes, matching OHIF and avoiding loader setup clearing
+  // the provider before StackViewport reads calibratedPixelSpacing metadata.
+  try {
+    registerCalibrationMetadataProvider();
+  } catch (err) {
+    try {
+      (window as any).__cornerstoneStatus.lastError =
+        `[calibration metadata provider] ${String(err)}`;
+    } catch {}
   }
 
   // 7) Expose safe globals for convenience (prefer core.imageLoader where possible)

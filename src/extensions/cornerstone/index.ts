@@ -42,8 +42,10 @@ export type {
 
 export {
   measurementToolIDs,
+  readOnlyBlockedToolIDs,
   toolNameMap,
   useCine,
+  useCalibrationLine,
   useFlipHorizontal,
   useForceZoomOne,
   useInvert,
@@ -53,7 +55,13 @@ export {
   useStackScrollWheel,
   useToolManager,
 } from './tools';
-export type { ToolID, UseInvertOptions, UseInvertResult } from './tools';
+export type {
+  ToolID,
+  UseCalibrationLineOptions,
+  UseCalibrationLineResult,
+  UseInvertOptions,
+  UseInvertResult,
+} from './tools';
 
 export {
   useMeasurementBridge,

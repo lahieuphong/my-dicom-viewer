@@ -11,6 +11,7 @@ import {
 } from '@/constants/viewerLayout';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import { useCine } from '@/hooks/useCine';
+import { useCalibrationLine } from '@/hooks/useCalibrationLine';
 import { useStackPrefetch } from '@/hooks/useStackPrefetch';
 import type { ToolID } from '@/hooks/useToolManager';
 import { useViewerPanelResize } from '@/hooks/useViewerPanelResize';
@@ -20,6 +21,7 @@ import { MeasurementPanel } from '@/components/Viewer/Measurement';
 import { SeriesSidebar } from '@/components/Viewer/Series';
 import { SrNameDialog } from '@/components/Viewer/SR';
 import { CineControls, Toolbar } from '@/components/Viewer/Toolbar';
+import { CalibrationDialog } from '@/components/Viewer/Calibration';
 import PanelResizeHandle from './PanelResizeHandle';
 import {
   DicomViewport,
@@ -174,6 +176,14 @@ export default function ViewerWorkspace({
       !imageAvailable ||
       cinePreparation.phase === 'idle' ||
       cinePreparation.phase === 'preparing');
+  const calibration = useCalibrationLine({
+    element: viewportEl,
+    stackKey: selectedSeries,
+    enabled:
+      !loadingStack &&
+      imageAvailable &&
+      !isSeriesToolbarReadOnly,
+  });
   // Normal wheel navigation uses a small bounded window. Cine owns prefetch
   // while its panel is open, avoiding two loaders competing for the same
   // decode workers during preparation.
@@ -398,6 +408,7 @@ export default function ViewerWorkspace({
                 isInverted={isInverted}
                 canInvert={canInvert}
                 onToggleInvert={onToggleInvert}
+                canCalibrate={calibration.canCalibrate}
                 isCineOpen={cineOpen}
                 onToggleCine={toggleCine}
                 onCloseCine={closeCine}
@@ -525,6 +536,14 @@ export default function ViewerWorkspace({
           if (!trimmed) return;
           onSaveSrDialog(trimmed);
         }}
+      />
+      <CalibrationDialog
+        open={calibration.isOpen}
+        defaultLength={calibration.defaultLength}
+        isApplying={calibration.isApplying}
+        applyError={calibration.error}
+        onCancel={calibration.cancelCalibration}
+        onApply={calibration.applyCalibration}
       />
     </>
   );

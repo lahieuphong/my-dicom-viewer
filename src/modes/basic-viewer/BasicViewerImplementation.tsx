@@ -34,7 +34,7 @@ import {
   createDisplaySetFromSeries,
   disableReleaseGraphicsResourcesGlobally,
   enableElement,
-  measurementToolIDs,
+  readOnlyBlockedToolIDs,
   toolNameMap,
   useEnsureImageRendered,
   useFlipHorizontal,
@@ -1446,7 +1446,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       // only change local state if needed
       if (activeTool !== 'adjust') setActiveTool('adjust');
 
-      measurementToolIDs.forEach((id) => {
+      readOnlyBlockedToolIDs.forEach((id) => {
         const name = toolNameMap[id];
         try { tg.setToolPassive(name); } catch (e) {}
         try { tg.setToolConfiguration(name, { bindings: [] }); } catch (e) {}
@@ -1464,7 +1464,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         }
       }
     } else {
-      measurementToolIDs.forEach((id) => {
+      readOnlyBlockedToolIDs.forEach((id) => {
         const name = toolNameMap[id];
         try { tg.setToolConfiguration(name, { bindings: [{ mouseButton: ToolEnums.MouseBindings.Primary }] }); } catch (e) {}
       });
