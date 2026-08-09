@@ -70,6 +70,9 @@ type ViewerWorkspaceProps = {
   onReset: () => void;
   onRotate90: () => void;
   onFlipHorizontal: () => void;
+  isInverted: boolean;
+  canInvert: boolean;
+  onToggleInvert: () => void;
   isPlaying: boolean;
   fps: number;
   onPlayChange: (isPlaying: boolean) => void;
@@ -127,6 +130,9 @@ export default function ViewerWorkspace({
   onReset,
   onRotate90,
   onFlipHorizontal,
+  isInverted,
+  canInvert,
+  onToggleInvert,
   isPlaying,
   fps,
   onPlayChange,
@@ -372,6 +378,9 @@ export default function ViewerWorkspace({
                 onReset={onReset}
                 onRotate90={onRotate90}
                 onFlipHorizontal={onFlipHorizontal}
+                isInverted={isInverted}
+                canInvert={canInvert}
+                onToggleInvert={onToggleInvert}
                 isCineOpen={cineOpen}
                 onToggleCine={toggleCine}
                 onCloseCine={closeCine}

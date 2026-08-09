@@ -46,13 +46,14 @@ export {
   useCine,
   useFlipHorizontal,
   useForceZoomOne,
+  useInvert,
   useResetViewer,
   useRotate,
   useStackPrefetch,
   useStackScrollWheel,
   useToolManager,
 } from './tools';
-export type { ToolID } from './tools';
+export type { ToolID, UseInvertOptions, UseInvertResult } from './tools';
 
 export {
   useMeasurementBridge,

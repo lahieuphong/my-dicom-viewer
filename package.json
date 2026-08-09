@@ -17,6 +17,7 @@
     "check:architecture": "node scripts/check-architecture.mjs",
     "check:deploy": "node scripts/check-vercel-readiness.mjs",
     "verify": "yarn check:architecture && yarn lint && yarn typecheck",
+    "test:viewer:invert": "node scripts/test-invert-cdp.mjs",
     "test:sr:workflow": "node scripts/debug-viewer-cdp.mjs",
     "test:sr:tools": "node scripts/test-all-sr-tools-cdp.mjs",
     "dicom:manifest": "node scripts/generate-dicom-manifest.mjs"

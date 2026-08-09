@@ -40,6 +40,7 @@ import {
   useFlipHorizontal,
   useForceZoomOne,
   useImageReadiness,
+  useInvert,
   useMeasurementBridge,
   useMeasurementSelector,
   useMeasurements,
@@ -439,7 +440,21 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const rotate = useRotate(viewportInstance);
   const flipHorizontal = useFlipHorizontal(renderingEngineRef, viewportId);
+  const {
+    isInverted,
+    canInvert,
+    toggleInvert,
+    syncInvertFromViewport,
+  } = useInvert({
+    viewportInstance,
+    stackKey: selectedSeries,
+    enabled: imageAvailable && !loadingStack,
+  });
   const resetViewer = useResetViewer(viewportInstance, clearPersistedVoi);
+  const resetViewerAndSyncInvert = useCallback(() => {
+    resetViewer();
+    syncInvertFromViewport();
+  }, [resetViewer, syncInvertFromViewport]);
   // useViewerLayout: quản lý grid + collapsed state cho sidebar & measurement panel
   const {
     gridCols,
@@ -1711,9 +1726,12 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       selectedMeasurementUID={selectedMeasurementUID}
       activeTool={activeTool}
       onSelectTool={handleSelectTool}
-      onReset={resetViewer}
+      onReset={resetViewerAndSyncInvert}
       onRotate90={() => rotate()}
       onFlipHorizontal={() => flipHorizontal()}
+      isInverted={isInverted}
+      canInvert={canInvert}
+      onToggleInvert={toggleInvert}
       isPlaying={isPlaying}
       fps={fps}
       onPlayChange={setIsPlaying}
