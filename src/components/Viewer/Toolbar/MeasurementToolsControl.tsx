@@ -35,7 +35,6 @@ export default function MeasurementToolsControl({
   const activeDefinition = getMeasurementMenuTool(activeTool);
   const primaryDefinition = activeDefinition ?? MEASUREMENT_MENU_TOOLS[0];
   const { Icon } = primaryDefinition;
-  const tooltip = activeDefinition ?? MEASUREMENT_TOOLS_TOOLTIP;
 
   return (
     <div
@@ -48,20 +47,6 @@ export default function MeasurementToolsControl({
       data-active={Boolean(activeDefinition)}
       data-testid="measurement-tools-control"
     >
-      <ToolbarTooltip label={tooltip.label} detail={tooltip.detail}>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={readOnly || disabled}
-          onClick={() => onSelectTool(primaryDefinition.id)}
-          className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent p-0 has-[>svg]:px-0 hover:bg-muted hover:text-foreground"
-          aria-label={`${tooltip.label} — ${tooltip.detail}`}
-          data-tool-id={primaryDefinition.id}
-        >
-          <Icon className="size-4" />
-        </Button>
-      </ToolbarTooltip>
-
       <DropdownMenu>
         <ToolbarTooltip
           label={MEASUREMENT_TOOLS_TOOLTIP.label}
@@ -72,13 +57,15 @@ export default function MeasurementToolsControl({
               type="button"
               variant="ghost"
               disabled={readOnly || disabled}
-              className="h-full w-5 min-w-5 max-w-5 rounded-none border-0 bg-transparent p-0 text-current has-[>svg]:px-0 hover:bg-muted hover:text-foreground"
-              aria-label="Mở danh sách công cụ đo lường"
+              className="h-full w-full rounded-none border-0 bg-transparent p-0 text-current hover:bg-muted hover:text-foreground"
+              aria-label={`${MEASUREMENT_TOOLS_TOOLTIP.label} — ${MEASUREMENT_TOOLS_TOOLTIP.detail}`}
+              data-tool-id={primaryDefinition.id}
               data-testid="measurement-tools-menu-trigger"
             >
+              <Icon className="size-4 sm:mr-1" aria-hidden="true" />
               <i
                 aria-hidden="true"
-                className="fas fa-ellipsis-h text-xs"
+                className="fas fa-ellipsis-h hidden text-xs sm:inline"
               />
             </Button>
           </DropdownMenuTrigger>

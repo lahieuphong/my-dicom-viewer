@@ -469,7 +469,7 @@ if (
     (size) => !size || size[0] !== 16 || size[1] !== 16
   ) ||
   measurementMenuState.primaryIconSize?.some((size) => size !== 16) ||
-  measurementMenuState.triggerSize?.[0] !== 20 ||
+  measurementMenuState.triggerSize?.[0] !== 56 ||
   measurementMenuState.controlVisual?.width !== 56 ||
   measurementMenuState.controlVisual?.height !== 36
 ) {

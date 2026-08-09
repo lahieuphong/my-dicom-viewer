@@ -30,7 +30,16 @@ export default function ToolbarTooltip({
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+      <TooltipTrigger
+        asChild
+        onFocus={(event) => {
+          // Toolbar tooltips are hover-only. Radix otherwise reopens them when
+          // a menu, popover, or dialog restores focus to its trigger.
+          event.preventDefault();
+        }}
+      >
+        {trigger}
+      </TooltipTrigger>
       <TooltipContent side="bottom" align="center">
         <div className="whitespace-nowrap text-sm font-semibold leading-5">
           {label}
@@ -44,4 +53,3 @@ export default function ToolbarTooltip({
     </Tooltip>
   );
 }
-
