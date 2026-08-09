@@ -374,6 +374,7 @@ export default function ViewerWorkspace({
                 onFlipHorizontal={onFlipHorizontal}
                 isCineOpen={cineOpen}
                 onToggleCine={toggleCine}
+                onCloseCine={closeCine}
                 viewportEl={viewportEl}
                 isSeriesSR={isSeriesToolbarReadOnly}
                 disabled={cineInteractionLocked}

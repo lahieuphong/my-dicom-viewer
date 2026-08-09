@@ -33,6 +33,7 @@ import { CAPTURE_TOOLTIP } from './tooltips';
 interface CaptureControlProps {
   viewportEl: HTMLDivElement | null;
   disabled?: boolean;
+  onActivate?: () => void;
 }
 
 const MAX_CAPTURE_DIMENSION = 8192;
@@ -106,6 +107,7 @@ function FormatDropdown({
 export default function CaptureControl({
   viewportEl,
   disabled = false,
+  onActivate,
 }: CaptureControlProps) {
   const [open, setOpen] = useState(false);
   const [filename, setFilename] = useState(() => createDefaultCaptureFilename());
@@ -159,6 +161,7 @@ export default function CaptureControl({
   }, [replacePreviewUrl]);
 
   const handleOpen = () => {
+    onActivate?.();
     previewRequestRef.current += 1;
     replacePreviewUrl(null);
     setFilename(createDefaultCaptureFilename());
@@ -329,6 +332,7 @@ export default function CaptureControl({
           disabled={disabled}
           className="flex size-8 items-center justify-center rounded-md border border-border p-0 sm:size-9"
           aria-label={`${CAPTURE_TOOLTIP.label} — ${CAPTURE_TOOLTIP.detail}`}
+          data-testid="capture-trigger"
         >
           <i className="fas fa-camera" />
         </Button>

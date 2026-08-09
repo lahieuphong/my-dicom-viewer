@@ -316,24 +316,20 @@ async function selectMeasurementTool(toolId) {
 
 async function selectAngleTool() {
   await clickElement(
-    `[...document.querySelectorAll(
-      '[role="toolbar"] button[aria-haspopup="menu"]'
-    )][1]`
+    `document.querySelector('[data-testid="other-tools-trigger"]')`
   );
   await waitFor(
-    `[...document.querySelectorAll('[role="menuitem"]')].some(
-      (item) => item.textContent?.trim() === 'Angle'
+    `!!document.querySelector(
+      '[data-testid="other-tools-menu"] [data-other-item="angle"]'
     )`
   );
   await clickElement(
-    `[...document.querySelectorAll('[role="menuitem"]')].find(
-      (candidate) => candidate.textContent?.trim() === 'Angle'
+    `document.querySelector(
+      '[data-testid="other-tools-menu"] [data-other-item="angle"]'
     )`
   );
   await waitFor(
-    `![...document.querySelectorAll('[role="menuitem"]')].some(
-      (item) => item.textContent?.trim() === 'Angle'
-    )`
+    `!document.querySelector('[data-testid="other-tools-menu"]')`
   );
 }
 
@@ -500,9 +496,7 @@ await waitFor(
 );
 
 await clickElement(
-  `[...document.querySelectorAll('button')].find(
-    (button) => button.getAttribute('aria-label')?.startsWith('Công cụ khác —')
-  )`
+  `document.querySelector('[data-testid="other-tools-trigger"]')`
 );
 await waitFor(
   `[...document.querySelectorAll('[data-slot="dropdown-menu-label"]')].some(
@@ -516,9 +510,7 @@ const otherMenuStyle = await evaluate(`(() => {
   )].find((candidate) => candidate.textContent?.trim() === 'Other');
   const menu = label?.closest('[data-slot="dropdown-menu-content"]');
   const item = menu?.querySelector('[role="menuitem"]');
-  const trigger = [...document.querySelectorAll('button')].find(
-    (button) => button.getAttribute('aria-label')?.startsWith('Công cụ khác —')
-  );
+  const trigger = document.querySelector('[data-testid="other-tools-trigger"]');
   const visualStyle = (element) => {
     if (!element) return null;
     const style = getComputedStyle(element);
@@ -590,9 +582,7 @@ if (
   );
 }
 await clickElement(
-  `[...document.querySelectorAll('button')].find(
-    (button) => button.getAttribute('aria-label')?.startsWith('Công cụ khác —')
-  )`
+  `document.querySelector('[data-testid="other-tools-trigger"]')`
 );
 await waitFor(
   `![...document.querySelectorAll('[data-slot="dropdown-menu-label"]')].some(

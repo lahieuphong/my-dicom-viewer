@@ -1,5 +1,6 @@
 // src/components/Viewer/Toolbar/ViewerToolbar.tsx
 'use client';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { CirclePlay } from 'lucide-react';
@@ -30,12 +31,40 @@ interface ToolbarProps {
 
   isCineOpen: boolean;
   onToggleCine: () => void;
+  onCloseCine: () => void;
 
   viewportEl?: HTMLDivElement | null;
 
   // NEW prop: whether current series is SR (read-only)
   isSeriesSR?: boolean;
   disabled?: boolean;
+}
+
+const OTHER_TOOL_IDS = [
+  'angle',
+  'rotate90',
+  'flipHorizontal',
+  'reset',
+] as const satisfies readonly ToolID[];
+
+type OtherToolID = (typeof OTHER_TOOL_IDS)[number];
+type OtherItemID = OtherToolID | 'cine';
+
+function isOtherTool(tool: ToolID): tool is OtherToolID {
+  return (OTHER_TOOL_IDS as readonly ToolID[]).includes(tool);
+}
+
+function resolveDisplayedOtherItem(
+  lastSelectedItem: OtherItemID | null,
+  activeTool: ToolID,
+  isCineOpen: boolean
+): OtherItemID | null {
+  if (lastSelectedItem === 'cine' && isCineOpen) return 'cine';
+  if (lastSelectedItem !== null && lastSelectedItem !== 'cine') {
+    if (activeTool === lastSelectedItem) return lastSelectedItem;
+  }
+  if (isOtherTool(activeTool)) return activeTool;
+  return isCineOpen ? 'cine' : null;
 }
 
 export default function Toolbar({
@@ -46,17 +75,28 @@ export default function Toolbar({
   onFlipHorizontal,
   isCineOpen,
   onToggleCine,
+  onCloseCine,
   viewportEl,
   isSeriesSR = false,
   disabled = false,
 }: ToolbarProps) {
+  const closeCineForNonCineAction = () => {
+    if (isCineOpen) onCloseCine();
+  };
+
+  const selectNonCineTool = (tool: ToolID, action?: () => void) => {
+    closeCineForNonCineAction();
+    action?.();
+    onSelectTool(tool);
+  };
+
   const renderButton = (tool: ToolID, iconClass: string, title: string) => {
     const isActive = activeTool === tool;
     const tooltip = getToolTooltip(tool, { label: title, detail: `${title} Tool` });
     return (
       <ToolbarTooltip label={tooltip.label} detail={tooltip.detail}>
         <Button
-          onClick={() => onSelectTool(tool)}
+          onClick={() => selectNonCineTool(tool)}
           disabled={disabled}
           variant={isActive ? 'default' : 'ghost'}
           className={`
@@ -67,6 +107,7 @@ export default function Toolbar({
               : 'bg-transparent text-foreground'}
           `}
           aria-label={`${tooltip.label} — ${tooltip.detail}`}
+          data-testid={`toolbar-tool-${tool}`}
         >
           <i className={iconClass} />
         </Button>
@@ -74,17 +115,29 @@ export default function Toolbar({
     );
   };
 
-  const isOtherToolActive =
-    activeTool === 'angle' ||
-    activeTool === 'rotate90' ||
-    activeTool === 'flipHorizontal' ||
-    activeTool === 'reset';
+  const isOtherToolActive = isOtherTool(activeTool);
+  const [lastSelectedOtherItem, setLastSelectedOtherItem] =
+    useState<OtherItemID | null>(() =>
+      isCineOpen ? 'cine' : isOtherToolActive ? activeTool : null
+    );
+
+  // Opening Cine preserves the current mouse tool. Selecting any non-Cine
+  // toolbar action closes Cine; the trigger represents the latest valid item.
+  const displayedOtherItem = resolveDisplayedOtherItem(
+    lastSelectedOtherItem,
+    activeTool,
+    isCineOpen
+  );
+  const displayedOtherTool =
+    displayedOtherItem !== 'cine' ? displayedOtherItem : null;
   const isOtherControlActive = isCineOpen || isOtherToolActive;
-  const otherIcon = isOtherToolActive ? getIconForOtherTool(activeTool) : 'tools';
-  const otherTooltip = isCineOpen
+  const otherIcon = displayedOtherTool
+    ? getIconForOtherTool(displayedOtherTool)
+    : 'tools';
+  const otherTooltip = displayedOtherItem === 'cine'
     ? { label: 'Cine', detail: 'Cine Controls' }
-    : isOtherToolActive
-      ? getToolTooltip(activeTool, MORE_TOOLS_TOOLTIP)
+    : displayedOtherTool
+      ? getToolTooltip(displayedOtherTool, MORE_TOOLS_TOOLTIP)
       : MORE_TOOLS_TOOLTIP;
 
   return (
@@ -105,7 +158,7 @@ export default function Toolbar({
         >
           <MeasurementToolsControl
             activeTool={activeTool}
-            onSelectTool={onSelectTool}
+            onSelectTool={(tool) => selectNonCineTool(tool)}
             readOnly={isSeriesSR}
             disabled={disabled}
           />
@@ -118,6 +171,7 @@ export default function Toolbar({
           <CaptureControl
             viewportEl={viewportEl ?? null}
             disabled={disabled}
+            onActivate={closeCineForNonCineAction}
           />
 
           {/* Other Tools Dropdown */}
@@ -128,9 +182,10 @@ export default function Toolbar({
                   variant={isOtherControlActive ? 'default' : 'ghost'}
                   className="w-12 sm:w-14 h-8 sm:h-9 p-0 flex items-center justify-center border border-border rounded-md"
                   aria-label={`${otherTooltip.label} — ${otherTooltip.detail}`}
+                  data-displayed-item={displayedOtherItem ?? 'more'}
                   data-testid="other-tools-trigger"
                 >
-                  {isCineOpen ? (
+                  {displayedOtherItem === 'cine' ? (
                     <CirclePlay className="sm:mr-1" aria-hidden="true" />
                   ) : (
                     <i className={`fas fa-${otherIcon} sm:mr-1`} />
@@ -139,17 +194,23 @@ export default function Toolbar({
                 </Button>
               </DropdownMenuTrigger>
             </ToolbarTooltip>
-            <DropdownMenuContent className="z-[90] w-56 bg-card text-foreground border border-border">
+            <DropdownMenuContent
+              className="z-[90] w-56 bg-card text-foreground border border-border"
+              data-testid="other-tools-menu"
+            >
               <DropdownMenuLabel>Other</DropdownMenuLabel>
               <DropdownMenuGroup>
                 {/* Cine is a viewport state, not an active mouse tool. */}
                 <DropdownMenuItem
                   disabled={isSeriesSR}
                   onSelect={() => {
-                    if (!isSeriesSR) onToggleCine();
+                    if (isSeriesSR) return;
+                    setLastSelectedOtherItem('cine');
+                    onToggleCine();
                   }}
                   className={isCineOpen ? 'bg-muted text-foreground' : undefined}
                   aria-label={isCineOpen ? 'Đóng Cine' : 'Mở Cine'}
+                  data-other-item="cine"
                 >
                   <CirclePlay aria-hidden="true" /> Cine
                 </DropdownMenuItem>
@@ -161,10 +222,12 @@ export default function Toolbar({
                       e.stopPropagation();
                       return;
                     }
-                    onSelectTool('angle');
+                    setLastSelectedOtherItem('angle');
+                    selectNonCineTool('angle');
                   }}
                   disabled={isSeriesSR || disabled}
                   className="w-full text-left flex items-center px-2 py-2"
+                  data-other-item="angle"
                 >
                   <i className="fas fa-angle-right mr-2" /> Angle
                 </DropdownMenuItem>
@@ -174,9 +237,10 @@ export default function Toolbar({
                   disabled={disabled}
                   onClick={() => {
                     if (disabled) return;
-                    onRotate90();
-                    onSelectTool('rotate90');
+                    setLastSelectedOtherItem('rotate90');
+                    selectNonCineTool('rotate90', onRotate90);
                   }}
+                  data-other-item="rotate90"
                 >
                   <i className="fas fa-sync-alt mr-2" /> Rotate 90°
                 </DropdownMenuItem>
@@ -186,9 +250,10 @@ export default function Toolbar({
                   disabled={disabled}
                   onClick={() => {
                     if (disabled) return;
-                    onFlipHorizontal();
-                    onSelectTool('flipHorizontal');
+                    setLastSelectedOtherItem('flipHorizontal');
+                    selectNonCineTool('flipHorizontal', onFlipHorizontal);
                   }}
+                  data-other-item="flipHorizontal"
                 >
                   <i className="fas fa-arrows-h mr-2" /> Flip Horizontal
                 </DropdownMenuItem>
@@ -198,9 +263,10 @@ export default function Toolbar({
                   disabled={disabled}
                   onClick={() => {
                     if (disabled) return;
-                    onReset();
-                    onSelectTool('reset');
+                    setLastSelectedOtherItem('reset');
+                    selectNonCineTool('reset', onReset);
                   }}
+                  data-other-item="reset"
                 >
                   <i className="fas fa-redo mr-2" /> Reset View
                 </DropdownMenuItem>
