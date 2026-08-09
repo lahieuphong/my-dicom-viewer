@@ -5,6 +5,7 @@ import {
   CirclePlay,
   RotateCcw,
   RotateCw,
+  ZoomIn,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -16,6 +17,7 @@ export const OTHER_TOOL_IDS = [
   'probe',
   'angle',
   'cobbAngle',
+  'magnify',
   'rotate90',
   'flipHorizontal',
   'reset',
@@ -89,6 +91,15 @@ export const OTHER_TOOL_DEFINITIONS = {
     kind: 'mouse-tool',
     disabledForSR: true,
   },
+  magnify: {
+    id: 'magnify',
+    menuLabel: 'Zoom-in',
+    label: 'Zoom-in',
+    detail: 'Magnify Tool',
+    Icon: ZoomIn,
+    kind: 'mouse-tool',
+    disabledForSR: true,
+  },
   rotate90: {
     id: 'rotate90',
     menuLabel: 'Rotate 90°',
@@ -128,6 +139,7 @@ export const OTHER_TOOL_ITEMS: readonly OtherToolDefinition[] = [
   OTHER_TOOL_DEFINITIONS.cine,
   OTHER_TOOL_DEFINITIONS.angle,
   OTHER_TOOL_DEFINITIONS.cobbAngle,
+  OTHER_TOOL_DEFINITIONS.magnify,
 ];
 
 export function isOtherTool(tool: ToolID): tool is OtherToolID {

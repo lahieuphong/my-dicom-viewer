@@ -85,6 +85,9 @@ export default function Toolbar({
       case 'cobbAngle':
         selectNonCineTool('cobbAngle');
         return;
+      case 'magnify':
+        selectNonCineTool('magnify');
+        return;
       case 'rotate90':
         runViewportAction(onRotate90);
         return;

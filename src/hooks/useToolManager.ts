@@ -7,6 +7,7 @@ import {
   WindowLevelTool,
   PanTool,
   ZoomTool,
+  MagnifyTool,
   LengthTool,
   BidirectionalTool,
   ArrowAnnotateTool,
@@ -35,6 +36,7 @@ export type ToolID =
   | 'adjust'
   | 'pan'
   | 'zoom'
+  | 'magnify'
   | 'length'
   | 'bidirectional'
   | 'arrowAnnotate'
@@ -58,6 +60,7 @@ export const toolNameMap: Record<ToolID, string> = {
   adjust: WindowLevelTool.toolName,
   pan: PanTool.toolName,
   zoom: ZoomTool.toolName,
+  magnify: MagnifyTool.toolName,
   length: LengthTool.toolName,
   bidirectional: BidirectionalTool.toolName,
   arrowAnnotate: ArrowAnnotateTool.toolName,
@@ -95,6 +98,7 @@ const CORNERSTONE_TOOL_NAMES = [
   WindowLevelTool.toolName,
   PanTool.toolName,
   ZoomTool.toolName,
+  MagnifyTool.toolName,
   LengthTool.toolName,
   BidirectionalTool.toolName,
   ArrowAnnotateTool.toolName,
@@ -117,6 +121,7 @@ const TOOL_CLASS_MAP: Partial<Record<ToolID, any>> = {
   adjust: WindowLevelTool,
   pan: PanTool,
   zoom: ZoomTool,
+  magnify: MagnifyTool,
   length: LengthTool,
   bidirectional: BidirectionalTool,
   arrowAnnotate: ArrowAnnotateTool,
