@@ -3,6 +3,7 @@ import {
   ArrowLeftRight,
   ChevronRight,
   CirclePlay,
+  ListTree,
   RotateCcw,
   RotateCw,
   ZoomIn,
@@ -31,11 +32,16 @@ export const OTHER_TOOL_IDS = [
 
 export type OtherToolID = (typeof OTHER_TOOL_IDS)[number];
 export type OtherViewportToggleID = 'cine' | 'invert';
-export type OtherItemID = OtherToolID | OtherViewportToggleID;
+export type OtherDialogActionID = 'dicomTagBrowser';
+export type OtherItemID =
+  | OtherToolID
+  | OtherViewportToggleID
+  | OtherDialogActionID;
 export type OtherItemKind =
   | 'mouse-tool'
   | 'viewport-toggle'
-  | 'viewport-action';
+  | 'viewport-action'
+  | 'dialog-action';
 
 export type OtherToolIcon =
   | LucideIcon
@@ -115,6 +121,15 @@ export const OTHER_TOOL_DEFINITIONS = {
     kind: 'mouse-tool',
     disabledForSR: true,
   },
+  dicomTagBrowser: {
+    id: 'dicomTagBrowser',
+    menuLabel: 'DICOM Tag Browser',
+    label: 'DICOM Tag Browser',
+    detail: 'Browse DICOM Metadata',
+    Icon: ListTree,
+    kind: 'dialog-action',
+    disabledForSR: false,
+  },
   rotate90: {
     id: 'rotate90',
     menuLabel: 'Rotate 90°',
@@ -156,6 +171,7 @@ export const OTHER_TOOL_ITEMS: readonly OtherToolDefinition[] = [
   OTHER_TOOL_DEFINITIONS.cobbAngle,
   OTHER_TOOL_DEFINITIONS.magnify,
   OTHER_TOOL_DEFINITIONS.calibrationLine,
+  OTHER_TOOL_DEFINITIONS.dicomTagBrowser,
 ];
 
 export function isOtherTool(tool: ToolID): tool is OtherToolID {
@@ -184,6 +200,7 @@ export function resolveDisplayedOtherItem(
     lastSelectedItem !== null &&
     lastSelectedItem !== 'cine' &&
     lastSelectedItem !== 'invert' &&
+    lastSelectedItem !== 'dicomTagBrowser' &&
     activeTool === lastSelectedItem
   ) {
     return lastSelectedItem;

@@ -43,6 +43,7 @@ function isItemActive(
 ) {
   if (item === 'cine') return isCineOpen;
   if (item === 'invert') return isInverted;
+  if (item === 'dicomTagBrowser') return false;
   return activeTool === item;
 }
 

@@ -22,6 +22,7 @@ import { SeriesSidebar } from '@/components/Viewer/Series';
 import { SrNameDialog } from '@/components/Viewer/SR';
 import { CineControls, Toolbar } from '@/components/Viewer/Toolbar';
 import { CalibrationDialog } from '@/components/Viewer/Calibration';
+import { DicomTagBrowserDialog } from '@/components/Viewer/DicomTagBrowser';
 import PanelResizeHandle from './PanelResizeHandle';
 import {
   DicomViewport,
@@ -156,6 +157,7 @@ export default function ViewerWorkspace({
   const totalFrames = selectedSeriesEntry?.files.length ?? 0;
   const measurementSeriesMap = seriesMap as MeasurementPanelProps['seriesMap'];
   const [cineOpen, setCineOpen] = useState(false);
+  const [dicomTagBrowserOpen, setDicomTagBrowserOpen] = useState(false);
   const cineEnabled =
     cineOpen &&
     !loadingStack &&
@@ -409,6 +411,7 @@ export default function ViewerWorkspace({
                 canInvert={canInvert}
                 onToggleInvert={onToggleInvert}
                 canCalibrate={calibration.canCalibrate}
+                onOpenDicomTagBrowser={() => setDicomTagBrowserOpen(true)}
                 isCineOpen={cineOpen}
                 onToggleCine={toggleCine}
                 onCloseCine={closeCine}
@@ -544,6 +547,12 @@ export default function ViewerWorkspace({
         applyError={calibration.error}
         onCancel={calibration.cancelCalibration}
         onApply={calibration.applyCalibration}
+      />
+      <DicomTagBrowserDialog
+        open={dicomTagBrowserOpen}
+        seriesMap={seriesMap}
+        activeSeriesUID={selectedSeries}
+        onClose={() => setDicomTagBrowserOpen(false)}
       />
     </>
   );

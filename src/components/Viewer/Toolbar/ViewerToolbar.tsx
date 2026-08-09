@@ -22,6 +22,7 @@ interface ToolbarProps {
   canInvert: boolean;
   onToggleInvert: () => void;
   canCalibrate: boolean;
+  onOpenDicomTagBrowser: () => void;
 
   isCineOpen: boolean;
   onToggleCine: () => void;
@@ -44,6 +45,7 @@ export default function Toolbar({
   canInvert,
   onToggleInvert,
   canCalibrate,
+  onOpenDicomTagBrowser,
   isCineOpen,
   onToggleCine,
   onCloseCine,
@@ -97,6 +99,9 @@ export default function Toolbar({
         return;
       case 'calibrationLine':
         selectNonCineTool('calibrationLine');
+        return;
+      case 'dicomTagBrowser':
+        runViewportAction(onOpenDicomTagBrowser);
         return;
       case 'rotate90':
         runViewportAction(onRotate90);
