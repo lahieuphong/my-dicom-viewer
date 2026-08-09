@@ -1,4 +1,6 @@
 // src/components/Viewer/Measurement/MeasurementStats.tsx
+import ProbeMeasurementStats from './ProbeMeasurementStats';
+
 interface MeasurementStatsProps {
   type: string;
   stats: Record<string, any>;
@@ -136,6 +138,9 @@ export default function MeasurementStats({ type, stats }: MeasurementStatsProps)
           {renderPoints()}
         </div>
       );
+
+    case 'probe':
+      return <ProbeMeasurementStats stats={stats} />;
 
     default:
       return null;

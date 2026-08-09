@@ -22,6 +22,7 @@ export const SUPPORTED_SR_TOOL_NAMES = new Set([
   'PlanarFreehandROI',
   'SplineROI',
   'LivewireContour',
+  'Probe',
   'Angle',
 ]);
 

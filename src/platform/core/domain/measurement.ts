@@ -10,6 +10,7 @@ export type MeasurementType =
   | 'planarFreehandROI'
   | 'splineROI'
   | 'livewireContour'
+  | 'probe'
   | 'angle';
 
 export interface MeasurementMetadata {

@@ -16,6 +16,7 @@ import {
   SplineROITool,
   LivewireContourTool,
   AngleTool,
+  ProbeTool,
   ToolGroupManager,
   Enums as ToolEnums,
 } from '@cornerstonejs/tools';
@@ -39,6 +40,7 @@ export type ToolID =
   | 'planarFreehandROI'
   | 'splineROI'
   | 'livewireContour'
+  | 'probe'
   | 'angle'
   | 'rotate90'
   | 'flipHorizontal'
@@ -60,6 +62,7 @@ export const toolNameMap: Record<ToolID, string> = {
   planarFreehandROI: PlanarFreehandROITool.toolName,
   splineROI: SplineROITool.toolName,
   livewireContour: LivewireContourTool.toolName,
+  probe: ProbeTool.toolName,
   angle: AngleTool.toolName,
   // UI-only actions
   rotate90: 'rotate90',
@@ -77,6 +80,7 @@ export const measurementToolIDs: ToolID[] = [
   'planarFreehandROI',
   'splineROI',
   'livewireContour',
+  'probe',
   'angle',
 ];
 
@@ -93,6 +97,7 @@ const CORNERSTONE_TOOL_NAMES = [
   PlanarFreehandROITool.toolName,
   SplineROITool.toolName,
   LivewireContourTool.toolName,
+  ProbeTool.toolName,
   AngleTool.toolName,
 ];
 
@@ -113,6 +118,7 @@ const TOOL_CLASS_MAP: Partial<Record<ToolID, any>> = {
   planarFreehandROI: PlanarFreehandROITool,
   splineROI: SplineROITool,
   livewireContour: LivewireContourTool,
+  probe: ProbeTool,
   angle: AngleTool,
 };
 

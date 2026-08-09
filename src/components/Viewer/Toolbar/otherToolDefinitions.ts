@@ -10,9 +10,10 @@ import {
 
 import type { ToolID } from '@/hooks/useToolManager';
 
-import { InvertIcon } from './OtherToolIcons';
+import { InvertIcon, ProbeIcon } from './OtherToolIcons';
 
 export const OTHER_TOOL_IDS = [
+  'probe',
   'angle',
   'rotate90',
   'flipHorizontal',
@@ -60,6 +61,15 @@ export const OTHER_TOOL_DEFINITIONS = {
     kind: 'viewport-toggle',
     disabledForSR: false,
   },
+  probe: {
+    id: 'probe',
+    menuLabel: 'Thông tin điểm ảnh',
+    label: 'Thông tin điểm ảnh',
+    detail: 'Probe Tool',
+    Icon: ProbeIcon,
+    kind: 'mouse-tool',
+    disabledForSR: true,
+  },
   angle: {
     id: 'angle',
     menuLabel: 'Angle',
@@ -102,6 +112,7 @@ export const OTHER_TOOL_DEFINITIONS = {
 export const OTHER_TOOL_ITEMS: readonly OtherToolDefinition[] = [
   OTHER_TOOL_DEFINITIONS.cine,
   OTHER_TOOL_DEFINITIONS.invert,
+  OTHER_TOOL_DEFINITIONS.probe,
   OTHER_TOOL_DEFINITIONS.angle,
   OTHER_TOOL_DEFINITIONS.rotate90,
   OTHER_TOOL_DEFINITIONS.flipHorizontal,

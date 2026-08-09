@@ -26,6 +26,7 @@ const DOMAIN_TYPE_BY_TOOL_NAME: Record<
   PlanarFreehandROI: 'planarFreehandROI',
   SplineROI: 'splineROI',
   LivewireContour: 'livewireContour',
+  Probe: 'probe',
   Angle: 'angle',
 };
 
@@ -234,6 +235,12 @@ function createFlatStats(
     case 'Angle':
       result.angle = stats.angle;
       result.angleUnit = stats.angleUnit;
+      break;
+    case 'Probe':
+      result.index = stats.index;
+      result.value = stats.value;
+      result.modalityUnit = stats.modalityUnit;
+      result.modality = stats.Modality ?? stats.modality;
       break;
   }
 

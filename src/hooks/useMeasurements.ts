@@ -15,6 +15,7 @@ import {
   PlanarFreehandROITool,
   SplineROITool,
   LivewireContourTool,
+  ProbeTool,
   AngleTool,
   Enums as ToolEnums,
 } from '@cornerstonejs/tools';
@@ -234,6 +235,15 @@ export const useMeasurements = ({
             flat.areaUnit = stats.areaUnit;
             flat.contour = cloneMeasurementData(a.data?.contour ?? {});
             break;
+          case 'probe':
+            // ProbeTool stores image-space coordinates and calibrated source
+            // values in cachedStats. Keep these independent from the world
+            // handle used to draw/move the annotation.
+            flat.index = cloneMeasurementData(stats.index);
+            flat.value = cloneMeasurementData(stats.value);
+            flat.modalityUnit = cloneMeasurementData(stats.modalityUnit);
+            flat.modality = stats.Modality ?? stats.modality;
+            break;
           case 'angle':
             flat.angle = stats.angle;
             break;
@@ -284,6 +294,7 @@ export const useMeasurements = ({
       result.push(
         ...collect(LivewireContourTool.toolName, 'livewireContour')
       );
+      result.push(...collect(ProbeTool.toolName, 'probe'));
       result.push(...collect(AngleTool.toolName, 'angle'));
     } catch (err) {
     }

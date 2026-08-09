@@ -32,3 +32,30 @@ export function InvertIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+/** Decorative target icon for OHIF's Probe/"Thông tin điểm ảnh" tool. */
+export function ProbeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      focusable="false"
+      {...props}
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="6.25"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <circle cx="12" cy="12" r="1.75" fill="currentColor" />
+      <path
+        d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

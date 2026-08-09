@@ -67,6 +67,9 @@ export default function Toolbar({
         closeCineForNonCineAction();
         onToggleInvert();
         return;
+      case 'probe':
+        selectNonCineTool('probe');
+        return;
       case 'angle':
         selectNonCineTool('angle');
         return;
