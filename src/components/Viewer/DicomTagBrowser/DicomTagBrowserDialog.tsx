@@ -103,27 +103,33 @@ export default function DicomTagBrowserDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent
         data-testid="dicom-tag-browser-dialog"
-        className="flex h-[min(90vh,56rem)] w-[calc(100vw-1.5rem)] max-w-[96rem] flex-col gap-0 overflow-hidden border-primary/30 bg-background p-0 shadow-2xl sm:max-w-[96rem]"
+        className="flex h-[min(92dvh,48rem)] w-[calc(100dvw-1rem)] max-w-[80rem] flex-col gap-0 overflow-hidden border-primary/30 bg-background p-0 shadow-2xl sm:h-[min(88dvh,48rem)] sm:w-[calc(100dvw-2rem)] sm:max-w-[80rem] lg:h-[min(82dvh,48rem)] lg:w-[min(88dvw,80rem)] [@media(max-height:600px)]:h-[calc(100dvh-0.75rem)]"
       >
-        <DialogHeader className="shrink-0 border-b border-border bg-card/90 px-6 py-5 pr-14">
-          <div className="flex items-center gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 text-primary">
+        <DialogHeader className="shrink-0 border-b border-border bg-card/90 px-4 py-4 pr-12 sm:px-5 sm:pr-14 lg:px-6 [@media(max-height:600px)]:py-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 text-primary sm:size-10">
               <Database className="size-5" aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <DialogTitle className="text-xl text-primary">
+              <DialogTitle className="truncate text-lg text-primary sm:text-xl">
                 DICOM Tag Browser
               </DialogTitle>
-              <DialogDescription className="mt-1">
+              <DialogDescription
+                className="mt-0.5 truncate text-xs sm:mt-1 sm:text-sm [@media(max-height:600px)]:hidden"
+                title="Xem metadata gốc của từng series và instance DICOM."
+              >
                 Xem metadata gốc của từng series và instance DICOM.
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="grid shrink-0 gap-4 border-b border-border bg-muted/20 px-6 py-4 lg:grid-cols-[minmax(260px,1.15fr)_minmax(260px,0.9fr)_minmax(260px,1fr)]">
-          <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="dicom-tag-series-select">
+        <div className="grid max-h-[42dvh] shrink-0 grid-cols-1 gap-3 overflow-y-auto border-b border-border bg-muted/20 px-4 py-3 min-[34rem]:grid-cols-3 sm:px-5 lg:max-h-none lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,1fr)] lg:gap-4 lg:overflow-visible lg:px-6 lg:py-4 [@media(max-height:600px)]:max-h-[36dvh] [@media(max-height:600px)]:gap-2 [@media(max-height:600px)]:py-2">
+          <div className="grid min-w-0 grid-rows-[1.25rem_2.5rem] gap-1.5 sm:grid-rows-[1.25rem_2.75rem] lg:gap-2 [@media(max-height:600px)]:grid-rows-[1.25rem_2.5rem] [@media(max-height:600px)]:gap-1">
+            <label
+              className="flex h-5 min-w-0 items-center truncate text-sm font-medium leading-none"
+              htmlFor="dicom-tag-series-select"
+            >
               Series
             </label>
             <Select
@@ -134,15 +140,18 @@ export default function DicomTagBrowserDialog({
               <SelectTrigger
                 id="dicom-tag-series-select"
                 data-testid="dicom-tag-series-select"
-                className="h-11 bg-background"
+                className="h-full min-h-0 min-w-0 bg-background [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:flex-1 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:text-left"
                 aria-label="Chọn DICOM series"
               >
-                <SelectValue placeholder="Không có series" />
+                <SelectValue className="min-w-0 flex-1 truncate text-left" placeholder="Không có series" />
               </SelectTrigger>
-              <SelectContent className="z-[110] max-w-[min(90vw,36rem)]">
+              <SelectContent className="z-[110] max-w-[calc(100vw-2rem)] sm:max-w-[min(90vw,36rem)]">
                 {browser.series.map((series) => (
                   <SelectItem key={series.uid} value={series.uid}>
-                    <span className="block max-w-[32rem] truncate">
+                    <span
+                      className="block max-w-[calc(100dvw-6rem)] truncate sm:max-w-[32rem]"
+                      title={series.label}
+                    >
                       {series.label}
                     </span>
                   </SelectItem>
@@ -151,15 +160,17 @@ export default function DicomTagBrowserDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3 text-sm font-medium">
-              <label htmlFor="dicom-tag-instance-slider">Instance Number</label>
-              <span className="text-xs font-semibold tabular-nums text-primary">
+          <div className="grid min-w-0 grid-rows-[1.25rem_2.5rem] gap-1.5 sm:grid-rows-[1.25rem_2.75rem] lg:gap-2 [@media(max-height:600px)]:grid-rows-[1.25rem_2.5rem] [@media(max-height:600px)]:gap-1">
+            <div className="flex h-5 min-w-0 items-center justify-between gap-3 text-sm font-medium leading-none">
+              <label className="min-w-0 truncate leading-none" htmlFor="dicom-tag-instance-slider">
+                Instance Number
+              </label>
+              <span className="shrink-0 text-xs font-semibold leading-none tabular-nums text-primary">
                 {browser.instanceCount > 0 ? browser.instanceIndex + 1 : 0} of{' '}
                 {browser.instanceCount}
               </span>
             </div>
-            <div className="flex h-11 items-center rounded-md border border-input bg-background px-3 shadow-xs">
+            <div className="flex h-full min-h-0 items-center rounded-md border border-input bg-background px-3 shadow-xs">
               <input
                 id="dicom-tag-instance-slider"
                 type="range"
@@ -181,11 +192,14 @@ export default function DicomTagBrowserDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="dicom-tag-search">
+          <div className="grid min-w-0 grid-rows-[1.25rem_2.5rem] gap-1.5 sm:grid-rows-[1.25rem_2.75rem] lg:gap-2 [@media(max-height:600px)]:grid-rows-[1.25rem_2.5rem] [@media(max-height:600px)]:gap-1">
+            <label
+              className="flex h-5 min-w-0 items-center truncate text-sm font-medium leading-none"
+              htmlFor="dicom-tag-search"
+            >
               Search metadata
             </label>
-            <div className="relative">
+            <div className="relative h-full min-h-0">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
@@ -198,7 +212,7 @@ export default function DicomTagBrowserDialog({
                 placeholder="Tag, VR, keyword hoặc value"
                 aria-label="Search metadata"
                 data-testid="dicom-tag-search"
-                className="h-11 bg-background pl-10"
+                className="h-full min-h-0 min-w-0 bg-background pl-10 text-ellipsis"
                 onChange={(event) => setSearch(event.currentTarget.value)}
               />
             </div>
@@ -219,7 +233,7 @@ export default function DicomTagBrowserDialog({
 
           {!browser.loading && browser.error && (
             <div
-              className="flex h-full min-h-60 flex-col items-center justify-center gap-4 px-6 text-center"
+              className="flex h-full min-h-0 flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-6 text-center"
               role="alert"
             >
               <div>
@@ -246,22 +260,38 @@ export default function DicomTagBrowserDialog({
           )}
         </div>
 
-        <div className="flex min-h-11 shrink-0 items-center justify-between gap-4 border-t border-border bg-card/80 px-6 py-2 text-xs text-muted-foreground">
-          <span>
+        <div className="flex min-h-11 min-w-0 shrink-0 flex-col items-start justify-center gap-1 border-t border-border bg-card/80 px-4 py-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5 lg:px-6 [@media(max-height:600px)]:min-h-9 [@media(max-height:600px)]:flex-row [@media(max-height:600px)]:items-center [@media(max-height:600px)]:justify-between [@media(max-height:600px)]:gap-2 [@media(max-height:600px)]:py-1">
+          <span
+            className="min-w-0 max-w-full truncate"
+            title={
+              browser.tree
+                ? `${browser.tree.elementCount.toLocaleString()} phần tử metadata`
+                : 'Metadata chỉ được đọc, không thay đổi ảnh DICOM.'
+            }
+          >
             {browser.tree
               ? `${browser.tree.elementCount.toLocaleString()} phần tử metadata`
               : 'Metadata chỉ được đọc, không thay đổi ảnh DICOM.'}
           </span>
           {browser.tree?.nodesTruncated && browser.tree.valuesTruncated ? (
-            <span className="font-medium text-amber-500">
+            <span
+              className="min-w-0 max-w-full truncate text-right font-medium text-amber-500"
+              title="Cây metadata và một số value quá lớn nên đã được giới hạn."
+            >
               Cây metadata và một số value quá lớn nên đã được giới hạn.
             </span>
           ) : browser.tree?.nodesTruncated ? (
-            <span className="font-medium text-amber-500">
+            <span
+              className="min-w-0 max-w-full truncate text-right font-medium text-amber-500"
+              title="Cây metadata quá lớn nên một số hàng đã được giới hạn."
+            >
               Cây metadata quá lớn nên một số hàng đã được giới hạn.
             </span>
           ) : browser.tree?.valuesTruncated ? (
-            <span className="font-medium text-amber-500">
+            <span
+              className="min-w-0 max-w-full truncate text-right font-medium text-amber-500"
+              title="Một số value quá lớn nên đã được rút gọn an toàn."
+            >
               Một số value quá lớn nên đã được rút gọn an toàn.
             </span>
           ) : null}

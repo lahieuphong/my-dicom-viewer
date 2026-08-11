@@ -81,15 +81,21 @@ export default function DicomTagTreeTable({
   return (
     <Table
       noContainer
-      className="min-w-[760px] table-fixed"
+      className="w-full table-fixed"
       data-testid="dicom-tag-table"
     >
       <TableHeader className="sticky top-0 z-10 bg-primary/15 backdrop-blur-sm">
         <TableRow className="hover:bg-transparent">
-          <TableHead className="w-[190px] px-4 font-semibold">Tag</TableHead>
-          <TableHead className="w-[72px] font-semibold">VR</TableHead>
-          <TableHead className="w-[270px] font-semibold">Keyword</TableHead>
-          <TableHead className="font-semibold">Value</TableHead>
+          <TableHead className="w-[7rem] px-2 font-semibold sm:w-[10rem] sm:px-3 lg:w-[11rem] lg:px-4">
+            Tag
+          </TableHead>
+          <TableHead className="w-11 px-1 font-semibold sm:w-14 sm:px-2 lg:w-[4.5rem]">
+            VR
+          </TableHead>
+          <TableHead className="w-[30%] px-1 font-semibold sm:w-[38%] sm:px-3 lg:w-[17rem]">
+            Keyword
+          </TableHead>
+          <TableHead className="px-2 font-semibold sm:px-3 lg:px-4">Value</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -111,18 +117,18 @@ export default function DicomTagTreeTable({
             >
               <th
                 scope="row"
-                className="px-2 py-2.5 text-left align-top font-normal whitespace-normal"
+                className="min-w-0 px-1.5 py-2 text-left align-top font-normal sm:px-2 sm:py-2.5 lg:px-3"
               >
                 <div
-                  className="flex min-w-0 items-start"
-                  style={{ paddingLeft: `${Math.min(depth, 12) * 18}px` }}
+                  className="flex min-w-0 items-start overflow-hidden"
+                  style={{ paddingLeft: `${Math.min(depth, 5) * 8}px` }}
                 >
                   {expandable && !searchActive ? (
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="mr-1 size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                      className="mr-0.5 size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground sm:mr-1"
                       aria-label={`${isExpanded ? 'Thu gọn' : 'Mở rộng'} ${node.keyword}`}
                       aria-expanded={isExpanded}
                       onClick={() => onToggle(node.id)}
@@ -130,13 +136,16 @@ export default function DicomTagTreeTable({
                       <ExpansionIcon className="size-4" aria-hidden="true" />
                     </Button>
                   ) : expandable ? (
-                    <span className="mr-1 flex size-7 shrink-0 items-center justify-center text-muted-foreground">
+                    <span className="mr-0.5 flex size-7 shrink-0 items-center justify-center text-muted-foreground sm:mr-1">
                       <ChevronDown className="size-4" aria-hidden="true" />
                     </span>
                   ) : (
-                    <span className="mr-1 block size-7 shrink-0" aria-hidden="true" />
+                    <span className="mr-0.5 block size-7 shrink-0 sm:mr-1" aria-hidden="true" />
                   )}
-                  <span className="pt-1 font-mono text-xs tabular-nums text-foreground">
+                  <span
+                    className="min-w-0 truncate pt-1 font-mono text-[11px] tabular-nums text-foreground sm:text-xs"
+                    title={node.tag}
+                  >
                     {depth > 0 && (
                       <span className="sr-only">Cấp {depth + 1}. </span>
                     )}
@@ -144,14 +153,24 @@ export default function DicomTagTreeTable({
                   </span>
                 </div>
               </th>
-              <TableCell className="py-3 align-top font-mono text-xs text-muted-foreground">
+              <TableCell className="px-1 py-2.5 align-top font-mono text-[11px] text-muted-foreground sm:px-2 sm:py-3 sm:text-xs">
                 {node.vr || '—'}
               </TableCell>
-              <TableCell className="py-3 align-top whitespace-normal break-words font-medium">
-                {node.keyword}
+              <TableCell className="min-w-0 px-2 py-2.5 align-top sm:px-3 sm:py-3 lg:px-4">
+                <span
+                  className="block min-w-0 truncate text-xs font-medium sm:text-sm xl:overflow-visible xl:text-clip xl:whitespace-normal xl:break-words"
+                  title={node.keyword}
+                >
+                  {node.keyword}
+                </span>
               </TableCell>
-              <TableCell className="py-3 pr-4 align-top whitespace-pre-wrap break-all text-muted-foreground">
-                {node.value || '—'}
+              <TableCell className="min-w-0 px-2 py-2.5 align-top text-muted-foreground sm:px-3 sm:py-3 lg:px-4">
+                <span
+                  className="block min-w-0 truncate text-xs sm:text-sm xl:overflow-visible xl:text-clip xl:whitespace-pre-wrap xl:break-all"
+                  title={node.value || undefined}
+                >
+                  {node.value || '—'}
+                </span>
               </TableCell>
             </TableRow>
           );
