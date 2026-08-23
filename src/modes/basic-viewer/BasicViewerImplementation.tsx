@@ -218,6 +218,30 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   } = useSeriesLoader(studyUID);
 
   const mergedSeriesMap = seriesMap;
+  const [workspaceActiveSeriesUID, setWorkspaceActiveSeriesUID] =
+    useState(selectedSeries);
+  const [visibleViewportSeriesUIDs, setVisibleViewportSeriesUIDs] =
+    useState<string[]>(selectedSeries ? [selectedSeries] : []);
+  const trackedSeriesUID = workspaceActiveSeriesUID || selectedSeries;
+
+  const handleVisibleViewportSeriesChange = useCallback(
+    (seriesUIDs: string[]) => {
+      const next = Array.from(new Set(seriesUIDs.filter(Boolean)));
+      setVisibleViewportSeriesUIDs((current) =>
+        current.length === next.length &&
+        current.every((seriesUID, index) => seriesUID === next[index])
+          ? current
+          : next
+      );
+    },
+    []
+  );
+
+  useEffect(() => {
+    setWorkspaceActiveSeriesUID((current) =>
+      current && mergedSeriesMap[current] ? current : selectedSeries
+    );
+  }, [mergedSeriesMap, selectedSeries]);
 
   // Refs that track mutable things used inside stable handlers
   const mergedSeriesMapRef = useRef(mergedSeriesMap);
@@ -1132,7 +1156,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     refreshMeasurements,
     setLoadedSrList,
     studyUID,
-    trackedSeriesUID: selectedSeries,
+    trackedSeriesUID,
     viewportId,
   });
 
@@ -1211,9 +1235,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
           measurement.metadata?.reportSeriesUID === activeSrId
       );
     }
-    if (!selectedSeries) return [];
+    if (!trackedSeriesUID) return [];
     const currentFiles = new Set(
-      (mergedSeriesMap[selectedSeries]?.files ?? []).map(normalizeId)
+      (mergedSeriesMap[trackedSeriesUID]?.files ?? []).map(normalizeId)
     );
 
     return allMeasurements.filter(
@@ -1221,11 +1245,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         !measurement.metadata?.reportSeriesUID &&
         isMeasurementInSeries(
           measurement,
-          selectedSeries,
+          trackedSeriesUID,
           currentFiles
         )
     );
-  }, [activeSrId, allMeasurements, selectedSeries, mergedSeriesMap]);
+  }, [activeSrId, allMeasurements, trackedSeriesUID, mergedSeriesMap]);
 
   useLayoutEffect(() => {
     if (typeof window !== 'undefined') {
@@ -1256,6 +1280,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     renderingEngineRender: safeRenderViewport,
     hiddenMeasurements,
     selectedSeries,
+    visibleSeriesUIDs: visibleViewportSeriesUIDs,
     activeSrId,
     mergedSeriesMap,
     onAutoSelect: handleAutoSelectMeasurement,
@@ -1697,7 +1722,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       studyDate={studyMeta.studyDate}
       studyDescription={studyMeta.studyDescription}
       seriesMap={mergedSeriesMap}
+      voiDefaults={voiDefaults}
       selectedSeries={selectedSeries}
+      onActiveViewportSeriesChange={setWorkspaceActiveSeriesUID}
+      onVisibleViewportSeriesChange={handleVisibleViewportSeriesChange}
       onSelectSeries={handleSelectImageSeries}
       onSelectMobileSeries={handleSelectMobileImageSeries}
       sidebarCollapsed={sidebarCollapsed}

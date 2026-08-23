@@ -23,6 +23,8 @@ export interface ViewportLoadingOverlayProps {
    * Thời gian (ms) cho animation fill -> dùng CSS transition nội bộ.
    */
   transitionMs?: number;
+  /** Keep the overlay inside its nearest positioned viewport pane. */
+  contained?: boolean;
 }
 
 export default function ViewportLoadingOverlay({
@@ -31,6 +33,7 @@ export default function ViewportLoadingOverlay({
   showPercent = true,
   className = '',
   transitionMs = 300,
+  contained = false,
 }: ViewportLoadingOverlayProps): React.ReactElement | null {
   const [internalProgress, setInternalProgress] = useState<number>(0);
   const simulationRef = useRef<number | null>(null);
@@ -155,18 +158,27 @@ export default function ViewportLoadingOverlay({
   return (
     <>
       <div
-        className="fixed inset-0 z-[2147483646] pointer-events-none bg-background/55 backdrop-blur-[5px] backdrop-saturate-50 dark:bg-black/45"
+        className={`${
+          contained ? 'absolute z-40' : 'fixed z-[2147483646]'
+        } inset-0 pointer-events-none bg-background/55 backdrop-blur-[5px] backdrop-saturate-50 dark:bg-black/45`}
         aria-hidden="true"
       />
 
       <div
-        className={`fixed inset-0 z-[2147483647] flex items-center justify-center bg-background/70 pointer-events-none dark:bg-black/78 ${className}`}
+        className={`${
+          contained ? 'absolute z-50' : 'fixed z-[2147483647]'
+        } inset-0 flex items-center justify-center bg-background/70 pointer-events-none dark:bg-black/78 ${className}`}
         aria-hidden={!visible}
       >
         <BrandLoadingIndicator
           progress={displayProgress}
           showPercent={showPercent}
           transitionMs={transitionMs}
+          className={
+            contained
+              ? 'w-[min(78%,240px)] -translate-y-0 gap-4'
+              : undefined
+          }
         />
         <span className="sr-only">
           {displayProgress < 100 ? `Đang nạp hình ${progressText}` : 'Hoàn tất'}

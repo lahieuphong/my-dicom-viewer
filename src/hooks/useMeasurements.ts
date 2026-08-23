@@ -2,7 +2,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef } from 'react';
-import { eventTarget } from '@cornerstonejs/core';
+import { eventTarget, getRenderingEngines } from '@cornerstonejs/core';
 import type { StackViewport } from '@cornerstonejs/core';
 import {
   annotation,
@@ -91,24 +91,71 @@ export const useMeasurements = ({
 
   const collectAnnotations = useCallback((): AnnotationMeasurement[] => {
     if (!element) return [];
-    const enabled = safeGetEnabledElement(element);
-    if (!enabled) return [];
+
+    const viewportContexts: Array<{
+      element: HTMLDivElement;
+      enabled: any;
+      viewport: StackViewport;
+      viewportId: string;
+      imageIds: string[];
+    }> = [];
+    const seenElements = new Set<HTMLDivElement>();
+    const addViewportContext = (candidate: HTMLDivElement | null) => {
+      if (!candidate || seenElements.has(candidate)) return;
+      const enabled = safeGetEnabledElement(candidate);
+      const candidateViewport = enabled?.viewport as StackViewport | undefined;
+      if (!candidateViewport) return;
+
+      seenElements.add(candidate);
+      viewportContexts.push({
+        element: candidate,
+        enabled,
+        viewport: candidateViewport,
+        viewportId: String(candidateViewport.id ?? viewportId),
+        imageIds: Array.from(candidateViewport.getImageIds?.() ?? []),
+      });
+    };
+
+    addViewportContext(element);
+    try {
+      for (const renderingEngine of getRenderingEngines() ?? []) {
+        for (const candidateViewport of renderingEngine.getViewports?.() ?? []) {
+          const candidateElement = candidateViewport?.element as
+            | HTMLDivElement
+            | undefined;
+          if (candidateElement?.dataset?.viewportRole !== 'content') continue;
+          addViewportContext(candidateElement);
+        }
+      }
+    } catch {}
+
+    if (viewportContexts.length === 0) return [];
+    const primaryContext =
+      viewportContexts.find((context) => context.element === element) ??
+      viewportContexts[0];
 
     const result: AnnotationMeasurement[] = [];
 
     const collect = (toolName: string, type: AnnotationMeasurement['type']) => {
-      let anns: any[] = [];
-      try {
-        const annotationsForTool = (annotation.state as any).getAnnotations?.(
-          toolName,
-          element
-        );
-        anns = Array.isArray(annotationsForTool)
-          ? annotationsForTool
-          : [];
-      } catch {
-        anns = [];
+      const annotationsByUID = new Map<string, any>();
+      for (const context of viewportContexts) {
+        try {
+          const annotationsForTool = (annotation.state as any).getAnnotations?.(
+            toolName,
+            context.element
+          );
+          if (!Array.isArray(annotationsForTool)) continue;
+          for (const annotationInstance of annotationsForTool) {
+            const annotationUID = String(
+              annotationInstance?.annotationUID ?? ''
+            );
+            if (annotationUID && !annotationsByUID.has(annotationUID)) {
+              annotationsByUID.set(annotationUID, annotationInstance);
+            }
+          }
+        } catch {}
       }
+      let anns = Array.from(annotationsByUID.values());
 
       // ANNOTATION_ADDED fires at draw start. Keep draft geometry out of the
       // Measurement service/UI until Cornerstone completes the interaction.
@@ -131,13 +178,26 @@ export const useMeasurements = ({
           a.data?.imageId ||
           '';
 
-        // imageIds from viewport (best-effort)
-        const vp = (enabled!.viewport as StackViewport);
-        const ids = (vp?.getImageIds?.() ?? []) as string[];
-
         const metaFrameIndex = Number.isFinite(Number(a?.metadata?.frameIndex))
           ? Number(a.metadata.frameIndex)
           : undefined;
+        const annotationContext =
+          viewportContexts.find(
+            (context) =>
+              findMatchingImageIdIndex(
+                context.imageIds,
+                refId,
+                metaFrameIndex
+              ) >= 0
+          ) ??
+          viewportContexts.find(
+            (context) =>
+              Boolean(a.metadata?.FrameOfReferenceUID) &&
+              context.enabled?.FrameOfReferenceUID ===
+                a.metadata.FrameOfReferenceUID
+          ) ??
+          primaryContext;
+        const ids = annotationContext.imageIds;
         const idx = findMatchingImageIdIndex(
           ids,
           refId,
@@ -269,7 +329,7 @@ export const useMeasurements = ({
               a.metadata?.reportSeriesInstanceUID,
             trackingUID: a.metadata?.trackingUID,
             studyUID: studyInstanceUID || '',
-            viewportId,
+            viewportId: annotationContext.viewportId,
             frameIndex,
             referencedImageId: refId,
             createdAt: created,

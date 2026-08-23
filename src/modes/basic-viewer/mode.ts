@@ -6,7 +6,7 @@ import { STATIC_DICOM_DATA_SOURCE_ID } from '@/extensions/static-dicom-data-sour
 export const BASIC_VIEWER_MODE_ID = 'basic-viewer' as const;
 
 /**
- * Declarative identity for the current single-viewport workflow.
+ * Declarative identity for the stack viewport grid workflow.
  * The Next.js route uses BasicViewer directly; this descriptor remains
  * metadata-only and therefore has no registration side effects.
  */
@@ -15,7 +15,7 @@ export const basicViewerMode = Object.freeze({
   displayName: 'Basic Viewer',
   routeName: 'viewer',
   dataSourceId: STATIC_DICOM_DATA_SOURCE_ID,
-  layout: 'single-stack-viewport' as const,
+  layout: 'stack-viewport-grid' as const,
   extensions: [
     DEFAULT_EXTENSION_ID,
     CORNERSTONE_EXTENSION_ID,

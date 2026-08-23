@@ -1,7 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ComponentProps, CSSProperties, Dispatch, RefObject, SetStateAction } from 'react';
+import {
+  Enums as CoreEnums,
+  getEnabledElement,
+  type StackViewport,
+} from '@cornerstonejs/core';
 
 import { Loading } from '@/components/ui/loading';
 import { Button } from '@/components/ui/button';
@@ -9,6 +14,7 @@ import {
   VIEWER_LEFT_PANEL_COLLAPSED,
   VIEWER_RIGHT_PANEL_COLLAPSED,
 } from '@/constants/viewerLayout';
+import { VIEWPORT_ID } from '@/constants/viewport';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import { useCine } from '@/hooks/useCine';
 import { useCalibrationLine } from '@/hooks/useCalibrationLine';
@@ -24,6 +30,15 @@ import { SrNameDialog } from '@/components/Viewer/SR';
 import { CineControls, Toolbar } from '@/components/Viewer/Toolbar';
 import { CalibrationDialog } from '@/components/Viewer/Calibration';
 import { DicomTagBrowserDialog } from '@/components/Viewer/DicomTagBrowser';
+import {
+  ViewportGrid,
+  ViewportLayoutDialog,
+  useViewportGridLayout,
+} from '@/components/Viewer/ViewportLayout';
+import {
+  getViewportCount,
+  getViewportIdAt,
+} from '@/components/Viewer/ViewportLayout/viewportLayout';
 import PanelResizeHandle from './PanelResizeHandle';
 import {
   DicomViewport,
@@ -45,7 +60,10 @@ type ViewerWorkspaceProps = {
   studyDate: string;
   studyDescription: string;
   seriesMap: SeriesSidebarProps['seriesMap'];
+  voiDefaults: Record<string, { lower: number; upper: number }>;
   selectedSeries: string;
+  onActiveViewportSeriesChange: (seriesUID: string) => void;
+  onVisibleViewportSeriesChange: (seriesUIDs: string[]) => void;
   onSelectSeries: (seriesUID: string) => void;
   onSelectMobileSeries: (seriesUID: string) => void;
   sidebarCollapsed: boolean;
@@ -105,7 +123,10 @@ export default function ViewerWorkspace({
   studyDate,
   studyDescription,
   seriesMap,
+  voiDefaults,
   selectedSeries,
+  onActiveViewportSeriesChange,
+  onVisibleViewportSeriesChange,
   onSelectSeries,
   onSelectMobileSeries,
   sidebarCollapsed,
@@ -159,6 +180,210 @@ export default function ViewerWorkspace({
   const measurementSeriesMap = seriesMap as MeasurementPanelProps['seriesMap'];
   const [cineOpen, setCineOpen] = useState(false);
   const [dicomTagBrowserOpen, setDicomTagBrowserOpen] = useState(false);
+  const [viewportLayoutOpen, setViewportLayoutOpen] = useState(false);
+  const {
+    layout: viewportLayout,
+    setLayout: setViewportLayout,
+    activeViewportId,
+    setActiveViewportId,
+  } = useViewportGridLayout();
+  const [activeViewportEl, setActiveViewportEl] =
+    useState<HTMLDivElement | null>(null);
+  const [activeViewportSeriesUID, setActiveViewportSeriesUID] =
+    useState(selectedSeries);
+  const [activeViewportReady, setActiveViewportReady] = useState(false);
+  const [viewportSeriesById, setViewportSeriesById] = useState<
+    Record<string, string>
+  >({ [VIEWPORT_ID]: selectedSeries });
+  const [activeSecondaryInverted, setActiveSecondaryInverted] =
+    useState(false);
+
+  const handleActiveViewportChange = useCallback(
+    (
+      viewportId: string,
+      element: HTMLDivElement | null,
+      seriesUID: string,
+      ready: boolean
+    ) => {
+      setActiveViewportId(viewportId);
+      setActiveViewportEl(element);
+      setActiveViewportSeriesUID(seriesUID);
+      setActiveViewportReady(ready);
+    },
+    [setActiveViewportId]
+  );
+
+  const handleViewportSeriesChange = useCallback(
+    (viewportId: string, seriesUID: string) => {
+      setViewportSeriesById((current) =>
+        current[viewportId] === seriesUID
+          ? current
+          : { ...current, [viewportId]: seriesUID }
+      );
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (activeViewportId !== VIEWPORT_ID) return;
+    setActiveViewportEl(viewportEl);
+    setActiveViewportSeriesUID(selectedSeries);
+    setActiveViewportReady(!loadingStack && imageAvailable);
+  }, [
+    activeViewportId,
+    imageAvailable,
+    loadingStack,
+    selectedSeries,
+    viewportEl,
+  ]);
+
+  useEffect(() => {
+    handleViewportSeriesChange(VIEWPORT_ID, selectedSeries);
+  }, [handleViewportSeriesChange, selectedSeries]);
+
+  const visibleViewportSeriesUIDs = useMemo(() => {
+    const viewportCount = getViewportCount(viewportLayout);
+    return Array.from(
+      new Set(
+        Array.from({ length: viewportCount }, (_, index) =>
+          index === 0
+            ? selectedSeries
+            : viewportSeriesById[getViewportIdAt(index)]
+        ).filter((seriesUID): seriesUID is string => Boolean(seriesUID))
+      )
+    );
+  }, [selectedSeries, viewportLayout, viewportSeriesById]);
+
+  useEffect(() => {
+    onVisibleViewportSeriesChange(visibleViewportSeriesUIDs);
+  }, [onVisibleViewportSeriesChange, visibleViewportSeriesUIDs]);
+
+  useEffect(() => {
+    if (!activeViewportSeriesUID) return;
+    onActiveViewportSeriesChange(activeViewportSeriesUID);
+  }, [activeViewportSeriesUID, onActiveViewportSeriesChange]);
+
+  const toolbarViewportEl = activeViewportEl ?? viewportEl;
+  const activeStackViewport = useMemo(() => {
+    if (!toolbarViewportEl) return null;
+    try {
+      return getEnabledElement(toolbarViewportEl)?.viewport as StackViewport;
+    } catch {
+      return null;
+    }
+  }, [activeViewportId, activeViewportSeriesUID, toolbarViewportEl]);
+
+  useEffect(() => {
+    if (activeViewportId === VIEWPORT_ID) return;
+    const syncInvertState = () => {
+      try {
+        setActiveSecondaryInverted(
+          Boolean(activeStackViewport?.getProperties?.()?.invert)
+        );
+      } catch {
+        setActiveSecondaryInverted(false);
+      }
+    };
+
+    syncInvertState();
+    if (!toolbarViewportEl) return;
+    toolbarViewportEl.addEventListener(
+      CoreEnums.Events.VIEWPORT_NEW_IMAGE_SET,
+      syncInvertState
+    );
+    return () => {
+      toolbarViewportEl.removeEventListener(
+        CoreEnums.Events.VIEWPORT_NEW_IMAGE_SET,
+        syncInvertState
+      );
+    };
+  }, [
+    activeStackViewport,
+    activeViewportId,
+    activeViewportSeriesUID,
+    toolbarViewportEl,
+  ]);
+
+  const resetActiveViewport = useCallback(() => {
+    if (activeViewportId === VIEWPORT_ID || !activeStackViewport) {
+      onReset();
+      return;
+    }
+    try {
+      activeStackViewport.resetProperties();
+      const presentation = activeStackViewport.getViewPresentation();
+      activeStackViewport.setViewPresentation({
+        ...presentation,
+        rotation: 0,
+      });
+      activeStackViewport.resetCamera({
+        resetPan: true,
+        resetZoom: true,
+        resetToCenter: true,
+      });
+      activeStackViewport.setCamera({
+        flipHorizontal: false,
+        flipVertical: false,
+      });
+      activeStackViewport.render();
+      setActiveSecondaryInverted(false);
+    } catch {}
+  }, [activeStackViewport, activeViewportId, onReset]);
+
+  const rotateActiveViewport = useCallback(() => {
+    if (activeViewportId === VIEWPORT_ID || !activeStackViewport) {
+      onRotate90();
+      return;
+    }
+    try {
+      const presentation = activeStackViewport.getViewPresentation();
+      activeStackViewport.setViewPresentation({
+        ...presentation,
+        rotation: ((presentation.rotation ?? 0) + 90) % 360,
+      });
+      activeStackViewport.render();
+    } catch {}
+  }, [activeStackViewport, activeViewportId, onRotate90]);
+
+  const flipActiveViewport = useCallback(() => {
+    if (activeViewportId === VIEWPORT_ID || !activeStackViewport) {
+      onFlipHorizontal();
+      return;
+    }
+    try {
+      const flipped = activeStackViewport.getCamera().flipHorizontal ?? false;
+      activeStackViewport.setCamera({ flipHorizontal: !flipped });
+      activeStackViewport.render();
+    } catch {}
+  }, [activeStackViewport, activeViewportId, onFlipHorizontal]);
+
+  const toggleActiveInvert = useCallback(() => {
+    if (activeViewportId === VIEWPORT_ID || !activeStackViewport) {
+      onToggleInvert();
+      return;
+    }
+    try {
+      const nextValue = !Boolean(
+        activeStackViewport.getProperties?.()?.invert
+      );
+      activeStackViewport.setProperties({ invert: nextValue });
+      activeStackViewport.render();
+      setActiveSecondaryInverted(nextValue);
+    } catch {}
+  }, [activeStackViewport, activeViewportId, onToggleInvert]);
+
+  const activeIsInverted =
+    activeViewportId === VIEWPORT_ID
+      ? isInverted
+      : activeSecondaryInverted;
+  const activeCanInvert =
+    activeViewportId === VIEWPORT_ID
+      ? canInvert
+      : Boolean(
+          activeViewportReady &&
+            activeStackViewport &&
+            !isSeriesToolbarReadOnly
+        );
   const cineEnabled =
     cineOpen &&
     !loadingStack &&
@@ -180,15 +405,14 @@ export default function ViewerWorkspace({
       cinePreparation.phase === 'idle' ||
       cinePreparation.phase === 'preparing');
   const calibration = useCalibrationLine({
-    element: viewportEl,
-    stackKey: selectedSeries,
+    element: toolbarViewportEl,
+    stackKey: activeViewportSeriesUID,
     enabled:
-      !loadingStack &&
-      imageAvailable &&
+      activeViewportReady &&
       !isSeriesToolbarReadOnly,
   });
   const imageSliceSync = useImageSliceSync({
-    stackKey: selectedSeries,
+    stackKey: `${selectedSeries}:${viewportLayout.rows}x${viewportLayout.columns}`,
     disabled: isSeriesToolbarReadOnly,
   });
   // Normal wheel navigation uses a small bounded window. Cine owns prefetch
@@ -220,8 +444,24 @@ export default function ViewerWorkspace({
   const toggleCine = useCallback(() => {
     // OHIF opens and closes the Cine panel in a paused state.
     onPlayChange(false);
+    if (!cineOpen) {
+      handleActiveViewportChange(
+        VIEWPORT_ID,
+        viewportEl,
+        selectedSeries,
+        !loadingStack && imageAvailable
+      );
+    }
     setCineOpen((current) => !current);
-  }, [onPlayChange]);
+  }, [
+    cineOpen,
+    handleActiveViewportChange,
+    imageAvailable,
+    loadingStack,
+    onPlayChange,
+    selectedSeries,
+    viewportEl,
+  ]);
 
   const closeCine = useCallback(() => {
     onPlayChange(false);
@@ -230,18 +470,18 @@ export default function ViewerWorkspace({
 
   const selectSeriesSafely = useCallback(
     (seriesUID: string) => {
-      cancelActiveAnnotationInteraction(viewportEl);
+      cancelActiveAnnotationInteraction(toolbarViewportEl);
       onSelectSeries(seriesUID);
     },
-    [onSelectSeries, viewportEl]
+    [onSelectSeries, toolbarViewportEl]
   );
 
   const selectMobileSeriesSafely = useCallback(
     (seriesUID: string) => {
-      cancelActiveAnnotationInteraction(viewportEl);
+      cancelActiveAnnotationInteraction(toolbarViewportEl);
       onSelectMobileSeries(seriesUID);
     },
-    [onSelectMobileSeries, viewportEl]
+    [onSelectMobileSeries, toolbarViewportEl]
   );
 
   useEffect(() => {
@@ -268,7 +508,8 @@ export default function ViewerWorkspace({
     onUpdateLabel,
     onSelectMeasurement,
     seriesMap: measurementSeriesMap,
-    totalFrames,
+    totalFrames:
+      seriesMap[activeViewportSeriesUID]?.files.length ?? totalFrames,
     selectedMeasurementUID,
     studyDate,
     onRemoveMeasurement,
@@ -409,95 +650,116 @@ export default function ViewerWorkspace({
               <Toolbar
                 activeTool={activeTool}
                 onSelectTool={onSelectTool}
-                onReset={onReset}
-                onRotate90={onRotate90}
-                onFlipHorizontal={onFlipHorizontal}
-                isInverted={isInverted}
-                canInvert={canInvert}
-                onToggleInvert={onToggleInvert}
+                onReset={resetActiveViewport}
+                onRotate90={rotateActiveViewport}
+                onFlipHorizontal={flipActiveViewport}
+                isInverted={activeIsInverted}
+                canInvert={activeCanInvert}
+                onToggleInvert={toggleActiveInvert}
                 isImageSliceSyncEnabled={imageSliceSync.isEnabled}
                 canImageSliceSync={imageSliceSync.canToggle}
                 onToggleImageSliceSync={imageSliceSync.toggle}
                 canCalibrate={calibration.canCalibrate}
+                onOpenViewportLayout={() => setViewportLayoutOpen(true)}
                 onOpenDicomTagBrowser={() => setDicomTagBrowserOpen(true)}
                 isCineOpen={cineOpen}
                 onToggleCine={toggleCine}
                 onCloseCine={closeCine}
-                viewportEl={viewportEl}
+                viewportEl={toolbarViewportEl}
                 isSeriesSR={isSeriesToolbarReadOnly}
                 disabled={cineInteractionLocked}
               />
             </div>
 
             <div className="relative flex-1 min-h-0 w-full">
-              {!loadingSeries && (
-                <ViewportLoadingOverlay
-                  visible={loadingStack || !imageAvailable}
-                  progress={loadingProgress}
-                />
-              )}
-
-              <DicomViewport
-                elementRef={elementRef}
-                crosshair={activeTool !== 'adjust'}
-                interactionDisabled={cineInteractionLocked}
-              />
-              {cineInteractionLocked && (
-                <div
-                  data-testid="cine-preparation-interaction-lock"
-                  className="absolute inset-0 z-[55] cursor-wait touch-none overscroll-contain bg-black/5"
-                  aria-hidden="true"
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                  onWheel={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                />
-              )}
-              <CineControls
-                open={cineOpen}
-                isPlaying={isPlaying}
-                fps={fps}
-                onPlayPauseChange={onPlayChange}
-                onFpsChange={onFpsChange}
-                onClose={closeCine}
-                isLoading={loadingStack || !imageAvailable}
-                preparationPhase={cinePreparation.phase}
-                preparationProgress={cinePreparation.percent}
-                preparedImages={cinePreparation.loadedImages}
-                totalImages={cinePreparation.totalImages}
-                onRetryPreparation={cinePreparation.retryPreparation}
-              />
-              <ViewportOverlay
+              <ViewportGrid
+                layout={viewportLayout}
+                activeViewportId={activeViewportId}
+                onActiveViewportChange={handleActiveViewportChange}
+                onViewportSeriesChange={handleViewportSeriesChange}
+                primaryViewportEl={viewportEl}
+                primaryReady={!loadingStack && imageAvailable}
                 studyDate={studyDate}
-                seriesDescription={selectedSeriesEntry?.metadata?.seriesDescription}
-                viewportEl={viewportEl}
-                currentFrame={currentFrame}
-                totalFrames={totalFrames}
                 seriesMap={seriesMap}
                 selectedSeriesUID={selectedSeries}
-                onSelectSeries={(seriesUID) => {
-                  if (cineInteractionLocked) return;
-                  onSelectSr?.(null);
-                  selectSeriesSafely(seriesUID);
-                }}
+                activeTool={activeTool}
                 interactionDisabled={cineInteractionLocked}
-              />
-              <ViewportStackScrollbar
-                currentFrame={currentFrame}
-                totalFrames={totalFrames}
-                onFrameChange={onFrameChange}
-                viewportEl={viewportEl}
-                followTargetFrame={isPlaying}
-                disabled={
-                  loadingStack || !imageAvailable || cineInteractionLocked
+                voiDefaults={voiDefaults}
+                primary={
+                  <>
+                    {!loadingSeries && (
+                      <ViewportLoadingOverlay
+                        visible={loadingStack || !imageAvailable}
+                        progress={loadingProgress}
+                      />
+                    )}
+
+                    <DicomViewport
+                      elementRef={elementRef}
+                      crosshair={activeTool !== 'adjust'}
+                      interactionDisabled={cineInteractionLocked}
+                    />
+                    {cineInteractionLocked && (
+                      <div
+                        data-testid="cine-preparation-interaction-lock"
+                        className="absolute inset-0 z-[55] cursor-wait touch-none overscroll-contain bg-black/5"
+                        aria-hidden="true"
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onWheel={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                      />
+                    )}
+                    <CineControls
+                      open={cineOpen}
+                      isPlaying={isPlaying}
+                      fps={fps}
+                      onPlayPauseChange={onPlayChange}
+                      onFpsChange={onFpsChange}
+                      onClose={closeCine}
+                      isLoading={loadingStack || !imageAvailable}
+                      preparationPhase={cinePreparation.phase}
+                      preparationProgress={cinePreparation.percent}
+                      preparedImages={cinePreparation.loadedImages}
+                      totalImages={cinePreparation.totalImages}
+                      onRetryPreparation={cinePreparation.retryPreparation}
+                    />
+                    <ViewportOverlay
+                      studyDate={studyDate}
+                      seriesDescription={selectedSeriesEntry?.metadata?.seriesDescription}
+                      viewportEl={viewportEl}
+                      currentFrame={currentFrame}
+                      totalFrames={totalFrames}
+                      seriesMap={seriesMap}
+                      selectedSeriesUID={selectedSeries}
+                      onSelectSeries={(seriesUID) => {
+                        if (cineInteractionLocked) return;
+                        onSelectSr?.(null);
+                        selectSeriesSafely(seriesUID);
+                      }}
+                      interactionDisabled={cineInteractionLocked}
+                    />
+                    <ViewportStackScrollbar
+                      currentFrame={currentFrame}
+                      totalFrames={totalFrames}
+                      onFrameChange={onFrameChange}
+                      viewportEl={viewportEl}
+                      followTargetFrame={isPlaying}
+                      disabled={
+                        loadingStack ||
+                        !imageAvailable ||
+                        cineInteractionLocked
+                      }
+                    />
+                  </>
                 }
               />
             </div>
@@ -556,10 +818,20 @@ export default function ViewerWorkspace({
         onCancel={calibration.cancelCalibration}
         onApply={calibration.applyCalibration}
       />
+      <ViewportLayoutDialog
+        open={viewportLayoutOpen}
+        layout={viewportLayout}
+        onApply={(nextLayout) => {
+          closeCine();
+          cancelActiveAnnotationInteraction(toolbarViewportEl);
+          setViewportLayout(nextLayout);
+        }}
+        onClose={() => setViewportLayoutOpen(false)}
+      />
       <DicomTagBrowserDialog
         open={dicomTagBrowserOpen}
         seriesMap={seriesMap}
-        activeSeriesUID={selectedSeries}
+        activeSeriesUID={activeViewportSeriesUID}
         onClose={() => setDicomTagBrowserOpen(false)}
       />
     </>

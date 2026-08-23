@@ -25,6 +25,7 @@ interface ToolbarProps {
   canImageSliceSync: boolean;
   onToggleImageSliceSync: () => void;
   canCalibrate: boolean;
+  onOpenViewportLayout: () => void;
   onOpenDicomTagBrowser: () => void;
 
   isCineOpen: boolean;
@@ -51,6 +52,7 @@ export default function Toolbar({
   canImageSliceSync,
   onToggleImageSliceSync,
   canCalibrate,
+  onOpenViewportLayout,
   onOpenDicomTagBrowser,
   isCineOpen,
   onToggleCine,
@@ -65,6 +67,7 @@ export default function Toolbar({
 
   const selectNonCineTool = (tool: ToolID) => {
     closeCineForNonCineAction();
+    cancelActiveAnnotationInteraction(viewportEl);
     onSelectTool(tool);
   };
 
@@ -120,6 +123,9 @@ export default function Toolbar({
         return;
       case 'dicomTagBrowser':
         runViewportAction(onOpenDicomTagBrowser);
+        return;
+      case 'viewportLayout':
+        runViewportAction(onOpenViewportLayout);
         return;
       case 'rotate90':
         runViewportAction(onRotate90);

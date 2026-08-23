@@ -83,6 +83,19 @@ function removeStrayCornerstoneCanvases(mountEl: HTMLElement | null) {
     const canvases = Array.from(document.querySelectorAll('canvas.cornerstone-canvas')) as HTMLCanvasElement[];
     for (const c of canvases) {
       try {
+        const owningViewport = c.closest<HTMLElement>(
+          '[data-viewport-role="content"]'
+        );
+        // A split layout intentionally has multiple Cornerstone canvases in
+        // the same rendering engine. Preserve every connected viewer-owned
+        // viewport and only remove genuinely detached/legacy canvases.
+        if (
+          owningViewport &&
+          owningViewport.isConnected &&
+          owningViewport !== mountEl
+        ) {
+          continue;
+        }
         if (!mountEl || !mountEl.contains(c)) {
           try {
             c.remove();
@@ -101,23 +114,10 @@ function removeStrayCornerstoneCanvases(mountEl: HTMLElement | null) {
 function tryDetachViewportSafely(engine: RenderingEngine | null, viewportId = VIEWPORT_ID) {
   try {
     if (!engine) return;
-    if (typeof (engine as any).setViewports === 'function') {
-      try {
-        (engine as any).setViewports([]);
-      } catch (e) {
-      }
-    }
-
-    try {
-      const oldVp = typeof (engine as any).getViewport === 'function' ? (engine as any).getViewport(viewportId) : null;
-      if (oldVp && typeof (oldVp as any).setElement === 'function') {
-        try {
-          (oldVp as any).setElement(null);
-        } catch (e) {
-        }
-      }
-    } catch (e) {
-    }
+    // setViewports([]) resets the *entire* rendering engine and therefore also
+    // destroys sibling panes in a split layout. Disable only the requested
+    // viewport; every pane owns its own lifecycle.
+    try { engine.disableElement(viewportId); } catch {}
   } catch (e) {
   }
 }

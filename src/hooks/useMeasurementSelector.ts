@@ -3,7 +3,10 @@
 
 import React from 'react';
 import { useCallback, useRef } from 'react';
-import { annotation as csAnnotation } from '@cornerstonejs/tools';
+import {
+  annotation as csAnnotation,
+  utilities as csToolsUtilities,
+} from '@cornerstonejs/tools';
 import {
   areImageStacksEqual,
   findMatchingImageIdIndex,
@@ -185,6 +188,81 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       const imageIds = mergedSeriesMapRef.current?.[targetSeriesUID]?.files ?? [];
       const liveAnnotation =
         (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
+
+      const preferredViewportId = String(
+        m.metadata?.viewportId ?? viewportId
+      );
+      if (
+        preferredViewportId !== viewportId &&
+        Array.isArray(imageIds) &&
+        imageIds.length > 0
+      ) {
+        try {
+          const preferredViewport =
+            renderingEngineRef?.current?.getViewport?.(preferredViewportId);
+          const preferredImageIds = preferredViewport?.getImageIds?.() ?? [];
+          if (
+            preferredViewport &&
+            Array.isArray(preferredImageIds) &&
+            areImageStacksEqual(preferredImageIds, imageIds)
+          ) {
+            const desiredIndex = resolveMeasurementImageIndex(
+              m,
+              imageIds,
+              liveAnnotation
+            );
+            const preferredElement = preferredViewport.element as
+              | HTMLDivElement
+              | undefined;
+            cancelActiveAnnotationInteraction(preferredElement ?? null);
+
+            if (
+              preferredViewport.getCurrentImageIdIndex?.() !== desiredIndex &&
+              typeof preferredViewport.setImageIdIndex === 'function'
+            ) {
+              await preferredViewport.setImageIdIndex(desiredIndex);
+              if (!isCurrentRequest()) return;
+            }
+
+            const annotationInstance =
+              liveAnnotation ??
+              (await ensureAnnotationAvailable(
+                m.annotationUID,
+                800,
+                40
+              ).catch(() => null));
+            if (!isCurrentRequest()) return;
+
+            if (
+              annotationInstance &&
+              preferredElement &&
+              (await safeAddAnnotation(annotationInstance, preferredElement))
+            ) {
+              if (
+                !isCurrentRequest() ||
+                isAnnotationRemovalTombstoned(annotationUID)
+              ) {
+                return;
+              }
+              selectCornerstoneAnnotation(m.annotationUID);
+              setActiveSrId?.(reportSeriesUID || null);
+              setSelectedMeasurementUIDIfChanged(
+                setSelectedMeasurementUID,
+                selectedMeasurementUIDRef,
+                m.annotationUID
+              );
+              try {
+                csToolsUtilities.triggerAnnotationRender(preferredElement);
+              } catch {}
+              safeRenderViewport(preferredViewportId);
+              return;
+            }
+          }
+        } catch {
+          // The original primary-viewport navigation below remains the safe
+          // recovery path if the recorded pane no longer shows this series.
+        }
+      }
 
       if (!Array.isArray(imageIds) || imageIds.length === 0) {
         const desiredIndex = Math.max(

@@ -4,6 +4,7 @@ import {
   annotation as csAnnotation,
   utilities as csToolsUtilities,
 } from '@cornerstonejs/tools';
+import { getRenderingEngines } from '@cornerstonejs/core';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import {
   safeSetAnnotationVisibility,
@@ -22,6 +23,7 @@ export function useMeasurementBridge({
   viewportEl,
   hiddenMeasurements,
   selectedSeries,
+  visibleSeriesUIDs = [],
   activeSrId,
   mergedSeriesMap,
   renderingEngineRender,
@@ -31,6 +33,7 @@ export function useMeasurementBridge({
   viewportEl: HTMLDivElement | null;
   hiddenMeasurements: Set<string>;
   selectedSeries?: string | null;
+  visibleSeriesUIDs?: readonly string[];
   activeSrId?: string | null;
   mergedSeriesMap?: Record<string, { files: string[]; metadata: any }>;
   renderingEngineRender?: () => void;
@@ -45,8 +48,20 @@ export function useMeasurementBridge({
   useEffect(() => {
     if (!viewportEl) return;
 
-    const files = new Set(
-      (mergedSeriesMap?.[selectedSeries ?? '']?.files ?? []).map(normalizeImageId)
+    const displayedSeriesUIDs = Array.from(
+      new Set(
+        [selectedSeries, ...visibleSeriesUIDs].filter(
+          (seriesUID): seriesUID is string => Boolean(seriesUID)
+        )
+      )
+    );
+    const filesBySeriesUID = new Map(
+      displayedSeriesUIDs.map((seriesUID) => [
+        seriesUID,
+        new Set(
+          (mergedSeriesMap?.[seriesUID]?.files ?? []).map(normalizeImageId)
+        ),
+      ])
     );
     let anyChanged = false;
     let hasRegisteredAnnotation = false;
@@ -59,7 +74,13 @@ export function useMeasurementBridge({
         ? reportSeriesUID === activeSrId
         : !reportSeriesUID &&
           !hiddenMeasurements.has(uid) &&
-          isMeasurementInSeries(m, selectedSeries, files);
+          displayedSeriesUIDs.some((seriesUID) =>
+            isMeasurementInSeries(
+              m,
+              seriesUID,
+              filesBySeriesUID.get(seriesUID) ?? new Set<string>()
+            )
+          );
 
       try {
         if (!csAnnotation.state.getAnnotation(uid)) continue;
@@ -76,25 +97,41 @@ export function useMeasurementBridge({
       }
     }
 
-    if (hasRegisteredAnnotation) {
+    if (hasRegisteredAnnotation || allMeasurements.length === 0) {
+      const targetElements = new Set<HTMLDivElement>([viewportEl]);
       try {
-        // Visibility is rendered by Cornerstone Tools' annotation SVG engine,
-        // not by the image rendering engine. Re-render every reconciliation,
-        // including when state already matches, so a stale SVG layer after a
-        // missed render/HMR cycle repairs itself deterministically.
-        csToolsUtilities.triggerAnnotationRender(viewportEl);
-      } catch {
-        if (anyChanged) {
-          try {
-            renderingEngineRender?.();
-          } catch {}
+        for (const renderingEngine of getRenderingEngines() ?? []) {
+          for (const viewport of renderingEngine.getViewports?.() ?? []) {
+            const candidate = viewport?.element as
+              | HTMLDivElement
+              | undefined;
+            if (candidate?.dataset?.viewportRole === 'content') {
+              targetElements.add(candidate);
+            }
+          }
         }
+      } catch {}
+
+      let rendered = false;
+      for (const targetElement of targetElements) {
+        try {
+          // Visibility is rendered by Cornerstone Tools' annotation SVG
+          // engine, so reconcile every mounted content viewport.
+          csToolsUtilities.triggerAnnotationRender(targetElement);
+          rendered = true;
+        } catch {}
+      }
+      if (!rendered && anyChanged) {
+        try {
+          renderingEngineRender?.();
+        } catch {}
       }
     }
   }, [
     allMeasurements,
     activeSrId,
     selectedSeries,
+    visibleSeriesUIDs,
     hiddenMeasurements,
     mergedSeriesMap,
     viewportEl,

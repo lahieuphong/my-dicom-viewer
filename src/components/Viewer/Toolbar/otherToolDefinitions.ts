@@ -5,6 +5,7 @@ import {
   CirclePlay,
   Link2,
   ListTree,
+  PanelsTopLeft,
   RotateCcw,
   RotateCw,
   ZoomIn,
@@ -39,7 +40,7 @@ export type OtherViewportToggleID =
   | 'cine'
   | 'invert'
   | 'imageSliceSync';
-export type OtherDialogActionID = 'dicomTagBrowser';
+export type OtherDialogActionID = 'viewportLayout' | 'dicomTagBrowser';
 export type OtherItemID =
   | OtherToolID
   | OtherViewportToggleID
@@ -90,6 +91,15 @@ export const OTHER_TOOL_DEFINITIONS = {
     detail: 'Synchronize matching slice positions across viewports',
     Icon: Link2,
     kind: 'viewport-toggle',
+    disabledForSR: true,
+  },
+  viewportLayout: {
+    id: 'viewportLayout',
+    menuLabel: 'Tách cửa sổ',
+    label: 'Tách cửa sổ',
+    detail: 'Chọn bố cục nhiều viewport',
+    Icon: PanelsTopLeft,
+    kind: 'dialog-action',
     disabledForSR: true,
   },
   probe: {
@@ -198,6 +208,7 @@ export const OTHER_TOOL_ITEMS: readonly OtherToolDefinition[] = [
   OTHER_TOOL_DEFINITIONS.reset,
   OTHER_TOOL_DEFINITIONS.rotate90,
   OTHER_TOOL_DEFINITIONS.flipHorizontal,
+  OTHER_TOOL_DEFINITIONS.viewportLayout,
   OTHER_TOOL_DEFINITIONS.imageSliceSync,
   OTHER_TOOL_DEFINITIONS.invert,
   OTHER_TOOL_DEFINITIONS.probe,
@@ -245,6 +256,7 @@ export function resolveDisplayedOtherItem(
     lastSelectedItem !== 'cine' &&
     lastSelectedItem !== 'invert' &&
     lastSelectedItem !== 'imageSliceSync' &&
+    lastSelectedItem !== 'viewportLayout' &&
     lastSelectedItem !== 'dicomTagBrowser' &&
     activeTool === lastSelectedItem
   ) {
