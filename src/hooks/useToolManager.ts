@@ -8,6 +8,7 @@ import {
   PanTool,
   ZoomTool,
   MagnifyTool,
+  AdvancedMagnifyTool,
   LengthTool,
   BidirectionalTool,
   ArrowAnnotateTool,
@@ -38,6 +39,7 @@ export type ToolID =
   | 'pan'
   | 'zoom'
   | 'magnify'
+  | 'advancedMagnify'
   | 'calibrationLine'
   | 'length'
   | 'bidirectional'
@@ -63,6 +65,7 @@ export const toolNameMap: Record<ToolID, string> = {
   pan: PanTool.toolName,
   zoom: ZoomTool.toolName,
   magnify: MagnifyTool.toolName,
+  advancedMagnify: AdvancedMagnifyTool.toolName,
   calibrationLine: CalibrationLineTool.toolName,
   length: LengthTool.toolName,
   bidirectional: BidirectionalTool.toolName,
@@ -100,6 +103,7 @@ export const measurementToolIDs: ToolID[] = [
 /** Mouse tools that must be passive while a DICOM SR series is active. */
 export const readOnlyBlockedToolIDs: ToolID[] = [
   ...measurementToolIDs,
+  'advancedMagnify',
   'calibrationLine',
 ];
 
@@ -108,6 +112,7 @@ const CORNERSTONE_TOOL_NAMES = [
   PanTool.toolName,
   ZoomTool.toolName,
   MagnifyTool.toolName,
+  AdvancedMagnifyTool.toolName,
   LengthTool.toolName,
   BidirectionalTool.toolName,
   ArrowAnnotateTool.toolName,
@@ -132,6 +137,7 @@ const TOOL_CLASS_MAP: Partial<Record<ToolID, any>> = {
   pan: PanTool,
   zoom: ZoomTool,
   magnify: MagnifyTool,
+  advancedMagnify: AdvancedMagnifyTool,
   length: LengthTool,
   bidirectional: BidirectionalTool,
   arrowAnnotate: ArrowAnnotateTool,

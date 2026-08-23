@@ -97,6 +97,9 @@ export default function Toolbar({
       case 'magnify':
         selectNonCineTool('magnify');
         return;
+      case 'advancedMagnify':
+        selectNonCineTool('advancedMagnify');
+        return;
       case 'calibrationLine':
         selectNonCineTool('calibrationLine');
         return;

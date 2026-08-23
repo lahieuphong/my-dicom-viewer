@@ -24,6 +24,7 @@ export const OTHER_TOOL_IDS = [
   'angle',
   'cobbAngle',
   'magnify',
+  'advancedMagnify',
   'calibrationLine',
   'rotate90',
   'flipHorizontal',
@@ -112,6 +113,15 @@ export const OTHER_TOOL_DEFINITIONS = {
     kind: 'mouse-tool',
     disabledForSR: true,
   },
+  advancedMagnify: {
+    id: 'advancedMagnify',
+    menuLabel: 'Magnify Probe',
+    label: 'Kính lúp thăm dò',
+    detail: 'Advanced Magnify Tool',
+    Icon: ZoomIn,
+    kind: 'mouse-tool',
+    disabledForSR: true,
+  },
   calibrationLine: {
     id: 'calibrationLine',
     menuLabel: 'Calibration',
@@ -172,6 +182,7 @@ export const OTHER_TOOL_ITEMS: readonly OtherToolDefinition[] = [
   OTHER_TOOL_DEFINITIONS.magnify,
   OTHER_TOOL_DEFINITIONS.calibrationLine,
   OTHER_TOOL_DEFINITIONS.dicomTagBrowser,
+  OTHER_TOOL_DEFINITIONS.advancedMagnify,
 ];
 
 export function isOtherTool(tool: ToolID): tool is OtherToolID {

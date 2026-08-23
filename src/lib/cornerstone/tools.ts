@@ -8,6 +8,7 @@ import {
   PanTool,
   ZoomTool,
   MagnifyTool,
+  AdvancedMagnifyTool,
   LengthTool,
   BidirectionalTool,
   ArrowAnnotateTool,
@@ -26,6 +27,7 @@ import {
 import { ensureStackScrollWheelActive } from './stackScroll';
 import { configureMeasurementToolGroupStyles } from './measurementStyles';
 import { CalibrationLineTool } from './calibration';
+import { configureAdvancedMagnifyToolGroup } from './advancedMagnify';
 
 const TOOL_GROUP_ID = 'toolGroup';
 
@@ -86,6 +88,7 @@ export function registerToolsOnce(): void {
       PanTool,
       ZoomTool,
       MagnifyTool,
+      AdvancedMagnifyTool,
       LengthTool,
       BidirectionalTool,
       ArrowAnnotateTool,
@@ -161,6 +164,7 @@ export function registerToolsOnce(): void {
         } catch {}
 
         configureMeasurementToolGroupStyles(TOOL_GROUP_ID);
+        configureAdvancedMagnifyToolGroup(TOOL_GROUP_ID);
       }
     } catch (e) {
       // swallow additions errors

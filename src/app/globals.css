@@ -364,3 +364,20 @@
   /* ensure layout containment */
   contain: paint size layout;
 }
+
+/*
+ * Advanced Magnify moves its own Cornerstone viewport on every drag frame.
+ * Isolate that viewport and keep its movement on a compositor layer so the
+ * surrounding viewer layout does not need to be repainted with it.
+ */
+.advancedMagnifyTool {
+  contain: strict;
+  isolation: isolate;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+.advancedMagnifyTool .viewport-element,
+.advancedMagnifyTool canvas.cornerstone-canvas {
+  contain: strict;
+}
