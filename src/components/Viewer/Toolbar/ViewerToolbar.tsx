@@ -4,11 +4,13 @@ import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ToolID } from '@/hooks/useToolManager';
 import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
+import type { ViewportGridLayout } from '@/components/Viewer/ViewportLayout';
 
 import CaptureControl from './CaptureControl';
 import MeasurementToolsControl from './MeasurementToolsControl';
 import OtherToolsControl from './OtherToolsControl';
 import ToolbarTooltip from './ToolbarTooltip';
+import ViewportLayoutControl from './ViewportLayoutControl';
 import type { OtherItemID } from './otherToolDefinitions';
 import { getToolTooltip } from './tooltips';
 
@@ -25,7 +27,8 @@ interface ToolbarProps {
   canImageSliceSync: boolean;
   onToggleImageSliceSync: () => void;
   canCalibrate: boolean;
-  onOpenViewportLayout: () => void;
+  viewportLayout: ViewportGridLayout;
+  onViewportLayoutChange: (layout: ViewportGridLayout) => void;
   onOpenDicomTagBrowser: () => void;
 
   isCineOpen: boolean;
@@ -52,7 +55,8 @@ export default function Toolbar({
   canImageSliceSync,
   onToggleImageSliceSync,
   canCalibrate,
-  onOpenViewportLayout,
+  viewportLayout,
+  onViewportLayoutChange,
   onOpenDicomTagBrowser,
   isCineOpen,
   onToggleCine,
@@ -124,9 +128,6 @@ export default function Toolbar({
       case 'dicomTagBrowser':
         runViewportAction(onOpenDicomTagBrowser);
         return;
-      case 'viewportLayout':
-        runViewportAction(onOpenViewportLayout);
-        return;
       case 'rotate90':
         runViewportAction(onRotate90);
         return;
@@ -195,6 +196,18 @@ export default function Toolbar({
             viewportEl={viewportEl ?? null}
             disabled={disabled}
             onActivate={closeCineForNonCineAction}
+          />
+
+          <ViewportLayoutControl
+            layout={viewportLayout}
+            onActivate={() => {
+              closeCineForNonCineAction();
+              cancelActiveAnnotationInteraction(viewportEl);
+            }}
+            onApply={(nextLayout) =>
+              runViewportAction(() => onViewportLayoutChange(nextLayout))
+            }
+            disabled={disabled || isSeriesSR}
           />
 
           <OtherToolsControl

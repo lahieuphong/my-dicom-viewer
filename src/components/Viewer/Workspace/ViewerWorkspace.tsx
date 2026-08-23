@@ -32,7 +32,6 @@ import { CalibrationDialog } from '@/components/Viewer/Calibration';
 import { DicomTagBrowserDialog } from '@/components/Viewer/DicomTagBrowser';
 import {
   ViewportGrid,
-  ViewportLayoutDialog,
   useViewportGridLayout,
 } from '@/components/Viewer/ViewportLayout';
 import {
@@ -180,7 +179,6 @@ export default function ViewerWorkspace({
   const measurementSeriesMap = seriesMap as MeasurementPanelProps['seriesMap'];
   const [cineOpen, setCineOpen] = useState(false);
   const [dicomTagBrowserOpen, setDicomTagBrowserOpen] = useState(false);
-  const [viewportLayoutOpen, setViewportLayoutOpen] = useState(false);
   const {
     layout: viewportLayout,
     setLayout: setViewportLayout,
@@ -660,7 +658,8 @@ export default function ViewerWorkspace({
                 canImageSliceSync={imageSliceSync.canToggle}
                 onToggleImageSliceSync={imageSliceSync.toggle}
                 canCalibrate={calibration.canCalibrate}
-                onOpenViewportLayout={() => setViewportLayoutOpen(true)}
+                viewportLayout={viewportLayout}
+                onViewportLayoutChange={setViewportLayout}
                 onOpenDicomTagBrowser={() => setDicomTagBrowserOpen(true)}
                 isCineOpen={cineOpen}
                 onToggleCine={toggleCine}
@@ -817,16 +816,6 @@ export default function ViewerWorkspace({
         applyError={calibration.error}
         onCancel={calibration.cancelCalibration}
         onApply={calibration.applyCalibration}
-      />
-      <ViewportLayoutDialog
-        open={viewportLayoutOpen}
-        layout={viewportLayout}
-        onApply={(nextLayout) => {
-          closeCine();
-          cancelActiveAnnotationInteraction(toolbarViewportEl);
-          setViewportLayout(nextLayout);
-        }}
-        onClose={() => setViewportLayoutOpen(false)}
       />
       <DicomTagBrowserDialog
         open={dicomTagBrowserOpen}

@@ -47,7 +47,7 @@ function isItemActive(
   if (item === 'cine') return isCineOpen;
   if (item === 'invert') return isInverted;
   if (item === 'imageSliceSync') return isImageSliceSyncEnabled;
-  if (item === 'viewportLayout' || item === 'dicomTagBrowser') return false;
+  if (item === 'dicomTagBrowser') return false;
   return activeTool === item;
 }
 
