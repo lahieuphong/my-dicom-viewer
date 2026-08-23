@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -67,6 +67,36 @@ export default function OtherToolsControl({
             ? 'invert'
             : null
     );
+  const deferredDialogActionRef = useRef<OtherItemID | null>(null);
+  const deferredDialogTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (deferredDialogTimerRef.current !== null) {
+        window.clearTimeout(deferredDialogTimerRef.current);
+      }
+    };
+  }, []);
+
+  const runDeferredDialogAction = () => {
+    const item = deferredDialogActionRef.current;
+    if (!item) return;
+
+    deferredDialogActionRef.current = null;
+    if (deferredDialogTimerRef.current !== null) {
+      window.clearTimeout(deferredDialogTimerRef.current);
+    }
+
+    // A modal DropdownMenu and a modal Dialog both temporarily disable body
+    // pointer events. Opening the Dialog from the menu item's select event can
+    // make the Dialog capture `pointer-events: none` as the value to restore,
+    // leaving the viewer inert after the Dialog closes. Wait until Radix has
+    // fully closed the menu and restored its interaction lock first.
+    deferredDialogTimerRef.current = window.setTimeout(() => {
+      deferredDialogTimerRef.current = null;
+      onSelectItem(item);
+    }, 0);
+  };
 
   const displayedItem = resolveDisplayedOtherItem(
     lastSelectedItem,
@@ -118,6 +148,7 @@ export default function OtherToolsControl({
       <DropdownMenuContent
         className="z-[90] w-56 border border-border bg-card text-foreground"
         data-testid="other-tools-menu"
+        onCloseAutoFocus={runDeferredDialogAction}
       >
         <DropdownMenuLabel>Other</DropdownMenuLabel>
         <DropdownMenuGroup>
@@ -150,6 +181,10 @@ export default function OtherToolsControl({
                 onSelect={() => {
                   if (itemDisabled) return;
                   setLastSelectedItem(id);
+                  if (definition.kind === 'dialog-action') {
+                    deferredDialogActionRef.current = id;
+                    return;
+                  }
                   onSelectItem(id);
                 }}
                 className={cn(

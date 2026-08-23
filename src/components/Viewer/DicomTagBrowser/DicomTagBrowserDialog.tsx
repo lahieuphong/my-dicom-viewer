@@ -104,6 +104,12 @@ export default function DicomTagBrowserDialog({
       <DialogContent
         data-testid="dicom-tag-browser-dialog"
         className="flex h-[min(92dvh,48rem)] w-[calc(100dvw-1rem)] max-w-[80rem] flex-col gap-0 overflow-hidden border-primary/30 bg-background p-0 shadow-2xl sm:h-[min(88dvh,48rem)] sm:w-[calc(100dvw-2rem)] sm:max-w-[80rem] lg:h-[min(82dvh,48rem)] lg:w-[min(88dvw,80rem)] [@media(max-height:600px)]:h-[calc(100dvh-0.75rem)]"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          document
+            .querySelector<HTMLElement>('[data-testid="other-tools-trigger"]')
+            ?.focus({ preventScroll: true });
+        }}
       >
         <DialogHeader className="shrink-0 border-b border-border bg-card/90 px-4 py-4 pr-12 sm:px-5 sm:pr-14 lg:px-6 [@media(max-height:600px)]:py-2">
           <div className="flex min-w-0 items-center gap-3">
