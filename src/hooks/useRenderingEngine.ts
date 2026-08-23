@@ -366,14 +366,18 @@ export function useRenderingEngine({
           if (isStale()) return;
 
           try {
-            await engine.setViewports?.([{
+            // `setViewports([primary])` replaces the complete RenderingEngine
+            // viewport list. During a restored split layout that could remove
+            // every secondary viewport which had just mounted. Enable only
+            // this viewport so sibling panes keep their canvases and stacks.
+            engine.enableElement?.({
               viewportId: VIEWPORT_ID,
               type: viewportType,
               element: mountEl,
               defaultOptions: {
                 background: VIEWPORT_BACKGROUND,
               },
-            }]);
+            });
           } catch (err) {}
           if (isStale()) return;
         }

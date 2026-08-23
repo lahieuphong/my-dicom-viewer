@@ -27,6 +27,132 @@ type UseSecondaryStackViewportOptions = {
 };
 
 const VIEWPORT_BACKGROUND: [number, number, number] = [0, 0, 0];
+const RENDER_RETRY_DELAYS_MS = [0, 80, 180, 360, 720] as const;
+const RENDER_EVENT_TIMEOUT_MS = 900;
+
+// ContextPoolRenderingEngine renders every viewport through a shared pool of
+// WebGL contexts. Keep only the bounded final-render phase ordered; DICOM
+// loading must remain independent so one slow request cannot block every pane.
+let secondaryViewportRenderQueue: Promise<void> = Promise.resolve();
+
+function enqueueSecondaryViewportRender(task: () => Promise<boolean>) {
+  const queuedTask = secondaryViewportRenderQueue
+    .catch(() => {})
+    .then(async () => {
+      await task();
+    });
+  secondaryViewportRenderQueue = queuedTask.catch(() => {});
+  return queuedTask;
+}
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+}
+
+function waitForImageRendered(
+  element: HTMLDivElement,
+  viewportId: string,
+  timeoutMs: number
+) {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (rendered: boolean) => {
+      if (settled) return;
+      settled = true;
+      element.removeEventListener(
+        CoreEnums.Events.IMAGE_RENDERED,
+        handleImageRendered as EventListener
+      );
+      window.clearTimeout(timeoutId);
+      resolve(rendered);
+    };
+    const handleImageRendered = (event: Event) => {
+      const renderedViewportId = (
+        event as CustomEvent<{ viewportId?: string }>
+      ).detail?.viewportId;
+      if (renderedViewportId && renderedViewportId !== viewportId) return;
+      finish(true);
+    };
+    const timeoutId = window.setTimeout(
+      () => finish(false),
+      timeoutMs
+    );
+
+    element.addEventListener(
+      CoreEnums.Events.IMAGE_RENDERED,
+      handleImageRendered as EventListener
+    );
+  });
+}
+
+function hasRenderedExpectedImage(
+  viewport: StackViewport,
+  expectedImageIds: ReadonlySet<string>
+) {
+  const currentImageId = viewport.getCurrentImageId?.();
+  const canvas = viewport.getCanvas?.();
+  return Boolean(
+    currentImageId &&
+      expectedImageIds.has(currentImageId) &&
+      canvas &&
+      canvas.width > 1 &&
+      canvas.height > 1 &&
+      viewport.viewportStatus === CoreEnums.ViewportStatus.RENDERED
+  );
+}
+
+async function renderViewportUntilReady({
+  viewport,
+  viewportId,
+  element,
+  expectedImageIds,
+  isCancelled,
+}: {
+  viewport: StackViewport;
+  viewportId: string;
+  element: HTMLDivElement;
+  expectedImageIds: ReadonlySet<string>;
+  isCancelled: () => boolean;
+}) {
+  for (const retryDelay of RENDER_RETRY_DELAYS_MS) {
+    if (isCancelled()) return false;
+    if (retryDelay > 0) await wait(retryDelay);
+    if (isCancelled()) return false;
+
+    const renderedEvent = waitForImageRendered(
+      element,
+      viewportId,
+      RENDER_EVENT_TIMEOUT_MS
+    );
+
+    try {
+      const renderingEngine = getRenderingEngine(RENDERER_ID);
+      // `immediate=true` is important for ContextPoolRenderingEngine: it
+      // resizes every onscreen canvas and flushes all pending render flags.
+      renderingEngine.resize(true, true);
+      viewport.render();
+      renderingEngine.renderViewport(viewportId);
+    } catch {
+      try { viewport.render(); } catch {}
+    }
+
+    const receivedRenderEvent = await renderedEvent;
+    if (
+      !isCancelled() &&
+      (receivedRenderEvent ||
+        hasRenderedExpectedImage(viewport, expectedImageIds))
+    ) {
+      return true;
+    }
+  }
+
+  return !isCancelled() && hasRenderedExpectedImage(
+    viewport,
+    expectedImageIds
+  );
+}
 
 function removeViewportFromToolGroup(
   renderingEngineId: string,
@@ -187,19 +313,36 @@ export function useSecondaryStackViewport({
             resetToCenter: true,
           });
         } catch {}
-        try {
-          const renderingEngine = getRenderingEngine(RENDERER_ID);
-          renderingEngine.resize(false, true);
-          renderingEngine.renderViewport(viewportId);
-        } catch {
-          viewport.render();
+        const element = viewport.element as HTMLDivElement;
+        let rendered = false;
+        await enqueueSecondaryViewportRender(async () => {
+          rendered = await renderViewportUntilReady({
+            viewport,
+            viewportId,
+            element,
+            expectedImageIds: new Set(normalizedImageIds),
+            isCancelled: () =>
+              cancelled ||
+              loadGeneration !== stackLoadGenerationRef.current,
+          });
+          return rendered;
+        });
+
+        if (
+          cancelled ||
+          loadGeneration !== stackLoadGenerationRef.current
+        ) {
+          return;
+        }
+        if (!rendered) {
+          throw new Error(
+            'Ảnh chưa render hoàn tất. Vui lòng thử lại bố cục.'
+          );
         }
 
-        if (!cancelled) {
-          setCurrentFrame((viewport.getCurrentImageIdIndex?.() ?? 0) + 1);
-          setImageAvailable(true);
-          setLoading(false);
-        }
+        setCurrentFrame((viewport.getCurrentImageIdIndex?.() ?? 0) + 1);
+        setImageAvailable(true);
+        setLoading(false);
       } catch (cause) {
         if (
           !cancelled &&
