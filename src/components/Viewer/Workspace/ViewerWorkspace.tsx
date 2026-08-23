@@ -12,6 +12,7 @@ import {
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
 import { useCine } from '@/hooks/useCine';
 import { useCalibrationLine } from '@/hooks/useCalibrationLine';
+import { useImageSliceSync } from '@/hooks/useImageSliceSync';
 import { useStackPrefetch } from '@/hooks/useStackPrefetch';
 import type { ToolID } from '@/hooks/useToolManager';
 import { useViewerPanelResize } from '@/hooks/useViewerPanelResize';
@@ -185,6 +186,10 @@ export default function ViewerWorkspace({
       !loadingStack &&
       imageAvailable &&
       !isSeriesToolbarReadOnly,
+  });
+  const imageSliceSync = useImageSliceSync({
+    stackKey: selectedSeries,
+    disabled: isSeriesToolbarReadOnly,
   });
   // Normal wheel navigation uses a small bounded window. Cine owns prefetch
   // while its panel is open, avoiding two loaders competing for the same
@@ -410,6 +415,9 @@ export default function ViewerWorkspace({
                 isInverted={isInverted}
                 canInvert={canInvert}
                 onToggleInvert={onToggleInvert}
+                isImageSliceSyncEnabled={imageSliceSync.isEnabled}
+                canImageSliceSync={imageSliceSync.canToggle}
+                onToggleImageSliceSync={imageSliceSync.toggle}
                 canCalibrate={calibration.canCalibrate}
                 onOpenDicomTagBrowser={() => setDicomTagBrowserOpen(true)}
                 isCineOpen={cineOpen}

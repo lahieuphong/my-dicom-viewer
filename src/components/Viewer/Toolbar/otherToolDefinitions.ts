@@ -3,6 +3,7 @@ import {
   ArrowLeftRight,
   ChevronRight,
   CirclePlay,
+  Link2,
   ListTree,
   RotateCcw,
   RotateCw,
@@ -34,7 +35,10 @@ export const OTHER_TOOL_IDS = [
 ] as const satisfies readonly ToolID[];
 
 export type OtherToolID = (typeof OTHER_TOOL_IDS)[number];
-export type OtherViewportToggleID = 'cine' | 'invert';
+export type OtherViewportToggleID =
+  | 'cine'
+  | 'invert'
+  | 'imageSliceSync';
 export type OtherDialogActionID = 'dicomTagBrowser';
 export type OtherItemID =
   | OtherToolID
@@ -78,6 +82,15 @@ export const OTHER_TOOL_DEFINITIONS = {
     Icon: InvertIcon,
     kind: 'viewport-toggle',
     disabledForSR: false,
+  },
+  imageSliceSync: {
+    id: 'imageSliceSync',
+    menuLabel: 'Image Slice Sync',
+    label: 'Đồng bộ lát cắt',
+    detail: 'Synchronize matching slice positions across viewports',
+    Icon: Link2,
+    kind: 'viewport-toggle',
+    disabledForSR: true,
   },
   probe: {
     id: 'probe',
@@ -185,6 +198,7 @@ export const OTHER_TOOL_ITEMS: readonly OtherToolDefinition[] = [
   OTHER_TOOL_DEFINITIONS.reset,
   OTHER_TOOL_DEFINITIONS.rotate90,
   OTHER_TOOL_DEFINITIONS.flipHorizontal,
+  OTHER_TOOL_DEFINITIONS.imageSliceSync,
   OTHER_TOOL_DEFINITIONS.invert,
   OTHER_TOOL_DEFINITIONS.probe,
   OTHER_TOOL_DEFINITIONS.cine,
@@ -215,14 +229,22 @@ export function resolveDisplayedOtherItem(
   lastSelectedItem: OtherItemID | null,
   activeTool: ToolID,
   isCineOpen: boolean,
-  isInverted: boolean
+  isInverted: boolean,
+  isImageSliceSyncEnabled: boolean
 ): OtherItemID | null {
   if (lastSelectedItem === 'cine' && isCineOpen) return 'cine';
   if (lastSelectedItem === 'invert' && isInverted) return 'invert';
   if (
+    lastSelectedItem === 'imageSliceSync' &&
+    isImageSliceSyncEnabled
+  ) {
+    return 'imageSliceSync';
+  }
+  if (
     lastSelectedItem !== null &&
     lastSelectedItem !== 'cine' &&
     lastSelectedItem !== 'invert' &&
+    lastSelectedItem !== 'imageSliceSync' &&
     lastSelectedItem !== 'dicomTagBrowser' &&
     activeTool === lastSelectedItem
   ) {
@@ -231,5 +253,6 @@ export function resolveDisplayedOtherItem(
 
   if (isOtherTool(activeTool)) return activeTool;
   if (isCineOpen) return 'cine';
+  if (isImageSliceSyncEnabled) return 'imageSliceSync';
   return isInverted ? 'invert' : null;
 }

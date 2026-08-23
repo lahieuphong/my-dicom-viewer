@@ -28,7 +28,9 @@ type OtherToolsControlProps = {
   activeTool: ToolID;
   isCineOpen: boolean;
   isInverted: boolean;
+  isImageSliceSyncEnabled: boolean;
   canInvert: boolean;
+  canImageSliceSync: boolean;
   canCalibrate: boolean;
   onSelectItem: (item: OtherItemID) => void;
   readOnly?: boolean;
@@ -39,10 +41,12 @@ function isItemActive(
   item: OtherItemID,
   activeTool: ToolID,
   isCineOpen: boolean,
-  isInverted: boolean
+  isInverted: boolean,
+  isImageSliceSyncEnabled: boolean
 ) {
   if (item === 'cine') return isCineOpen;
   if (item === 'invert') return isInverted;
+  if (item === 'imageSliceSync') return isImageSliceSyncEnabled;
   if (item === 'dicomTagBrowser') return false;
   return activeTool === item;
 }
@@ -51,7 +55,9 @@ export default function OtherToolsControl({
   activeTool,
   isCineOpen,
   isInverted,
+  isImageSliceSyncEnabled,
   canInvert,
+  canImageSliceSync,
   canCalibrate,
   onSelectItem,
   readOnly = false,
@@ -63,9 +69,11 @@ export default function OtherToolsControl({
         ? 'cine'
         : isOtherTool(activeTool)
           ? activeTool
-          : isInverted
-            ? 'invert'
-            : null
+          : isImageSliceSyncEnabled
+            ? 'imageSliceSync'
+            : isInverted
+              ? 'invert'
+              : null
     );
   const deferredDialogActionRef = useRef<OtherItemID | null>(null);
   const deferredDialogTimerRef = useRef<number | null>(null);
@@ -102,14 +110,18 @@ export default function OtherToolsControl({
     lastSelectedItem,
     activeTool,
     isCineOpen,
-    isInverted
+    isInverted,
+    isImageSliceSyncEnabled
   );
   const displayedDefinition = displayedItem
     ? getOtherToolDefinition(displayedItem)
     : null;
   const tooltip = displayedDefinition ?? MORE_TOOLS_TOOLTIP;
   const isControlActive = Boolean(
-    isCineOpen || isInverted || isOtherTool(activeTool)
+    isCineOpen ||
+      isInverted ||
+      isImageSliceSyncEnabled ||
+      isOtherTool(activeTool)
   );
   const DisplayedIcon = displayedDefinition?.Icon;
 
@@ -165,14 +177,19 @@ export default function OtherToolsControl({
               id,
               activeTool,
               isCineOpen,
-              isInverted
+              isInverted,
+              isImageSliceSyncEnabled
             );
             const itemDisabled =
               disabled ||
               (readOnly && disabledForSR) ||
               (id === 'invert' && !canInvert) ||
+              (id === 'imageSliceSync' && !canImageSliceSync) ||
               (id === 'calibrationLine' && !canCalibrate);
-            const isToggle = id === 'cine' || id === 'invert';
+            const isToggle =
+              id === 'cine' ||
+              id === 'invert' ||
+              id === 'imageSliceSync';
 
             return (
               <DropdownMenuItem

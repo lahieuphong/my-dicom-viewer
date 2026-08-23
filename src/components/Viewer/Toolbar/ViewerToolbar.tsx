@@ -21,6 +21,9 @@ interface ToolbarProps {
   isInverted: boolean;
   canInvert: boolean;
   onToggleInvert: () => void;
+  isImageSliceSyncEnabled: boolean;
+  canImageSliceSync: boolean;
+  onToggleImageSliceSync: () => void;
   canCalibrate: boolean;
   onOpenDicomTagBrowser: () => void;
 
@@ -44,6 +47,9 @@ export default function Toolbar({
   isInverted,
   canInvert,
   onToggleInvert,
+  isImageSliceSyncEnabled,
+  canImageSliceSync,
+  onToggleImageSliceSync,
   canCalibrate,
   onOpenDicomTagBrowser,
   isCineOpen,
@@ -87,6 +93,9 @@ export default function Toolbar({
       case 'invert':
         closeCineForNonCineAction();
         onToggleInvert();
+        return;
+      case 'imageSliceSync':
+        onToggleImageSliceSync();
         return;
       case 'probe':
         selectNonCineTool('probe');
@@ -186,7 +195,9 @@ export default function Toolbar({
             activeTool={activeTool}
             isCineOpen={isCineOpen}
             isInverted={isInverted}
+            isImageSliceSyncEnabled={isImageSliceSyncEnabled}
             canInvert={canInvert}
+            canImageSliceSync={canImageSliceSync}
             canCalibrate={canCalibrate}
             onSelectItem={handleOtherItemSelect}
             readOnly={isSeriesSR}
