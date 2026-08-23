@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import type { RenderingEngine, StackViewport } from '@cornerstonejs/core';
 
 import { fitViewportToElement } from '@/lib/viewer/fitViewport';
+import { isViewportCameraUserModified } from '@/lib/viewer/viewportCameraInteraction';
 
 type RenderingEngineRef = MutableRefObject<RenderingEngine | null>;
 
@@ -17,11 +18,19 @@ type UseViewportAutoFitOnResizeArgs = {
 };
 
 const VIEWER_GRID_SELECTOR = '.viewer-workspace-grid';
+const VIEWPORT_GRID_SELECTOR = '[data-viewport-grid]';
 const RESIZE_SETTLE_DELAY_MS = 80;
 
 function isPanelResizeActive(viewportEl: HTMLElement) {
   const grid = viewportEl.closest<HTMLElement>(VIEWER_GRID_SELECTOR);
   return grid?.dataset.panelResizing === 'true';
+}
+
+function getViewportGridLayout(viewportEl: HTMLElement) {
+  return (
+    viewportEl.closest<HTMLElement>(VIEWPORT_GRID_SELECTOR)?.dataset.layout ??
+    '1x1'
+  );
 }
 
 export function useViewportAutoFitOnResize({
@@ -36,6 +45,7 @@ export function useViewportAutoFitOnResize({
   const trailingTimerRef = useRef<number | null>(null);
   const forceNextFitRef = useRef(false);
   const lastSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const lastGridLayoutRef = useRef<string | null>(null);
   const panelResizePendingRef = useRef(false);
 
   const fitViewport = useCallback(() => {
@@ -55,11 +65,18 @@ export function useViewportAutoFitOnResize({
     const height = Math.round(viewportEl.clientHeight);
     if (width <= 0 || height <= 0) return;
 
+    const gridLayout = getViewportGridLayout(viewportEl);
+    const layoutChanged =
+      lastGridLayoutRef.current !== null &&
+      lastGridLayoutRef.current !== gridLayout;
+    lastGridLayoutRef.current = gridLayout;
+
     const previousSize = lastSizeRef.current;
     const forceFit = forceNextFitRef.current;
     forceNextFitRef.current = false;
     if (
       !forceFit &&
+      !layoutChanged &&
       previousSize?.width === width &&
       previousSize?.height === height
     ) {
@@ -73,6 +90,10 @@ export function useViewportAutoFitOnResize({
       viewport: viewportInstance,
       viewportId,
       previousSize,
+      mode:
+        layoutChanged && !isViewportCameraUserModified(viewportEl)
+          ? 'fit-image'
+          : 'preserve-camera',
     });
     panelResizePendingRef.current = false;
   }, [enabled, renderingEngineRef, viewportEl, viewportId, viewportInstance]);
@@ -112,6 +133,9 @@ export function useViewportAutoFitOnResize({
   useEffect(() => {
     if (!enabled || !viewportEl || !viewportInstance) return;
 
+    if (lastGridLayoutRef.current === null) {
+      lastGridLayoutRef.current = getViewportGridLayout(viewportEl);
+    }
     scheduleFit();
 
     const gridEl = viewportEl.closest<HTMLElement>(VIEWER_GRID_SELECTOR);

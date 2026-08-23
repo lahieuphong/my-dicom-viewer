@@ -7,6 +7,7 @@ import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
 type ViewPresentation = ReturnType<StackViewport['getViewPresentation']>;
 type ViewportCamera = ReturnType<StackViewport['getCamera']>;
 type ViewportSize = { width: number; height: number };
+export type ViewportResizeMode = 'preserve-camera' | 'fit-image';
 
 const IMAGE_RENDERED_EVENT = 'CORNERSTONE_IMAGE_RENDERED';
 const RESIZE_SNAPSHOT_SELECTOR = '[data-viewer-resize-snapshot="true"]';
@@ -126,12 +127,14 @@ export function fitViewportToElement({
   viewport,
   viewportId,
   previousSize = null,
+  mode = 'preserve-camera',
 }: {
   element: HTMLElement | null;
   engine: RenderingEngine | null;
   viewport: StackViewport | null;
   viewportId: string;
   previousSize?: ViewportSize | null;
+  mode?: ViewportResizeMode;
 }) {
   if (!element || !viewport) return;
 
@@ -183,7 +186,13 @@ export function fitViewportToElement({
   if (!engine) {
     try {
       viewport.resetCameraForResize?.();
-      if (!restoreCamera(viewport, resizedCamera)) {
+      if (mode === 'fit-image') {
+        viewport.resetCamera({
+          resetPan: true,
+          resetZoom: true,
+          resetToCenter: true,
+        });
+      } else if (!restoreCamera(viewport, resizedCamera)) {
         restorePresentation(viewport, presentation);
       }
       viewport.render?.();
@@ -194,10 +203,17 @@ export function fitViewportToElement({
   }
 
   try {
-    // Resize establishes the new fit camera; the absolute camera then keeps the
-    // frame seen during the drag instead of reapplying a relative zoom value.
-    engine.resize(false, false);
-    if (!restoreCamera(viewport, resizedCamera)) {
+    // Resize all backing canvases without resetting sibling cameras. The
+    // requested viewport is then either fitted to its new grid cell or given
+    // the absolute camera that preserves a deliberate user pan/zoom.
+    engine.resize(true, true);
+    if (mode === 'fit-image') {
+      viewport.resetCamera({
+        resetPan: true,
+        resetZoom: true,
+        resetToCenter: true,
+      });
+    } else if (!restoreCamera(viewport, resizedCamera)) {
       restorePresentation(viewport, presentation);
     }
     engine.renderViewport(viewportId);

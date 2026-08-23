@@ -23,6 +23,7 @@ import { useStackPrefetch } from '@/hooks/useStackPrefetch';
 import type { ToolID } from '@/hooks/useToolManager';
 import { useViewerPanelResize } from '@/hooks/useViewerPanelResize';
 import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
+import { clearViewportCameraUserModified } from '@/lib/viewer/viewportCameraInteraction';
 
 import { MeasurementPanel } from '@/components/Viewer/Measurement';
 import { SeriesSidebar } from '@/components/Viewer/Series';
@@ -304,6 +305,7 @@ export default function ViewerWorkspace({
 
   const resetActiveViewport = useCallback(() => {
     if (activeViewportId === VIEWPORT_ID || !activeStackViewport) {
+      clearViewportCameraUserModified(toolbarViewportEl);
       onReset();
       return;
     }
@@ -323,10 +325,13 @@ export default function ViewerWorkspace({
         flipHorizontal: false,
         flipVertical: false,
       });
+      clearViewportCameraUserModified(
+        activeStackViewport.element as HTMLElement | null
+      );
       activeStackViewport.render();
       setActiveSecondaryInverted(false);
     } catch {}
-  }, [activeStackViewport, activeViewportId, onReset]);
+  }, [activeStackViewport, activeViewportId, onReset, toolbarViewportEl]);
 
   const rotateActiveViewport = useCallback(() => {
     if (activeViewportId === VIEWPORT_ID || !activeStackViewport) {
