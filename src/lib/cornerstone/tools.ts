@@ -28,6 +28,10 @@ import { ensureStackScrollWheelActive } from './stackScroll';
 import { configureMeasurementToolGroupStyles } from './measurementStyles';
 import { CalibrationLineTool } from './calibration';
 import { configureAdvancedMagnifyToolGroup } from './advancedMagnify';
+import {
+  WindowLevelRegionTool,
+  configureWindowLevelRegionToolGroup,
+} from './windowLevelRegion';
 
 const TOOL_GROUP_ID = 'toolGroup';
 
@@ -89,6 +93,7 @@ export function registerToolsOnce(): void {
       ZoomTool,
       MagnifyTool,
       AdvancedMagnifyTool,
+      WindowLevelRegionTool,
       LengthTool,
       BidirectionalTool,
       ArrowAnnotateTool,
@@ -165,6 +170,7 @@ export function registerToolsOnce(): void {
 
         configureMeasurementToolGroupStyles(TOOL_GROUP_ID);
         configureAdvancedMagnifyToolGroup(TOOL_GROUP_ID);
+        configureWindowLevelRegionToolGroup(TOOL_GROUP_ID);
       }
     } catch (e) {
       // swallow additions errors

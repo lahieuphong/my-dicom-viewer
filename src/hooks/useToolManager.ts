@@ -30,6 +30,7 @@ import { TOOL_GROUP } from '@/constants/toolgroup';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 import { CalibrationLineTool } from '@/lib/cornerstone/calibration';
+import { WindowLevelRegionTool } from '@/lib/cornerstone/windowLevelRegion';
 import {
   registerToolsOnce,
 } from '@/lib/cornerstone/tools';
@@ -40,6 +41,7 @@ export type ToolID =
   | 'zoom'
   | 'magnify'
   | 'advancedMagnify'
+  | 'windowLevelRegion'
   | 'calibrationLine'
   | 'length'
   | 'bidirectional'
@@ -66,6 +68,7 @@ export const toolNameMap: Record<ToolID, string> = {
   zoom: ZoomTool.toolName,
   magnify: MagnifyTool.toolName,
   advancedMagnify: AdvancedMagnifyTool.toolName,
+  windowLevelRegion: WindowLevelRegionTool.toolName,
   calibrationLine: CalibrationLineTool.toolName,
   length: LengthTool.toolName,
   bidirectional: BidirectionalTool.toolName,
@@ -104,6 +107,7 @@ export const measurementToolIDs: ToolID[] = [
 export const readOnlyBlockedToolIDs: ToolID[] = [
   ...measurementToolIDs,
   'advancedMagnify',
+  'windowLevelRegion',
   'calibrationLine',
 ];
 
@@ -113,6 +117,7 @@ const CORNERSTONE_TOOL_NAMES = [
   ZoomTool.toolName,
   MagnifyTool.toolName,
   AdvancedMagnifyTool.toolName,
+  WindowLevelRegionTool.toolName,
   LengthTool.toolName,
   BidirectionalTool.toolName,
   ArrowAnnotateTool.toolName,
@@ -138,6 +143,7 @@ const TOOL_CLASS_MAP: Partial<Record<ToolID, any>> = {
   zoom: ZoomTool,
   magnify: MagnifyTool,
   advancedMagnify: AdvancedMagnifyTool,
+  windowLevelRegion: WindowLevelRegionTool,
   length: LengthTool,
   bidirectional: BidirectionalTool,
   arrowAnnotate: ArrowAnnotateTool,

@@ -75,7 +75,10 @@ export default function Toolbar({
           cancelActiveAnnotationInteraction(viewportEl);
           // Calibration is a transient, image-specific mode. Do not leave it
           // bound to primary drag while Cine advances through other images.
-          if (activeTool === 'calibrationLine') {
+          if (
+            activeTool === 'calibrationLine' ||
+            activeTool === 'windowLevelRegion'
+          ) {
             onSelectTool('adjust');
           }
         }
@@ -99,6 +102,9 @@ export default function Toolbar({
         return;
       case 'advancedMagnify':
         selectNonCineTool('advancedMagnify');
+        return;
+      case 'windowLevelRegion':
+        selectNonCineTool('windowLevelRegion');
         return;
       case 'calibrationLine':
         selectNonCineTool('calibrationLine');

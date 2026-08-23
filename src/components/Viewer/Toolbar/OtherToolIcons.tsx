@@ -124,3 +124,34 @@ export function CalibrationIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+/** Decorative icon for OHIF's transient Window Level Region tool. */
+export function WindowLevelRegionIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      focusable="false"
+      {...props}
+    >
+      <path
+        d="M4.5 18.5v-13h13v8"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle
+        cx="17.25"
+        cy="17.25"
+        r="4.25"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M17.25 13a4.25 4.25 0 0 0 0 8.5V13Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}

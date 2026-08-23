@@ -17,6 +17,7 @@ import {
   CobbAngleIcon,
   InvertIcon,
   ProbeIcon,
+  WindowLevelRegionIcon,
 } from './OtherToolIcons';
 
 export const OTHER_TOOL_IDS = [
@@ -25,6 +26,7 @@ export const OTHER_TOOL_IDS = [
   'cobbAngle',
   'magnify',
   'advancedMagnify',
+  'windowLevelRegion',
   'calibrationLine',
   'rotate90',
   'flipHorizontal',
@@ -122,6 +124,15 @@ export const OTHER_TOOL_DEFINITIONS = {
     kind: 'mouse-tool',
     disabledForSR: true,
   },
+  windowLevelRegion: {
+    id: 'windowLevelRegion',
+    menuLabel: 'Window Level Region',
+    label: 'Điều chỉnh Window Level theo vùng',
+    detail: 'Window Level Region Tool',
+    Icon: WindowLevelRegionIcon,
+    kind: 'mouse-tool',
+    disabledForSR: true,
+  },
   calibrationLine: {
     id: 'calibrationLine',
     menuLabel: 'Calibration',
@@ -183,6 +194,7 @@ export const OTHER_TOOL_ITEMS: readonly OtherToolDefinition[] = [
   OTHER_TOOL_DEFINITIONS.calibrationLine,
   OTHER_TOOL_DEFINITIONS.dicomTagBrowser,
   OTHER_TOOL_DEFINITIONS.advancedMagnify,
+  OTHER_TOOL_DEFINITIONS.windowLevelRegion,
 ];
 
 export function isOtherTool(tool: ToolID): tool is OtherToolID {
