@@ -47,9 +47,11 @@ yarn start
 
 ## DICOM Files
 
-Place local `.dcm` files in `public/dicoms/`.
+Use `public/dicoms/` only for reviewed, de-identified sample DICOM files that are approved for public distribution.
 
-This folder is ignored by Git to avoid committing medical image data.
+**Privacy warning:** This directory is **not ignored by Git**: `.gitignore` explicitly allows files under `public/dicoms/` to be tracked for an approved public demo dataset. Files committed under `public/` may be served as public static assets. Never place private patient data or other sensitive medical images there. Keep clinical datasets outside the repository and serve them through an access-controlled PACS/backend instead.
+
+The generated `public/dicom-manifest.json` is ignored by Git. Review any demo metadata before publishing or deploying it.
 
 For local sample data, generate the static metadata manifest before running the
 viewer:
