@@ -9,6 +9,7 @@ import {
   PRIMARY_VIEWPORT_ID,
   RENDERER_ID,
   SECONDARY_VIEWPORT_ID,
+  imageIndexExpression,
   openSplitLayout,
   paneStatesExpression,
   runRegression,
@@ -20,13 +21,6 @@ const CARD_SELECTOR = '[role="button"][data-annotation-uid]';
 const secondaryElement = `document.querySelector(
   '[data-viewport-role="content"][data-viewport-uid="${SECONDARY_VIEWPORT_ID}"]'
 )`;
-
-function imageIndexExpression(viewportId) {
-  return `window.__cornerstoneCore
-    ?.getRenderingEngine?.('${RENDERER_ID}')
-    ?.getViewport?.('${viewportId}')
-    ?.getCurrentImageIdIndex?.()`;
-}
 
 async function selectLengthTool(page) {
   const item = '[role="menuitem"][data-tool-id="length"]';

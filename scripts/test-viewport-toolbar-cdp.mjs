@@ -5,11 +5,13 @@
 // view, for the primary pane as well as for a secondary pane.
 
 import {
-  MENU_READY_EXPRESSION,
   PRIMARY_VIEWPORT_ID,
   RENDERER_ID,
   SECONDARY_VIEWPORT_ID,
+  activatePane,
   openSplitLayout,
+  readOtherItemChecked,
+  runOtherAction,
   runRegression,
 } from './lib/cdp-harness.mjs';
 
@@ -35,35 +37,6 @@ const viewStatesExpression = `(() => {
     }];
   }));
 })()`;
-
-async function activatePane(page, viewportId) {
-  const pane = `document.querySelector('[data-viewport-pane="${viewportId}"]')`;
-  // A click without movement does not change the Window/Level of the
-  // default adjust tool; the pane becomes active on pointerdown.
-  await page.click(await page.center(pane, { x: 0.5, y: 0.5 }));
-  await page.waitFor(
-    `${pane}?.hasAttribute('data-active-viewport') === true`,
-    `${viewportId} to become the active pane`
-  );
-}
-
-async function runOtherAction(page, itemId) {
-  const menu = '[data-testid="other-tools-menu"]';
-  const item = `${menu} [data-other-item="${itemId}"]`;
-  await page.click(
-    await page.center(`document.querySelector('[data-testid="other-tools-trigger"]')`)
-  );
-  await page.waitFor(
-    `(() => {
-      const element = document.querySelector('${item}');
-      return Boolean(element) && element.getAttribute('aria-disabled') !== 'true';
-    })()`,
-    `enabled ${itemId} item in the Other menu`
-  );
-  await page.evaluate(MENU_READY_EXPRESSION);
-  await page.click(await page.center(`document.querySelector('${item}')`));
-  await page.waitFor(`!document.querySelector('${menu}')`, `Other menu to close after ${itemId}`);
-}
 
 function describeView(view) {
   return JSON.stringify(view);
@@ -120,20 +93,7 @@ await runRegression('test:viewer:toolbar-actions', async (page) => {
     [PRIMARY_VIEWPORT_ID]: untouched,
     [SECONDARY_VIEWPORT_ID]: { invert: true },
   });
-  const invertChecked = await page.evaluate(`(async () => {
-    document.querySelector('[data-testid="other-tools-trigger"]')
-      ?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
-    await ${MENU_READY_EXPRESSION};
-    const checked = document
-      .querySelector('[data-testid="other-tools-menu"] [data-other-item="invert"]')
-      ?.getAttribute('aria-checked');
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    return checked;
-  })()`);
-  await page.waitFor(
-    `!document.querySelector('[data-testid="other-tools-menu"]')`,
-    'Other menu to close after reading the Invert state'
-  );
+  const invertChecked = await readOtherItemChecked(page, 'invert');
   if (invertChecked !== 'true') {
     failures.push(`Invert menu item shows ${invertChecked} for inverted pane B`);
   }
