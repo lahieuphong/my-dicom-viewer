@@ -21,6 +21,7 @@ import { DEFAULT_STUDY_UID, delay } from './lib/cdp-harness.mjs';
 const REGRESSIONS = [
   { name: 'invert', script: 'test-invert-cdp.mjs' },
   { name: 'resize', script: 'test-viewport-resize-cdp.mjs' },
+  { name: 'layout', script: 'test-viewport-layout-cdp.mjs' },
   { name: 'measurement-navigation', script: 'test-viewport-measurement-cdp.mjs' },
   { name: 'sr-workflow', script: 'debug-viewer-cdp.mjs' },
   { name: 'sr-tools', script: 'test-all-sr-tools-cdp.mjs' },

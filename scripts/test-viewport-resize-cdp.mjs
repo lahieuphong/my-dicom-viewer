@@ -13,6 +13,7 @@ import {
   paneStatesExpression,
   panesReadyExpression,
   runRegression,
+  waitForResizeSnapshotsReleased,
 } from './lib/cdp-harness.mjs';
 
 const DRAG_DISTANCE_PX = 120;
@@ -86,11 +87,10 @@ await runRegression('test:viewer:resize', async (page) => {
     diagnostic: panes,
   });
   const after = await page.evaluate(panes);
-  const afterDrag = await page.evaluate(`({
-    probe: { ...window.__viewerResizeProbe },
-    leftoverSnapshots:
-      document.querySelectorAll('[data-viewer-resize-snapshot="true"]').length,
-  })`);
+  const afterDrag = {
+    probe: await page.evaluate('({ ...window.__viewerResizeProbe })'),
+    leftoverSnapshots: await waitForResizeSnapshotsReleased(page),
+  };
 
   const failures = [];
   if (midDrag.panelResizing !== 'true') {

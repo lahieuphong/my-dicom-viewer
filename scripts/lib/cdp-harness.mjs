@@ -12,6 +12,35 @@ export const SECONDARY_VIEWPORT_ID = 'WORKSTATION_VIEWPORT_2';
 export const delay = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+/**
+ * Page expression that resolves once an opened Radix menu or popover can be
+ * clicked reliably:
+ * - Radix registers the outside-pointerdown listener in a setTimeout(0) after
+ *   mount while body pointer events are already disabled, and Chrome runs
+ *   input before timers. Two frames plus one timer tick (equal-delay timers
+ *   run in FIFO order) guarantee the listener exists.
+ * - Menus open with a zoom-in-95 animation. A centre measured mid-animation
+ *   lands on the previous item once the menu reaches full size, so wait for
+ *   every finite animation inside a popper to finish before measuring.
+ */
+export const MENU_READY_EXPRESSION = `(async () => {
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+    });
+  });
+  const animations = document.getAnimations().filter((animation) => {
+    const target = animation.effect?.target;
+    const iterations = animation.effect?.getComputedTiming?.().iterations;
+    return (
+      target instanceof Element &&
+      Boolean(target.closest('[data-radix-popper-content-wrapper]')) &&
+      Number.isFinite(iterations)
+    );
+  });
+  await Promise.all(animations.map((animation) => animation.finished.catch(() => {})));
+})()`;
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -235,15 +264,7 @@ export async function openViewerPage({
     await mouse('mouseReleased', end, 0);
   };
 
-  // Radix registers a menu's outside-pointerdown listener in a setTimeout(0)
-  // after mount while body pointer events are already disabled; Chrome runs
-  // input before timers. Two frames plus one timer tick guarantee it exists.
-  const waitForMenuInteractive = () =>
-    evaluate(`new Promise((resolve) => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setTimeout(resolve, 0));
-      });
-    })`);
+  const waitForMenuInteractive = () => evaluate(MENU_READY_EXPRESSION);
 
   const close = async () => {
     if (socket.readyState === WebSocket.OPEN) {
@@ -327,9 +348,29 @@ export function panesReadyExpression(viewportIds) {
   })()`;
 }
 
-/** Waits for the primary pane, then switches the grid to one row, two columns. */
-export async function openSplitLayout(page) {
-  const viewportIds = [PRIMARY_VIEWPORT_ID, SECONDARY_VIEWPORT_ID];
+/**
+ * Resize snapshots are transient: each is released after the next render of
+ * its pane (500 ms at the latest) plus two frames. Wait for them instead of
+ * sampling once; returns the snapshots still present after `timeoutMs`.
+ */
+export async function waitForResizeSnapshotsReleased(page, timeoutMs = 3000) {
+  const count = `document.querySelectorAll('[data-viewer-resize-snapshot="true"]').length`;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if ((await page.evaluate(count)) === 0) return 0;
+    await delay(100);
+  }
+  return page.evaluate(count);
+}
+
+/** Viewport IDs of a rows x columns grid, matching getViewportIdAt(). */
+export function gridViewportIds(rows, columns) {
+  return Array.from({ length: rows * columns }, (_, index) =>
+    index === 0 ? PRIMARY_VIEWPORT_ID : `${PRIMARY_VIEWPORT_ID}_${index + 1}`
+  );
+}
+
+export async function waitForPrimaryViewport(page) {
   await page.waitFor(
     `document.readyState === 'complete' &&
       Boolean(document.querySelector('[data-testid="viewport-layout-trigger"]')) &&
@@ -337,17 +378,25 @@ export async function openSplitLayout(page) {
     'primary viewport to render',
     { timeoutMs: 60000 }
   );
+}
 
+/**
+ * Applies a preset from the toolbar layout popover and waits until every
+ * pane rendered and the layout-change settling passes (up to 1.2 s) ended.
+ */
+export async function applyLayoutPreset(page, rows, columns) {
+  const viewportIds = gridViewportIds(rows, columns);
   await page.click(
     await page.center(
       `document.querySelector('[data-testid="viewport-layout-trigger"]')`
     )
   );
   const presetSelector =
-    '[data-testid="viewport-layout-popover"] button[aria-label="Bố cục 1 hàng 2 cột"]';
+    `[data-testid="viewport-layout-popover"] ` +
+    `button[aria-label="Bố cục ${rows} hàng ${columns} cột"]`;
   await page.waitFor(
     `Boolean(document.querySelector(${JSON.stringify(presetSelector)}))`,
-    '1 x 2 layout preset'
+    `${rows} x ${columns} layout preset`
   );
   await page.waitForMenuInteractive();
   await page.click(
@@ -355,16 +404,21 @@ export async function openSplitLayout(page) {
   );
   await page.waitFor(
     panesReadyExpression(viewportIds),
-    'both panes to render in 1 x 2',
+    `every pane to render in ${rows} x ${columns}`,
     { timeoutMs: 60000, diagnostic: paneStatesExpression(viewportIds) }
   );
 
-  // Let the layout-change settling passes (up to 1.2 s) finish first.
   await delay(1800);
   await page.waitFor(
     panesReadyExpression(viewportIds),
-    'panes to settle after the layout change',
+    `panes to settle after switching to ${rows} x ${columns}`,
     { diagnostic: paneStatesExpression(viewportIds) }
   );
   return viewportIds;
+}
+
+/** Waits for the primary pane, then switches the grid to one row, two columns. */
+export async function openSplitLayout(page) {
+  await waitForPrimaryViewport(page);
+  return applyLayoutPreset(page, 1, 2);
 }

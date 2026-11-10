@@ -66,6 +66,7 @@ export function useViewportGridResize({
     let containerResizePending = false;
     let firstFitFrame: number | null = null;
     let secondFitFrame: number | null = null;
+    let layoutFitTimer: number | null = null;
     let layoutFitCompleted = false;
     const retryTimers = new Set<number>();
 
@@ -166,18 +167,25 @@ export function useViewportGridResize({
       if (
         layoutFitCompleted ||
         firstFitFrame !== null ||
-        secondFitFrame !== null
+        secondFitFrame !== null ||
+        layoutFitTimer !== null
       ) {
         return;
       }
 
       // Two frames ensure the browser has committed the new grid tracks before
-      // Cornerstone measures the viewport elements.
+      // Cornerstone measures the viewport elements. The fit itself runs in a
+      // task: resizing clears every canvas and Cornerstone redraws on the next
+      // animation frame, which a resize inside rAF would only reach after the
+      // browser painted the cleared canvases.
       firstFitFrame = window.requestAnimationFrame(() => {
         firstFitFrame = null;
         secondFitFrame = window.requestAnimationFrame(() => {
           secondFitFrame = null;
-          layoutFitCompleted = fitGridToCurrentLayout();
+          layoutFitTimer = window.setTimeout(() => {
+            layoutFitTimer = null;
+            layoutFitCompleted = fitGridToCurrentLayout();
+          }, 0);
         });
       });
     };
@@ -261,6 +269,7 @@ export function useViewportGridResize({
         CoreEnums.Events.IMAGE_RENDERED,
         handlePrimaryImageRendered
       );
+      if (layoutFitTimer !== null) window.clearTimeout(layoutFitTimer);
       if (firstFitFrame !== null) window.cancelAnimationFrame(firstFitFrame);
       if (secondFitFrame !== null) window.cancelAnimationFrame(secondFitFrame);
       retryTimers.forEach((timer) => window.clearTimeout(timer));

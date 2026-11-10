@@ -311,15 +311,17 @@ export function fitViewportToElement({
   // painted once before Cornerstone renders into it. Sibling panes in a split
   // layout share the engine resize below and need the same frame protection
   // and visible-frame camera as the primary pane.
-  const siblingPlans = planVisibleFrames(
-    getContentViewports(engine, { requireImage: true }).filter(
-      (entry) => entry.element !== element && entry.viewportId !== viewportId
-    )
+  const siblings = getContentViewports(engine, { requireImage: true }).filter(
+    (entry) => entry.element !== element && entry.viewportId !== viewportId
   );
+  const needsResize = contentCanvasesNeedResize(engine);
+  const siblingPlans = planVisibleFrames(siblings);
   const handleImageRendered = holdFrameUntilRendered(element);
-  const releaseSiblingFrames = siblingPlans.map((plan) =>
-    holdFrameUntilRendered(plan.element)
-  );
+  // engine.resize() clears every canvas, including panes whose size did not
+  // change, so every sibling with an image needs its frame held.
+  const releaseSiblingFrames = needsResize
+    ? siblings.map((sibling) => holdFrameUntilRendered(sibling.element))
+    : [];
   const releaseAllFrames = () => {
     handleImageRendered();
     releaseSiblingFrames.forEach((release) => release());
@@ -351,7 +353,7 @@ export function fitViewportToElement({
     // when one is out of date: every resize clears every canvas. The requested
     // viewport is then either fitted to its new grid cell or given the camera
     // that preserves a deliberate user pan/zoom.
-    if (contentCanvasesNeedResize(engine)) engine.resize(true, true);
+    if (needsResize) engine.resize(true, true);
     for (const plan of siblingPlans) restoreCamera(plan.viewport, plan.camera);
     if (mode === 'fit-image') {
       viewport.resetCamera({
