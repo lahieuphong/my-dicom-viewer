@@ -454,13 +454,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const imageAvailable = Boolean(hookImageReady) || Boolean(enabledHasImage) || Boolean(runtimeHasImage) || Boolean(viewportRenderedSignal);
 
-  // When any indicates ready, hide loading overlay
-  useEffect(() => {
-    if (imageAvailable) {
-      setLoadingStackSafe(false);
-    }
-  }, [imageAvailable, setLoadingStackSafe]);
-
 
   const rotate = useRotate(viewportInstance);
   const flipHorizontal = useFlipHorizontal(renderingEngineRef, viewportId);
@@ -514,7 +507,16 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     }
 
     let cancelled = false;
-    let finalTimer: number | null = null;
+    // Every settle timer this attach flow schedules, so cleanup cancels all of
+    // them; a single handle was overwritten and lost the earlier timer.
+    const settleTimers = new Set<number>();
+    const scheduleSettle = (callback: () => void, delayMs: number) => {
+      const timer = window.setTimeout(() => {
+        settleTimers.delete(timer);
+        callback();
+      }, delayMs);
+      settleTimers.add(timer);
+    };
     const thisSession = (currentAttachSessionRef.current = (currentAttachSessionRef.current || 0) + 1);
 
     async function attachSelectedSeries() {
@@ -740,7 +742,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
           // mark progress as complete (100%) only when attach flow is done/settled
           setLoadingProgress(100);
           // small delay so overlay shows 100% then hide
-          finalTimer = window.setTimeout(() => {
+          scheduleSettle(() => {
             try {
               if (!shouldAbort()) {
                 setLoadingStackSafe(false);
@@ -750,7 +752,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
           }, 350); // 350ms để overlay hiển thị 100% trước khi ẩn (giống behavior cũ)
         } catch (e) {
           // fallback: still ensure flags cleared
-          finalTimer = window.setTimeout(() => {
+          scheduleSettle(() => {
             try {
               if (!shouldAbort()) {
                 setLoadingStackSafe(false);
@@ -764,7 +766,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       } finally {
         if (!shouldAbort()) {
           try {
-            finalTimer = window.setTimeout(() => {
+            scheduleSettle(() => {
               try {
                 if (!shouldAbort()) {
                   setLoadingStackSafe(false);
@@ -794,10 +796,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       clearTimeout(kickTimer);
       currentAttachSessionRef.current = (currentAttachSessionRef.current || 0) + 1;
       try { disableReleaseGraphicsResourcesGlobally(); } catch {}
-      if (finalTimer != null) {
-        try { clearTimeout(finalTimer); } catch {}
-        finalTimer = null;
-      }
+      settleTimers.forEach((timer) => window.clearTimeout(timer));
+      settleTimers.clear();
     };
     // Only re-run when selectedSeries or viewportReady (and some stable dependencies) change.
     // Avoid including volatile refs like viewportInstance/viewportEl to reduce spurrious retriggers.
