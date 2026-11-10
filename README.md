@@ -36,7 +36,13 @@ headless Chrome itself (`CHROME_PATH` overrides the Chrome binary):
 ```bash
 yarn test:cdp                         # all regressions
 yarn test:cdp --only resize,sr-tools  # a subset; --list shows the names
+yarn test:cdp --gpu                   # Chrome on the hardware GPU
 ```
+
+The started Chrome uses SwiftShader (software WebGL) by default so the suite
+also runs without a GPU, e.g. in CI. `--gpu` is about three times faster and
+closer to what users run; timing races that the slow SwiftShader path hides
+show up there, so run both before relying on a viewer change.
 
 Before a production/Vercel build, run:
 

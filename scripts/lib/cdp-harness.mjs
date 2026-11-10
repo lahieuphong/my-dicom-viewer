@@ -276,6 +276,8 @@ export async function openViewerPage({
 
   return {
     runtimeErrors,
+    /** Raw CDP command on the page session (e.g. Page.reload). */
+    cdp: (method, params = {}) => send(method, params, sessionId),
     evaluate,
     waitFor,
     center,

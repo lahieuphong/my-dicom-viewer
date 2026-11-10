@@ -3,12 +3,18 @@
 //   yarn test:cdp                         run all regressions
 //   yarn test:cdp --only resize,sr-tools  run a subset
 //   yarn test:cdp --list                  list regression names
+//   yarn test:cdp --gpu                   start Chrome on the hardware GPU
 //
 // A viewer already listening on VIEWER_ORIGIN and a Chrome already exposing
 // CDP_ORIGIN are reused. Otherwise this script starts `next dev --webpack`
 // and a headless Chrome (CHROME_PATH overrides the binary), and stops
 // whatever it started when it exits. Per-regression logs are kept in a
 // temporary directory and printed for failures.
+//
+// Chrome renders WebGL with SwiftShader by default, which works without a
+// GPU (e.g. in CI) but loads and renders far slower. --gpu uses the hardware
+// GPU instead: about 3x faster, and closer to what users run, so timing races
+// that SwiftShader hides surface. Run both before relying on a change.
 
 import { spawn } from 'node:child_process';
 import { createWriteStream, existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -45,6 +51,7 @@ const cdpOrigin = process.env.CDP_ORIGIN ?? 'http://127.0.0.1:9222';
 const viewerUrl = `${viewerOrigin}/viewer?StudyInstanceUIDs=${
   process.env.STUDY_INSTANCE_UID ?? DEFAULT_STUDY_UID
 }`;
+const useHardwareGpu = process.argv.includes('--gpu');
 const logDir = mkdtempSync(path.join(tmpdir(), 'viewer-cdp-'));
 const started = [];
 
@@ -169,7 +176,9 @@ async function ensureViewer() {
 }
 
 async function ensureChrome() {
-  if (await isReachable(`${cdpOrigin}/json/version`)) return 'reused';
+  if (await isReachable(`${cdpOrigin}/json/version`)) {
+    return useHardwareGpu ? 'reused; --gpu has no effect on it' : 'reused';
+  }
   const { port } = new URL(cdpOrigin);
   const profileDir = mkdtempSync(path.join(tmpdir(), 'viewer-cdp-chrome-'));
   const child = startProcess(
@@ -182,14 +191,15 @@ async function ensureChrome() {
       '--no-first-run',
       '--no-default-browser-check',
       '--window-size=1600,1000',
-      '--use-angle=swiftshader',
-      '--enable-unsafe-swiftshader',
+      ...(useHardwareGpu
+        ? []
+        : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']),
       'about:blank',
     ],
     { cleanupPaths: [profileDir] }
   );
   await waitUntilReachable(`${cdpOrigin}/json/version`, 'Chrome', 30000, child);
-  return 'started';
+  return useHardwareGpu ? 'started on the hardware GPU' : 'started with SwiftShader';
 }
 
 function runRegressionScript({ name, script, env = {} }) {
