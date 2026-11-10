@@ -238,16 +238,28 @@ function runRegressionScript({ name, script, env = {} }) {
   });
 }
 
-async function printLogTail(logPath, lines = 25) {
+async function printLogTail(name, logPath, lines = 25) {
   const { readFile } = await import('node:fs/promises');
   const text = await readFile(logPath, 'utf8').catch(() => '');
+  const logLines = text.split('\n');
   console.log(
-    text
-      .split('\n')
+    logLines
       .slice(-lines)
       .map((line) => `    ${line.slice(0, 400)}`)
       .join('\n')
   );
+
+  // On GitHub Actions, surface the failure as an annotation: job logs need
+  // admin rights to download, annotations are visible to every reader.
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    const errorIndex = logLines.findIndex((line) => /\bError\b|Timed out|Timeout:/.test(line));
+    const message = (errorIndex >= 0 ? logLines.slice(errorIndex, errorIndex + 4) : logLines.slice(-6))
+      .join('\n')
+      .slice(0, 1500);
+    const escape = (value) =>
+      value.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+    console.log(`::error title=CDP regression ${name} failed::${escape(message)}`);
+  }
 }
 
 function stopStartedProcesses() {
@@ -291,7 +303,7 @@ try {
       `${result.code === 0 ? 'passed' : `FAILED (exit ${result.code})`} ` +
         `in ${result.seconds.toFixed(1)}s`
     );
-    if (result.code !== 0) await printLogTail(result.logPath);
+    if (result.code !== 0) await printLogTail(result.name, result.logPath);
   }
 
   const failed = results.filter(({ code }) => code !== 0);
