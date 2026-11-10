@@ -256,8 +256,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
               const vpIds = viewportInstance.getImageIds?.() ?? [];
               if (Array.isArray(vpIds) && vpIds[idx]) currentImageId = vpIds[idx];
             }
-          } else if (viewportInstance && (viewportInstance as any).image && typeof (viewportInstance as any).image.imageId === 'string') {
-            currentImageId = (viewportInstance as any).image.imageId;
           }
         } catch {}
 
@@ -265,9 +263,7 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
           try {
             const en = getEnabledElementSafeLocal(viewportEl as HTMLDivElement | null);
             if (en) {
-              if (en.image && typeof en.image.imageId === 'string') {
-                currentImageId = en.image.imageId;
-              } else if (en.viewport && typeof en.viewport.getCurrentImageIdIndex === 'function' && typeof en.viewport.getImageIds === 'function') {
+              if (en.viewport && typeof en.viewport.getCurrentImageIdIndex === 'function' && typeof en.viewport.getImageIds === 'function') {
                 const idx = Number(en.viewport.getCurrentImageIdIndex?.() ?? -1);
                 const ids = en.viewport.getImageIds?.() ?? [];
                 if (idx >= 0 && Array.isArray(ids) && ids[idx]) currentImageId = ids[idx];
@@ -345,33 +341,27 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
     async function tryAttachOrPreload(elToCheck: HTMLElement | null, idxToUse: number): Promise<boolean> {
       try {
         const en = getEnabledElementSafeLocal(elToCheck as HTMLDivElement | null);
-        if (en && (en as any).image) {
-          // enabled element already has image -> attempt to set stack/index on viewport/engine
+        const vp = ((en as any)?.viewport ?? viewportInstance) as any;
+        // Cornerstone 3D enabled elements have no legacy `image` field: the
+        // stack is attached once the viewport shows an image of this stack.
+        // The old `enabled.image` check never passed, so every attach re-ran
+        // setStack for all attempts before a final stack comparison succeeded.
+        let attached = false;
+        try {
+          attached =
+            Boolean(vp?.getCurrentImageId?.()) &&
+            areImageStacksEqual(vp.getImageIds?.() ?? null, imageIds);
+        } catch {}
+        if (attached) {
+          // Move to the requested image without reloading the stack;
+          // StackViewport has setImageIdIndex, not setImageIndex.
           try {
-            const vp = viewportInstance as any;
             const targetIdx = Math.max(0, Math.min(idxToUse, imageIds.length - 1));
-            if (vp) {
-              if (typeof vp.setImageIndex === 'function' || typeof vp.setStack === 'function') {
-                // LOG before set
-
-                try {
-                  if (typeof vp.setImageIndex === 'function') {
-                    await vp.setImageIndex(targetIdx).catch(() => {});
-                  } else if (typeof vp.setStack === 'function') {
-                    await vp.setStack(imageIds, targetIdx).catch(() => {});
-                  }
-                } catch (err) {
-                }
-              }
-            } else {
-              const eng: any = renderingEngineRef?.current;
-              const finalIdx = Math.max(0, Math.min(idxToUse, imageIds.length - 1));
-              if (eng && typeof eng.setStacks === 'function') {
-                try {
-                  eng.setStacks([{ viewportId, imageIds, index: finalIdx }]);
-                } catch (err) {
-                }
-              }
+            if (
+              vp.getCurrentImageIdIndex?.() !== targetIdx &&
+              typeof vp.setImageIdIndex === 'function'
+            ) {
+              await Promise.resolve(vp.setImageIdIndex(targetIdx)).catch(() => {});
             }
           } catch (err) {
           }
@@ -449,45 +439,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
           } catch (err) {
             throw err;
           }
-        } else if (viewportInstance && (typeof viewportInstance.setImageId === 'function' || typeof viewportInstance.setImageIndex === 'function')) {
-          let currentIdx = -1;
-          try {
-            if (typeof viewportInstance.getCurrentImageIdIndex === 'function') {
-              currentIdx = Number(viewportInstance.getCurrentImageIdIndex?.() ?? -1);
-            } else if ((viewportInstance as any).image && typeof (viewportInstance as any).image.imageId === 'string') {
-              const currentImageId = (viewportInstance as any).image.imageId;
-              currentIdx = imageIds.findIndex((id) => String(id) === String(currentImageId));
-            }
-          } catch {}
-
-          const finalIdx = Math.max(0, Math.min(desiredIndex, imageIds.length - 1));
-          const preferIdx = typeof desiredIndex === 'number' && !Number.isNaN(desiredIndex) ? desiredIndex : (currentIdx >= 0 ? currentIdx : finalIdx);
-
-          try {
-            if (typeof viewportInstance.setImageId === 'function') {
-              await viewportInstance.setImageId(imageIds[Math.max(0, Math.min(preferIdx, imageIds.length - 1))]).catch((e: any) => {
-                throw e;
-              });
-            } else if (typeof viewportInstance.setImageIndex === 'function') {
-              await viewportInstance.setImageIndex(preferIdx).catch((e: any) => {
-                throw e;
-              });
-            } else {
-              const eng: any = renderingEngineRef?.current;
-              if (eng && typeof eng.setStacks === 'function') {
-                eng.setStacks([{ viewportId, imageIds, index: preferIdx }]);
-              }
-            }
-          } catch (err) {
-          }
-        } else {
-          const eng: any = renderingEngineRef?.current;
-          if (eng && typeof eng.setStacks === 'function') {
-            try {
-              eng.setStacks([{ viewportId, imageIds, index: desiredIndex }]);
-            } catch (err) {
-            }
-          }
         }
       } catch {
         // best-effort attach attempt
@@ -512,17 +463,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
         // ignore
       }
 
-      // additional fallback: call engine.setStacks again to increase chance
-      try {
-        const eng: any = renderingEngineRef?.current;
-        if (eng && typeof eng.setStacks === 'function') {
-          try {
-            eng.setStacks([{ viewportId, imageIds, index: desiredIndex }]);
-            renderingEngineRef?.current?.renderViewport?.(viewportId);
-          } catch (e) {
-          }
-        }
-      } catch {}
     } // end attempts loop
 
     // Final settle + final check
@@ -562,12 +502,6 @@ export async function ensureStackOnViewport(params: EnsureStackParams): Promise<
             }
           } catch {}
         }
-
-        try {
-          if ((en as any).image) {
-            return true;
-          }
-        } catch {}
       }
     } catch (e) {
       // swallow

@@ -61,11 +61,9 @@ async function forceViewportToIndex(opts: {
   imageIds: string[];
   index: number;
   viewportId: string;
-  requestToken: string;
 }): Promise<number> {
-  const { renderingEngineRef, viewportInstance, viewportEl, imageIds, index, viewportId, requestToken } = opts;
+  const { renderingEngineRef, viewportInstance, viewportEl, imageIds, index, viewportId } = opts;
   const targetIndex = clampIndex(index, imageIds.length);
-  const targetImageId = imageIds[targetIndex];
   const engine: any = renderingEngineRef?.current ?? null;
 
   let vp: any = viewportInstance ?? null;
@@ -86,18 +84,17 @@ async function forceViewportToIndex(opts: {
         await Promise.resolve(vp.setStack(imageIds, targetIndex)).catch(() => {});
       }
 
+      // Change the image without reloading the stack. StackViewport has
+      // setImageIdIndex; the former setImageIndex/setImageId calls did not
+      // exist in Cornerstone 3D, so this fell through to a second setStack.
       const currentIndex = readViewportImageIndex(vp, viewportEl);
       if (currentIndex !== targetIndex) {
-        if (typeof vp.setImageIndex === 'function') {
-          await Promise.resolve(vp.setImageIndex(targetIndex)).catch(() => {});
-        } else if (typeof vp.setImageId === 'function' && targetImageId) {
-          await Promise.resolve(vp.setImageId(targetImageId)).catch(() => {});
+        if (typeof vp.setImageIdIndex === 'function') {
+          await Promise.resolve(vp.setImageIdIndex(targetIndex)).catch(() => {});
         } else if (typeof vp.setStack === 'function') {
           await Promise.resolve(vp.setStack(imageIds, targetIndex)).catch(() => {});
         }
       }
-    } else if (engine && typeof engine.setStacks === 'function') {
-      engine.setStacks([{ viewportId, imageIds, index: targetIndex, __requestToken: requestToken }]);
     }
   } catch (err) {
   }
@@ -169,32 +166,6 @@ export async function attachDisplaySetToViewport(opts: {
   try {
     normalizeCanvasAndContext(viewportEl);
   } catch {}
-
-  // Try quick engine-level setStacks (non-blocking) but include token so wrappers can respect owner.
-  // NEW: only call setStacks if viewport is empty or a different stack is present (idempotent guard).
-  try {
-    const eng: any = renderingEngineRef?.current ?? null;
-    if (eng && typeof eng.setStacks === 'function') {
-      let already = false;
-      try {
-        // Prefer using the enabled element to inspect current stack on the DOM element
-        const en = getEnabledElementSafeLocal(viewportEl as any);
-        const curIds = en?.viewport?.getImageIds?.() ?? null;
-        if (Array.isArray(curIds) && areImageStacksEqual(curIds, imageIds)) {
-          already = true;
-        }
-      } catch {}
-      if (!already) {
-        try {
-          eng.setStacks?.([{ viewportId, imageIds, index: desiredIndex, __requestToken: requestToken }]);
-          try { eng.renderViewport?.(viewportId); } catch {}
-        } catch (err) {
-        }
-      } else {
-      }
-    }
-  } catch (err) {
-  }
 
   /* --------------------------------------------------------------------------
      NEW: Use AbortController per-viewport for preloads, wrap preload to expose
@@ -319,7 +290,6 @@ export async function attachDisplaySetToViewport(opts: {
     imageIds,
     index: desiredIndex,
     viewportId,
-    requestToken,
   });
   if (isCancelled?.()) return false;
 
@@ -339,34 +309,6 @@ export async function attachDisplaySetToViewport(opts: {
       try { delete (viewportEl as any).dataset.__pendingStackRequestId; } catch {}
     }
 
-    // Additionally call engine.setStacks with token+index to register ownership for wrappers
-    try {
-      const eng: any = renderingEngineRef?.current ?? null;
-      if (eng && typeof eng.setStacks === 'function') {
-        let already = false;
-        try {
-          const curIdsFromVpInstance =
-            (typeof viewportInstance?.getImageIds === 'function' ? viewportInstance.getImageIds?.() : null) ?? null;
-          if (Array.isArray(curIdsFromVpInstance) && areImageStacksEqual(curIdsFromVpInstance, imageIds)) {
-            already = true;
-          } else if (!already) {
-            const en = getEnabledElementSafeLocal(viewportEl as any);
-            const curIds = en?.viewport?.getImageIds?.() ?? null;
-            if (Array.isArray(curIds) && areImageStacksEqual(curIds, imageIds)) {
-              already = true;
-            }
-          }
-        } catch {}
-        if (!already) {
-          try {
-            eng.setStacks?.([{ viewportId, imageIds, index: effectiveIndex, __requestToken: requestToken }]);
-          } catch (err) {
-          }
-        } else {
-        }
-      }
-    } catch (err) {
-    }
   } catch (e) {
     // swallow
   }
