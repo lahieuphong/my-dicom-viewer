@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { MENU_READY_EXPRESSION } from './lib/cdp-harness.mjs';
+
 const studyUID =
   '1.3.6.1.4.1.14519.5.2.1.1188.4001.866856253970500879015300047605';
 const cdpOrigin =
@@ -123,19 +125,10 @@ async function evaluate(expression) {
   return response.result?.value;
 }
 
-// Radix menus open with a zoom-in-95 animation, and getBoundingClientRect()
-// includes the animated transform. A fixed sleep is not enough when the main
-// thread is busy, so wait until every animation in the open menus finished.
+// Menus must finish opening before an item is measured and clicked; see
+// MENU_READY_EXPRESSION.
 async function waitForMenuAnimations() {
-  await evaluate(`(async () => {
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    const menus = document.querySelectorAll('[data-slot="dropdown-menu-content"]');
-    await Promise.all(
-      [...menus]
-        .flatMap((menu) => menu.getAnimations({ subtree: true }))
-        .map((animation) => animation.finished.catch(() => {}))
-    );
-  })()`);
+  await evaluate(MENU_READY_EXPRESSION);
 }
 
 async function waitFor(expression, timeout = 30000) {
@@ -332,6 +325,7 @@ async function selectMeasurementTool(toolId) {
       '[role="menuitem"][data-tool-id="${toolId}"]'
     )`
   );
+  await waitForMenuAnimations();
   await clickElement(
     `document.querySelector(
       '[role="menuitem"][data-tool-id="${toolId}"]'
@@ -353,6 +347,7 @@ async function selectAngleTool() {
       '[data-testid="other-tools-menu"] [data-other-item="angle"]'
     )`
   );
+  await waitForMenuAnimations();
   await clickElement(
     `document.querySelector(
       '[data-testid="other-tools-menu"] [data-other-item="angle"]'

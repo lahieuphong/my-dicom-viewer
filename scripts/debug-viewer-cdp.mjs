@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { MENU_READY_EXPRESSION } from './lib/cdp-harness.mjs';
+
 const studyUID =
   '1.3.6.1.4.1.14519.5.2.1.1188.4001.866856253970500879015300047605';
 const cdpOrigin =
@@ -333,6 +335,7 @@ await clickElement(
 await waitFor(
   `!!document.querySelector('[role="menuitem"][data-tool-id="length"]')`
 );
+await evaluate(MENU_READY_EXPRESSION);
 await clickElement(
   `document.querySelector('[role="menuitem"][data-tool-id="length"]')`
 );
