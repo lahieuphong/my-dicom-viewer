@@ -102,6 +102,12 @@ GET /studies/:studyUID
 GET /studies/:studyUID/series
 ```
 
+Series instances may carry optional patient-space geometry, as the generated
+manifest does: `imagePositionPatient`, `imageOrientationPatient` and
+`frameOfReferenceUID`. Image Slice Sync uses it to place slices of a series
+whose files have not been loaded yet; without it, only loaded slices can be
+matched.
+
 ## Optional Environment
 
 Login proxy support requires:

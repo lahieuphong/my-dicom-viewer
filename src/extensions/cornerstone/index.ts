@@ -24,6 +24,7 @@ export {
   ViewportOverlay,
   attachDisplaySetToViewport,
   createDisplaySetFromSeries,
+  registerImagePositions,
   useCornerstoneViewportState,
   useEnsureImageRendered,
   useImageReadiness,

@@ -1,14 +1,18 @@
 'use client';
 
 import {
+  Enums as CoreEnums,
+  getRenderingEngine,
   getRenderingEngines,
+  metaData,
+  utilities as coreUtilities,
   type Types as CoreTypes,
 } from '@cornerstonejs/core';
-import {
-  SynchronizerManager,
-  synchronizers,
-  type Synchronizer,
-} from '@cornerstonejs/tools';
+import { SynchronizerManager, type Synchronizer } from '@cornerstonejs/tools';
+import areViewportsCoplanar from '@cornerstonejs/tools/synchronizers/callbacks/areViewportsCoplanar';
+import { mat4, vec3 } from 'gl-matrix';
+
+import { getRegisteredImagePosition } from './imagePositions';
 
 const IMAGE_SLICE_SYNC_ID_PREFIX = 'viewer-image-slice-sync';
 
@@ -50,6 +54,85 @@ function isSynchronizableViewport(viewport: any): boolean {
   }
 }
 
+function getImagePosition(imageId: string | undefined): vec3 | null {
+  if (!imageId) return null;
+  const loaded = metaData.get('imagePlaneModule', imageId)?.imagePositionPatient;
+  const position = loaded ?? getRegisteredImagePosition(imageId);
+  return position && position.length === 3
+    ? vec3.fromValues(Number(position[0]), Number(position[1]), Number(position[2]))
+    : null;
+}
+
+/**
+ * Mirrors imageSliceSyncCallback from @cornerstonejs/tools 3.33 for the
+ * stack viewports of this viewer. Cornerstone's version reads the
+ * imagePlaneModule of every target image and throws when one is missing; the
+ * static wadouri data source has that metadata only for images already
+ * loaded, so a pane showing another series never moved. Positions here come
+ * from loaded metadata or, before loading, from the data source's instance
+ * geometry, and images without any position are skipped.
+ */
+async function viewerImageSliceSyncCallback(
+  synchronizer: Synchronizer,
+  sourceInfo: ViewportInfo,
+  targetInfo: ViewportInfo
+) {
+  const renderingEngine = getRenderingEngine(targetInfo.renderingEngineId);
+  if (!renderingEngine) return;
+  const options = synchronizer.getOptions(targetInfo.viewportId) as
+    | { disabled?: boolean; useInitialPosition?: boolean }
+    | undefined;
+  if (options?.disabled) return;
+
+  const source = renderingEngine.getViewport(
+    sourceInfo.viewportId
+  ) as CoreTypes.IStackViewport;
+  const target = renderingEngine.getViewport(
+    targetInfo.viewportId
+  ) as CoreTypes.IStackViewport;
+  if (!source || !target) return;
+
+  const sourcePosition = getImagePosition(source.getCurrentImageId());
+  if (!sourcePosition || !areViewportsCoplanar(source, target)) return;
+
+  const getRegistration = () =>
+    coreUtilities.spatialRegistrationMetadataProvider.get(
+      'spatialRegistrationModule',
+      targetInfo.viewportId,
+      sourceInfo.viewportId
+    ) as mat4 | undefined;
+  let registration = getRegistration();
+  if (!registration) {
+    if (
+      source.getFrameOfReferenceUID() === target.getFrameOfReferenceUID() &&
+      options?.useInitialPosition !== false
+    ) {
+      registration = mat4.identity(mat4.create());
+    } else {
+      coreUtilities.calculateViewportsSpatialRegistration(source, target);
+      registration = getRegistration();
+    }
+    if (!registration) return;
+  }
+
+  const targetPoint = vec3.transformMat4(vec3.create(), sourcePosition, registration);
+  let closestIndex = -1;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  target.getImageIds().forEach((imageId, index) => {
+    const position = getImagePosition(imageId);
+    if (!position) return;
+    const distance = vec3.distance(position, targetPoint);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = index;
+    }
+  });
+
+  if (closestIndex !== -1 && target.getCurrentImageIdIndex() !== closestIndex) {
+    await coreUtilities.jumpToSlice(target.element, { imageIndex: closestIndex });
+  }
+}
+
 function getOrCreateSynchronizer(renderingEngineId: string): Synchronizer {
   const synchronizerId = getSynchronizerId(renderingEngineId);
   const existing = SynchronizerManager.getSynchronizer(synchronizerId);
@@ -59,8 +142,11 @@ function getOrCreateSynchronizer(renderingEngineId: string): Synchronizer {
     return existing;
   }
 
-  const synchronizer = synchronizers.createImageSliceSynchronizer(
-    synchronizerId
+  const synchronizer = SynchronizerManager.createSynchronizer(
+    synchronizerId,
+    CoreEnums.Events.STACK_NEW_IMAGE,
+    viewerImageSliceSyncCallback,
+    { auxiliaryEvents: [{ name: 'VOLUME_NEW_IMAGE' }] }
   );
   managedSynchronizerIds.add(synchronizerId);
   return synchronizer;

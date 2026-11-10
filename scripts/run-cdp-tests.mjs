@@ -30,6 +30,7 @@ const REGRESSIONS = [
   { name: 'layout', script: 'test-viewport-layout-cdp.mjs' },
   { name: 'toolbar-actions', script: 'test-viewport-toolbar-cdp.mjs' },
   { name: 'measurement-navigation', script: 'test-viewport-measurement-cdp.mjs' },
+  { name: 'slice-sync', script: 'test-viewport-slice-sync-cdp.mjs' },
   { name: 'sr-workflow', script: 'debug-viewer-cdp.mjs' },
   { name: 'sr-tools', script: 'test-all-sr-tools-cdp.mjs' },
   // Single-contour runs also cover hide/show, SR hydration and deletion.

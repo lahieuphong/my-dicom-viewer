@@ -3,6 +3,9 @@ export type DicomManifestInstance = {
   instanceNumber?: number | null;
   url: string;
   filename?: string;
+  imagePositionPatient?: [number, number, number];
+  imageOrientationPatient?: [number, number, number, number, number, number];
+  frameOfReferenceUID?: string;
 };
 
 export type DicomManifestSeries = {

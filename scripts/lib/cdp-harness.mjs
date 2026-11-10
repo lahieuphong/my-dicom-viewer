@@ -8,6 +8,9 @@ export const DEFAULT_STUDY_UID =
 export const RENDERER_ID = 'main-renderer';
 export const PRIMARY_VIEWPORT_ID = 'WORKSTATION_VIEWPORT';
 export const SECONDARY_VIEWPORT_ID = 'WORKSTATION_VIEWPORT_2';
+/** Chest CT with several series that share one geometry (e.g. Lung 1.5 and
+ * Mediastinum 1.5, 173 images each). */
+export const MULTI_SERIES_STUDY_UID = '1.2.156.14702.1.1000.16.0.20200311113603875';
 
 export const delay = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -51,8 +54,9 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
   }
 }
 
-function resolveViewerUrl() {
+function resolveViewerUrl(studyUID) {
   const viewerOrigin = process.env.VIEWER_ORIGIN ?? 'http://127.0.0.1:3000';
+  if (studyUID) return `${viewerOrigin}/viewer?StudyInstanceUIDs=${studyUID}`;
   return (
     process.env.VIEWER_URL ??
     `${viewerOrigin}/viewer?StudyInstanceUIDs=${
@@ -101,8 +105,9 @@ export async function openViewerPage({
   width = 1600,
   height = 1000,
   deviceScaleFactor = 1,
+  studyUID = null,
 } = {}) {
-  const viewerUrl = resolveViewerUrl();
+  const viewerUrl = resolveViewerUrl(studyUID);
   const cdpOrigin = process.env.CDP_ORIGIN ?? 'http://127.0.0.1:9222';
   const socketUrl = await preflight(viewerUrl, cdpOrigin);
 
@@ -290,10 +295,10 @@ export async function openViewerPage({
 }
 
 /** Runs one regression with uniform reporting and exit code handling. */
-export async function runRegression(label, run) {
+export async function runRegression(label, run, pageOptions = {}) {
   let page = null;
   try {
-    page = await openViewerPage();
+    page = await openViewerPage(pageOptions);
     const summary = await run(page);
     console.log(JSON.stringify(summary, null, 2));
     console.log(`[${label}] passed`);
@@ -423,4 +428,146 @@ export async function applyLayoutPreset(page, rows, columns) {
 export async function openSplitLayout(page) {
   await waitForPrimaryViewport(page);
   return applyLayoutPreset(page, 1, 2);
+}
+
+function viewportExpression(viewportId) {
+  return `window.__cornerstoneCore
+    ?.getRenderingEngine?.('${RENDERER_ID}')
+    ?.getViewport?.('${viewportId}')`;
+}
+
+export function imageIndexExpression(viewportId) {
+  return `${viewportExpression(viewportId)}?.getCurrentImageIdIndex?.()`;
+}
+
+/** SeriesDescription of the image a pane shows, from Cornerstone metadata. */
+export function seriesDescriptionExpression(viewportId) {
+  return `(() => {
+    const imageId = ${viewportExpression(viewportId)}?.getCurrentImageId?.();
+    return imageId
+      ? window.__cornerstoneCore.metaData.get('generalSeriesModule', imageId)
+          ?.seriesDescription ?? null
+      : null;
+  })()`;
+}
+
+/** ImagePositionPatient of the image a pane shows. */
+export function imagePositionExpression(viewportId) {
+  return `(() => {
+    const imageId = ${viewportExpression(viewportId)}?.getCurrentImageId?.();
+    const position = imageId
+      ? window.__cornerstoneCore.metaData.get('imagePlaneModule', imageId)
+          ?.imagePositionPatient
+      : null;
+    return position ? Array.from(position, Number) : null;
+  })()`;
+}
+
+/** Makes a pane active with a click that does not move the pointer. */
+export async function activatePane(page, viewportId) {
+  const pane = `document.querySelector('[data-viewport-pane="${viewportId}"]')`;
+  // The default adjust tool only changes Window/Level on a drag.
+  await page.click(await page.center(pane, { x: 0.5, y: 0.5 }));
+  await page.waitFor(
+    `${pane}?.hasAttribute('data-active-viewport') === true`,
+    `${viewportId} to become the active pane`
+  );
+}
+
+/** Opens the toolbar Other menu and runs one enabled item. */
+export async function runOtherAction(page, itemId) {
+  const menu = '[data-testid="other-tools-menu"]';
+  const item = `${menu} [data-other-item="${itemId}"]`;
+  await page.click(
+    await page.center(`document.querySelector('[data-testid="other-tools-trigger"]')`)
+  );
+  await page.waitFor(
+    `(() => {
+      const element = document.querySelector('${item}');
+      return Boolean(element) && element.getAttribute('aria-disabled') !== 'true';
+    })()`,
+    `enabled ${itemId} item in the Other menu`
+  );
+  await page.waitForMenuInteractive();
+  await page.click(await page.center(`document.querySelector('${item}')`));
+  await page.waitFor(`!document.querySelector('${menu}')`, `Other menu to close after ${itemId}`);
+}
+
+/** Reads aria-checked of an Other menu item, then closes the menu. */
+export async function readOtherItemChecked(page, itemId) {
+  await page.click(
+    await page.center(`document.querySelector('[data-testid="other-tools-trigger"]')`)
+  );
+  const item = `[data-testid="other-tools-menu"] [data-other-item="${itemId}"]`;
+  await page.waitFor(`Boolean(document.querySelector('${item}'))`, `${itemId} item`);
+  await page.waitForMenuInteractive();
+  const checked = await page.evaluate(
+    `document.querySelector('${item}').getAttribute('aria-checked')`
+  );
+  await page.click(
+    await page.center(`document.querySelector('[data-testid="other-tools-trigger"]')`)
+  );
+  await page.waitFor(
+    `!document.querySelector('[data-testid="other-tools-menu"]')`,
+    'Other menu to close'
+  );
+  return checked;
+}
+
+/**
+ * Switches a pane to the series whose option label contains `description`
+ * through the pane's data overlay, then waits until the pane renders it.
+ */
+export async function selectPaneSeries(page, viewportId, description) {
+  const pane = `document.querySelector('[data-viewport-pane="${viewportId}"]')`;
+  await page.click(
+    await page.center(`${pane}.querySelector('[data-testid="viewport-data-overlay-trigger"]')`)
+  );
+  await page.waitFor(
+    `Boolean(document.querySelector('[data-testid="viewport-background-series-trigger"]'))`,
+    'series selector'
+  );
+  await page.waitForMenuInteractive();
+  await page.click(
+    await page.center(`document.querySelector('[data-testid="viewport-background-series-trigger"]')`)
+  );
+  const option = `[...document.querySelectorAll(
+    '[data-testid="viewport-background-series-options"] [role="option"]'
+  )].find((element) => element.getAttribute('aria-label')?.includes(${JSON.stringify(description)}))`;
+  await page.waitFor(`Boolean(${option})`, `${description} series option`);
+  await page.waitForMenuInteractive();
+  await page.click(await page.center(option));
+  await page.waitFor(
+    `${seriesDescriptionExpression(viewportId)} === ${JSON.stringify(description)} &&
+      String(${viewportExpression(viewportId)}?.viewportStatus).toLowerCase() === 'rendered'`,
+    `${viewportId} to render ${description}`,
+    { timeoutMs: 60000 }
+  );
+  // Close the overlay panel if it is still open.
+  if (await page.evaluate(`Boolean(document.querySelector('[data-testid="viewport-data-overlay-panel"]'))`)) {
+    await page.cdp('Input.dispatchKeyEvent', {
+      type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27,
+    });
+    await page.cdp('Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27,
+    });
+    await page.waitFor(
+      `!document.querySelector('[data-testid="viewport-data-overlay-panel"]')`,
+      'data overlay panel to close'
+    );
+  }
+}
+
+/** Scrolls a pane's stack with mouse-wheel input over its centre. */
+export async function wheelPane(page, viewportId, steps, deltaY = 100) {
+  const point = await page.center(
+    `document.querySelector('[data-viewport-role="content"][data-viewport-uid="${viewportId}"]')`
+  );
+  await page.mouse('mouseMoved', point, 0);
+  for (let step = 0; step < steps; step += 1) {
+    await page.cdp('Input.dispatchMouseEvent', {
+      type: 'mouseWheel', ...point, deltaX: 0, deltaY,
+    });
+    await delay(40);
+  }
 }

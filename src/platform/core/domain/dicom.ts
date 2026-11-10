@@ -13,6 +13,13 @@ export interface DicomInstance {
   instanceNumber?: number | null;
   url: string;
   filename?: string;
+  /**
+   * Optional patient-space geometry, like DICOMweb instance metadata. It
+   * places a slice before its file has been loaded, e.g. for Image Slice Sync.
+   */
+  imagePositionPatient?: [number, number, number];
+  imageOrientationPatient?: [number, number, number, number, number, number];
+  frameOfReferenceUID?: DicomUID;
 }
 
 export interface DicomSeries {

@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { registerImagePositions } from '@/extensions/cornerstone';
 import {
   fetchSeries,
 } from '@/extensions/static-dicom-data-source';
@@ -75,7 +76,7 @@ export function useSeriesLoader(studyUID: string) {
             const seriesInstanceUID = series.seriesInstanceUID;
             const insts = (series as any).instances ?? [];
 
-            const imageIds: string[] = (Array.isArray(insts) ? insts : []).map((inst: any) => {
+            const resolvedImageIds: string[] = (Array.isArray(insts) ? insts : []).map((inst: any) => {
               // original urlPath may be string or object with url/filename
               const urlPath = typeof inst === 'string' ? inst : (inst.url ?? inst.filename ?? '');
               const imageId = resolveDicomImageId(urlPath, window.location.origin);
@@ -100,7 +101,18 @@ export function useSeriesLoader(studyUID: string) {
               }
 
               return imageId;
-            }).filter(Boolean);
+            });
+            // Instance geometry from the data source lets Image Slice Sync
+            // place slices of a stack whose files have not been loaded yet.
+            registerImagePositions(
+              resolvedImageIds.map((imageId, index) => [
+                imageId,
+                typeof insts[index] === 'object'
+                  ? insts[index]?.imagePositionPatient
+                  : undefined,
+              ] as const)
+            );
+            const imageIds = resolvedImageIds.filter(Boolean);
 
             map[seriesInstanceUID] = {
               files: imageIds,

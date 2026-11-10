@@ -84,6 +84,26 @@ function collectCandidateFiles(directory = dicomDir) {
   });
 }
 
+function readNumberArray(value, length) {
+  const values = (Array.isArray(value) ? value : [value]).map(Number);
+  return values.length === length && values.every(Number.isFinite)
+    ? values
+    : undefined;
+}
+
+// Patient-space geometry lets the viewer place a slice before its file is
+// loaded (Image Slice Sync across series), like DICOMweb instance metadata.
+function readInstanceGeometry(dataset) {
+  const imagePositionPatient = readNumberArray(dataset.ImagePositionPatient, 3);
+  const imageOrientationPatient = readNumberArray(dataset.ImageOrientationPatient, 6);
+  const frameOfReferenceUID = safeString(dataset.FrameOfReferenceUID, '');
+  return {
+    ...(imagePositionPatient && { imagePositionPatient }),
+    ...(imageOrientationPatient && { imageOrientationPatient }),
+    ...(frameOfReferenceUID && { frameOfReferenceUID }),
+  };
+}
+
 function parseDataset(relativePath) {
   const filePath = path.join(dicomDir, ...relativePath.split('/'));
 
@@ -163,6 +183,7 @@ function buildManifest() {
       instanceNumber: dataset.InstanceNumber == null ? null : Number(dataset.InstanceNumber),
       url: toPublicDicomUrl(relativePath),
       filename: relativePath,
+      ...readInstanceGeometry(dataset),
     });
   }
 
