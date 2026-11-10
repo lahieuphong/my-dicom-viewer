@@ -208,11 +208,17 @@ export function useRenderingEngine({
       return null;
     };
 
+    // Cornerstone 3D enabled elements expose `viewport`, not the legacy
+    // Cornerstone 2D `image` field, so checking `enabled.image` never
+    // succeeded: every attach polled for the full timeout and then ran the
+    // fallback attach. The stack is ready once its current image rendered.
     const checkOnce = () => {
       try {
-        const en = getEnabled();
-        if (en && (en as any).image) return true;
-        return false;
+        const viewport = getEnabled()?.viewport ?? vpLocal;
+        return (
+          Boolean(viewport?.getCurrentImageId?.()) &&
+          String(viewport?.viewportStatus ?? '').toLowerCase() === 'rendered'
+        );
       } catch {
         return false;
       }
@@ -227,17 +233,14 @@ export function useRenderingEngine({
           if (candidateEl) {
             try { enableElement(candidateEl); } catch {}
 
-            let enabledCandidate: any = null;
-            try {
-              enabledCandidate = getEnabled();
-            } catch {}
-            const hasImageOnEnabled = Boolean(enabledCandidate && (enabledCandidate as any).image);
             const vpReportsImages =
               Boolean(vpLocal && typeof vpLocal.getImageIds === 'function' && Array.isArray(vpLocal.getImageIds?.()) && (vpLocal.getImageIds() || []).length > 0);
 
-            if (hasImageOnEnabled || vpReportsImages) {
+            // Nudge rendering only. Resizing here cleared every pane's canvas
+            // on each poll and fought panel drags and layout fits; canvas
+            // sizing is owned by the viewport auto-fit and grid resize hooks.
+            if (vpReportsImages) {
               try { vpLocal?.render?.(); } catch {}
-              try { renderingEngineRef.current?.resize?.(); } catch {}
               try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
             }
 
