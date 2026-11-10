@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Enums, type StackViewport } from '@cornerstonejs/core';
 
+import {
+  readViewportInvert,
+  toggleViewportInvert,
+} from '@/lib/viewer/viewportActions';
+
 export type UseInvertOptions = {
   viewportInstance: StackViewport | null;
   /** Identifies the attached stack. A new stack must not inherit stale UI state. */
@@ -57,7 +62,7 @@ export function useInvert({
     }
 
     try {
-      const nextValue = Boolean(viewportInstance.getProperties()?.invert);
+      const nextValue = readViewportInvert(viewportInstance);
       commitInvertState(nextValue);
       return nextValue;
     } catch {
@@ -71,15 +76,9 @@ export function useInvert({
     if (!canInvert || !viewportInstance) return isInvertedRef.current;
 
     try {
-      const currentValue = Boolean(viewportInstance.getProperties()?.invert);
-      const requestedValue = !currentValue;
-
-      viewportInstance.setProperties({ invert: requestedValue });
-      viewportInstance.render();
-
-      // Read back from Cornerstone so UI state reflects the value that the
+      // Commit the value read back from Cornerstone, i.e. the value that the
       // active CPU/GPU rendering path actually accepted.
-      const appliedValue = Boolean(viewportInstance.getProperties()?.invert);
+      const appliedValue = toggleViewportInvert(viewportInstance);
       commitInvertState(appliedValue);
       return appliedValue;
     } catch {

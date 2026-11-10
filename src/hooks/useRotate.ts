@@ -1,15 +1,15 @@
 // src/hooks/useRotate.ts
-import { StackViewport } from '@cornerstonejs/core';
+import type { StackViewport } from '@cornerstonejs/core';
+
+import { rotateViewportClockwise } from '@/lib/viewer/viewportActions';
 
 export function useRotate(viewportInstance: StackViewport | null) {
   const rotate = async () => {
     if (!viewportInstance) return;
     try {
-      const pres = viewportInstance.getViewPresentation();
-      pres.rotation = ((pres.rotation ?? 0) + 90) % 360;
-      viewportInstance.setViewPresentation(pres);
-      viewportInstance.render();
-    } catch (e) {
+      rotateViewportClockwise(viewportInstance);
+    } catch {
+      // Best-effort while a viewport is mounting/unmounting.
     }
   };
 

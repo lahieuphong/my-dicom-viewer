@@ -23,7 +23,13 @@ import { useStackPrefetch } from '@/hooks/useStackPrefetch';
 import type { ToolID } from '@/hooks/useToolManager';
 import { useViewerPanelResize } from '@/hooks/useViewerPanelResize';
 import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
-import { clearViewportCameraUserModified } from '@/lib/viewer/viewportCameraInteraction';
+import {
+  readViewportInvert,
+  resetViewportView,
+  rotateViewportClockwise,
+  toggleViewportFlipHorizontal,
+  toggleViewportInvert,
+} from '@/lib/viewer/viewportActions';
 
 import { MeasurementPanel } from '@/components/Viewer/Measurement';
 import { SeriesSidebar } from '@/components/Viewer/Series';
@@ -263,21 +269,25 @@ export default function ViewerWorkspace({
   }, [activeViewportSeriesUID, onActiveViewportSeriesChange]);
 
   const toolbarViewportEl = activeViewportEl ?? viewportEl;
-  const activeStackViewport = useMemo(() => {
-    if (!toolbarViewportEl) return null;
+  // Read on every render instead of memoising on React state: Cornerstone can
+  // recreate a pane's viewport for the same element. The lookup is cheap and
+  // returns the same object while the viewport lives, so effects and callbacks
+  // that depend on it only re-run when the viewport really changes.
+  let activeStackViewport: StackViewport | null = null;
+  if (toolbarViewportEl) {
     try {
-      return getEnabledElement(toolbarViewportEl)?.viewport as StackViewport;
-    } catch {
-      return null;
-    }
-  }, [activeViewportId, activeViewportSeriesUID, toolbarViewportEl]);
+      activeStackViewport =
+        (getEnabledElement(toolbarViewportEl)?.viewport as StackViewport) ??
+        null;
+    } catch {}
+  }
 
   useEffect(() => {
     if (activeViewportId === VIEWPORT_ID) return;
     const syncInvertState = () => {
       try {
         setActiveSecondaryInverted(
-          Boolean(activeStackViewport?.getProperties?.()?.invert)
+          activeStackViewport ? readViewportInvert(activeStackViewport) : false
         );
       } catch {
         setActiveSecondaryInverted(false);
@@ -303,35 +313,18 @@ export default function ViewerWorkspace({
     toolbarViewportEl,
   ]);
 
+  // The primary pane keeps its hooks because they own extra state (persisted
+  // VOI, invert UI state); every pane runs the same view actions underneath.
   const resetActiveViewport = useCallback(() => {
     if (activeViewportId === VIEWPORT_ID || !activeStackViewport) {
-      clearViewportCameraUserModified(toolbarViewportEl);
       onReset();
       return;
     }
     try {
-      activeStackViewport.resetProperties();
-      const presentation = activeStackViewport.getViewPresentation();
-      activeStackViewport.setViewPresentation({
-        ...presentation,
-        rotation: 0,
-      });
-      activeStackViewport.resetCamera({
-        resetPan: true,
-        resetZoom: true,
-        resetToCenter: true,
-      });
-      activeStackViewport.setCamera({
-        flipHorizontal: false,
-        flipVertical: false,
-      });
-      clearViewportCameraUserModified(
-        activeStackViewport.element as HTMLElement | null
-      );
-      activeStackViewport.render();
+      resetViewportView(activeStackViewport);
       setActiveSecondaryInverted(false);
     } catch {}
-  }, [activeStackViewport, activeViewportId, onReset, toolbarViewportEl]);
+  }, [activeStackViewport, activeViewportId, onReset]);
 
   const rotateActiveViewport = useCallback(() => {
     if (activeViewportId === VIEWPORT_ID || !activeStackViewport) {
@@ -339,12 +332,7 @@ export default function ViewerWorkspace({
       return;
     }
     try {
-      const presentation = activeStackViewport.getViewPresentation();
-      activeStackViewport.setViewPresentation({
-        ...presentation,
-        rotation: ((presentation.rotation ?? 0) + 90) % 360,
-      });
-      activeStackViewport.render();
+      rotateViewportClockwise(activeStackViewport);
     } catch {}
   }, [activeStackViewport, activeViewportId, onRotate90]);
 
@@ -354,9 +342,7 @@ export default function ViewerWorkspace({
       return;
     }
     try {
-      const flipped = activeStackViewport.getCamera().flipHorizontal ?? false;
-      activeStackViewport.setCamera({ flipHorizontal: !flipped });
-      activeStackViewport.render();
+      toggleViewportFlipHorizontal(activeStackViewport);
     } catch {}
   }, [activeStackViewport, activeViewportId, onFlipHorizontal]);
 
@@ -366,12 +352,7 @@ export default function ViewerWorkspace({
       return;
     }
     try {
-      const nextValue = !Boolean(
-        activeStackViewport.getProperties?.()?.invert
-      );
-      activeStackViewport.setProperties({ invert: nextValue });
-      activeStackViewport.render();
-      setActiveSecondaryInverted(nextValue);
+      setActiveSecondaryInverted(toggleViewportInvert(activeStackViewport));
     } catch {}
   }, [activeStackViewport, activeViewportId, onToggleInvert]);
 

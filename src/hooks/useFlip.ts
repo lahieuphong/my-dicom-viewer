@@ -3,6 +3,8 @@
 import { MutableRefObject } from 'react';
 import { RenderingEngine, StackViewport } from '@cornerstonejs/core';
 
+import { toggleViewportFlipHorizontal } from '@/lib/viewer/viewportActions';
+
 export function useFlipHorizontal(
   renderingEngineRef: MutableRefObject<RenderingEngine | null>,
   viewportId: string
@@ -12,14 +14,9 @@ export function useFlipHorizontal(
     if (!engine) return;
 
     try {
-      const viewport = engine.getViewport(viewportId) as StackViewport;
-      const isFlipped = viewport.getCamera().flipHorizontal ?? false;
-
-      // Only mutate the flip flag. Passing the previous full camera here can
-      // overwrite the geometry that Cornerstone creates for the flip.
-      viewport.setCamera({ flipHorizontal: !isFlipped });
-      viewport.render();
+      toggleViewportFlipHorizontal(engine.getViewport(viewportId) as StackViewport);
     } catch {
+      // Best-effort while a viewport is mounting/unmounting.
     }
   };
 
