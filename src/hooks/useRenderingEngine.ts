@@ -892,7 +892,14 @@ export function useRenderingEngine({
               }
             } catch (e) {}
 
-            try { const tg = ToolGroupManager.getToolGroup(TOOL_GROUP); if (tg && typeof (tg as any).removeViewports === 'function') { try { (tg as any).removeViewports?.([VIEWPORT_ID]); } catch (e) {} } else if (tg && typeof (tg as any).removeViewport === 'function') { try { (tg as any).removeViewport?.(VIEWPORT_ID); } catch (e) {} } } catch (e) {}
+            try {
+              // ToolGroup.removeViewports(renderingEngineId, viewportId?). The
+              // old call passed `[VIEWPORT_ID]` as the engine ID, which matched
+              // nothing and left the primary viewport registered in the group.
+              const tg = ToolGroupManager.getToolGroup(TOOL_GROUP);
+              const engineId = renderingEngineRef.current?.id ?? RENDERER_ID;
+              tg?.removeViewports(engineId, VIEWPORT_ID);
+            } catch (e) {}
 
             try {
               tryDetachViewportSafely(renderingEngineRef.current);
