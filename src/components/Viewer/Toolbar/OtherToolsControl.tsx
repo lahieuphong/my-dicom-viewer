@@ -190,6 +190,12 @@ export default function OtherToolsControl({
               id === 'cine' ||
               id === 'invert' ||
               id === 'imageSliceSync';
+            // Radix spreads item props after its default role="menuitem", so
+            // passing `role={undefined}` would strip the role from every
+            // non-toggle item. Only override it for real checkbox items.
+            const toggleProps = isToggle
+              ? { role: 'menuitemcheckbox' as const, 'aria-checked': active }
+              : {};
 
             return (
               <DropdownMenuItem
@@ -209,8 +215,7 @@ export default function OtherToolsControl({
                   active && 'bg-muted text-foreground'
                 )}
                 aria-label={`${label} — ${detail}`}
-                role={isToggle ? 'menuitemcheckbox' : undefined}
-                aria-checked={isToggle ? active : undefined}
+                {...toggleProps}
                 data-active={active}
                 data-other-item={id}
               >
