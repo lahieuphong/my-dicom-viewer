@@ -27,6 +27,17 @@ Before committing structural changes, run:
 yarn verify
 ```
 
+Browser regressions drive the real viewer through the Chrome DevTools
+Protocol. One command runs all of them, reusing a viewer on
+`VIEWER_ORIGIN` (default `http://127.0.0.1:3000`) and a Chrome exposing
+`CDP_ORIGIN` (default `http://127.0.0.1:9222`), or starting `next dev` and a
+headless Chrome itself (`CHROME_PATH` overrides the Chrome binary):
+
+```bash
+yarn test:cdp                         # all regressions
+yarn test:cdp --only resize,sr-tools  # a subset; --list shows the names
+```
+
 Before a production/Vercel build, run:
 
 ```bash
