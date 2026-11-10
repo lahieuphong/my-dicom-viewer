@@ -543,18 +543,25 @@ export async function selectPaneSeries(page, viewportId, description) {
     `${viewportId} to render ${description}`,
     { timeoutMs: 60000 }
   );
-  // Close the overlay panel if it is still open.
-  if (await page.evaluate(`Boolean(document.querySelector('[data-testid="viewport-data-overlay-panel"]'))`)) {
+  // Close the overlay panel if it is still open. The panel spends an Escape
+  // on closing its series Select while it still counts as open, which on a
+  // slow machine can be the Select that just closed itself, so retry.
+  const panelOpen = `Boolean(document.querySelector('[data-testid="viewport-data-overlay-panel"]'))`;
+  for (let attempt = 0; attempt < 3 && (await page.evaluate(panelOpen)); attempt += 1) {
+    await page.waitForMenuInteractive();
     await page.cdp('Input.dispatchKeyEvent', {
       type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27,
     });
     await page.cdp('Input.dispatchKeyEvent', {
       type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27,
     });
-    await page.waitFor(
-      `!document.querySelector('[data-testid="viewport-data-overlay-panel"]')`,
-      'data overlay panel to close'
-    );
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 3000 && (await page.evaluate(panelOpen))) {
+      await delay(100);
+    }
+  }
+  if (await page.evaluate(panelOpen)) {
+    throw new Error('The data overlay panel did not close after selecting a series.');
   }
 }
 
