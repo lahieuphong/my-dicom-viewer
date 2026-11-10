@@ -1028,6 +1028,9 @@ if (singleContourAnnotationUID) {
     )`,
     60000
   );
+  // The SR name dialog's overlay stays mounted while it animates closed and
+  // swallows a click on the report entry underneath; wait until it is gone.
+  await waitFor(`!document.querySelector('[role="dialog"]')`);
   await clickElement(
     `document.querySelector(
       'button[aria-label=${JSON.stringify(`View SR ${reportName}`)}]'
@@ -1129,6 +1132,12 @@ if (singleContourAnnotationUID) {
     )`
   );
   await waitForMeasurementCount(0);
+  // The panel updates before Cornerstone's next annotation render removes the
+  // deleted contour's SVG; wait for that render instead of sampling once.
+  await waitFor(
+    `!(${annotationRenderedExpression(singleContourAnnotationUID)})`,
+    5000
+  );
   afterDeleteState = await evaluate(`(() => {
     const createButton = [...document.querySelectorAll('button')].find(
       (button) => button.textContent?.trim() === 'Create SR'

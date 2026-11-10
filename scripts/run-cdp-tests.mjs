@@ -26,6 +26,17 @@ const REGRESSIONS = [
   { name: 'measurement-navigation', script: 'test-viewport-measurement-cdp.mjs' },
   { name: 'sr-workflow', script: 'debug-viewer-cdp.mjs' },
   { name: 'sr-tools', script: 'test-all-sr-tools-cdp.mjs' },
+  // Single-contour runs also cover hide/show, SR hydration and deletion.
+  {
+    name: 'sr-contour-freehand',
+    script: 'test-all-sr-tools-cdp.mjs',
+    env: { SR_SINGLE_TOOL: 'planarFreehandROI' },
+  },
+  {
+    name: 'sr-contour-livewire',
+    script: 'test-all-sr-tools-cdp.mjs',
+    env: { SR_SINGLE_TOOL: 'livewireContour' },
+  },
 ];
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -181,7 +192,7 @@ async function ensureChrome() {
   return 'started';
 }
 
-function runRegressionScript({ name, script }) {
+function runRegressionScript({ name, script, env = {} }) {
   const logPath = path.join(logDir, `${name}.log`);
   const log = createWriteStream(logPath);
   const startedAt = Date.now();
@@ -191,7 +202,12 @@ function runRegressionScript({ name, script }) {
       [path.join(projectRoot, 'scripts', script)],
       {
         cwd: projectRoot,
-        env: { ...process.env, VIEWER_ORIGIN: viewerOrigin, CDP_ORIGIN: cdpOrigin },
+        env: {
+          ...process.env,
+          ...env,
+          VIEWER_ORIGIN: viewerOrigin,
+          CDP_ORIGIN: cdpOrigin,
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
       }
     );
