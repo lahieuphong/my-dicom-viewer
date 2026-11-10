@@ -73,6 +73,12 @@ export const useMeasurements = ({
   const createdAtByAnnotationUIDRef = useRef<Map<string, string>>(
     new Map()
   );
+  // The pane an annotation was drawn (or added) in. A split layout often
+  // shows the same series in several panes, so "the first pane that displays
+  // the referenced image" is ambiguous and always resolves to the primary.
+  const originViewportIdByAnnotationUIDRef = useRef<Map<string, string>>(
+    new Map()
+  );
 
   // keep latest callback in ref to avoid being a dependency for callbacks/effects
   const onMeasurementsChangeRef = useRef<typeof onMeasurementsChange | undefined>(onMeasurementsChange);
@@ -181,15 +187,23 @@ export const useMeasurements = ({
         const metaFrameIndex = Number.isFinite(Number(a?.metadata?.frameIndex))
           ? Number(a.metadata.frameIndex)
           : undefined;
+        const displayingContexts = viewportContexts.filter(
+          (context) =>
+            findMatchingImageIdIndex(
+              context.imageIds,
+              refId,
+              metaFrameIndex
+            ) >= 0
+        );
+        const originViewportId =
+          originViewportIdByAnnotationUIDRef.current.get(uid);
         const annotationContext =
-          viewportContexts.find(
-            (context) =>
-              findMatchingImageIdIndex(
-                context.imageIds,
-                refId,
-                metaFrameIndex
-              ) >= 0
+          // Prefer the pane the annotation came from while it still shows
+          // that stack; otherwise any pane that displays the image.
+          displayingContexts.find(
+            (context) => context.viewportId === originViewportId
           ) ??
+          displayingContexts[0] ??
           viewportContexts.find(
             (context) =>
               Boolean(a.metadata?.FrameOfReferenceUID) &&
@@ -494,8 +508,41 @@ export const useMeasurements = ({
       }
     };
 
+    // ANNOTATION_ADDED is triggered for the element the annotation was added
+    // to, so it identifies the originating pane. ANNOTATION_MODIFIED is not
+    // used: stat updates are emitted by every pane that renders the
+    // annotation, and label edits are emitted for the primary element.
+    const originHandler = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          viewportId?: string;
+          annotation?: { annotationUID?: string };
+        }>
+      ).detail;
+      const annotationUID = detail?.annotation?.annotationUID;
+      if (!annotationUID) return;
+      if (event.type === ToolEnums.Events.ANNOTATION_REMOVED) {
+        originViewportIdByAnnotationUIDRef.current.delete(annotationUID);
+        return;
+      }
+      if (detail.viewportId) {
+        originViewportIdByAnnotationUIDRef.current.set(
+          annotationUID,
+          detail.viewportId
+        );
+      }
+    };
+
     // Register the real handler to annotation events
     try {
+      eventTarget.addEventListener(
+        ToolEnums.Events.ANNOTATION_ADDED,
+        originHandler
+      );
+      eventTarget.addEventListener(
+        ToolEnums.Events.ANNOTATION_REMOVED,
+        originHandler
+      );
       eventTarget.addEventListener(ToolEnums.Events.ANNOTATION_ADDED, handler);
       eventTarget.addEventListener(
         ToolEnums.Events.ANNOTATION_COMPLETED,
@@ -510,6 +557,14 @@ export const useMeasurements = ({
       if (rafId != null) cancelAnimationFrame(rafId);
 
       try {
+        eventTarget.removeEventListener(
+          ToolEnums.Events.ANNOTATION_ADDED,
+          originHandler
+        );
+        eventTarget.removeEventListener(
+          ToolEnums.Events.ANNOTATION_REMOVED,
+          originHandler
+        );
         eventTarget.removeEventListener(ToolEnums.Events.ANNOTATION_ADDED, handler);
         eventTarget.removeEventListener(
           ToolEnums.Events.ANNOTATION_COMPLETED,
