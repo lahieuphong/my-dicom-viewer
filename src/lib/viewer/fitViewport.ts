@@ -11,6 +11,14 @@ export type ViewportResizeMode = 'preserve-camera' | 'fit-image';
 
 const IMAGE_RENDERED_EVENT = 'CORNERSTONE_IMAGE_RENDERED';
 const RESIZE_SNAPSHOT_SELECTOR = '[data-viewer-resize-snapshot="true"]';
+const CORNERSTONE_CANVAS_SELECTOR = 'canvas.cornerstone-canvas';
+const SNAPSHOT_FALLBACK_MS = 500;
+
+type ContentViewport = {
+  viewport: StackViewport;
+  element: HTMLElement;
+  viewportId: string;
+};
 
 function preserveCurrentFrame(element: HTMLElement) {
   const canvas = element.querySelector('canvas.cornerstone-canvas') as HTMLCanvasElement | null;
@@ -121,6 +129,157 @@ function restoreCamera(viewport: StackViewport, camera: ViewportCamera | null) {
   }
 }
 
+function getDevicePixelRatio() {
+  return (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+}
+
+function getCornerstoneCanvas(element: HTMLElement) {
+  return element.querySelector<HTMLCanvasElement>(CORNERSTONE_CANVAS_SELECTOR);
+}
+
+/**
+ * Cornerstone sizes every backing buffer as `clientSize * devicePixelRatio`
+ * (truncated by the canvas IDL). A hidden canvas never forces a resize.
+ */
+function canvasNeedsResize(canvas: HTMLCanvasElement) {
+  if (canvas.clientWidth <= 0 || canvas.clientHeight <= 0) return false;
+  const pixelRatio = getDevicePixelRatio();
+  return (
+    canvas.width !== Math.floor(canvas.clientWidth * pixelRatio) ||
+    canvas.height !== Math.floor(canvas.clientHeight * pixelRatio)
+  );
+}
+
+/**
+ * Viewer-owned panes only. Tools such as Magnify create internal viewports in
+ * the same rendering engine and manage their own geometry.
+ */
+function getContentViewports(
+  engine: RenderingEngine | null,
+  { requireImage = false }: { requireImage?: boolean } = {}
+): ContentViewport[] {
+  if (!engine) return [];
+  let viewports: unknown[] = [];
+  try {
+    viewports = engine.getViewports?.() ?? [];
+  } catch {
+    return [];
+  }
+
+  const result: ContentViewport[] = [];
+  for (const candidate of viewports) {
+    const viewport = candidate as StackViewport;
+    const element = viewport?.element as HTMLElement | undefined;
+    if (!element?.isConnected || element.dataset?.viewportRole !== 'content') {
+      continue;
+    }
+    if (requireImage) {
+      try {
+        if (!viewport.getCurrentImageId?.()) continue;
+      } catch {
+        continue;
+      }
+    }
+    result.push({ viewport, element, viewportId: String(viewport.id) });
+  }
+  return result;
+}
+
+/** True when any viewer-owned canvas no longer matches its CSS box. */
+export function contentCanvasesNeedResize(engine: RenderingEngine | null) {
+  return getContentViewports(engine).some(({ element }) => {
+    const canvas = getCornerstoneCanvas(element);
+    return Boolean(canvas && canvasNeedsResize(canvas));
+  });
+}
+
+/**
+ * Until its backing buffer is resized, a canvas shows its last frame scaled
+ * with object-fit: contain. Derive the camera that keeps exactly that frame
+ * from the buffer size, so applying it after any number of keep-camera engine
+ * resizes is idempotent.
+ */
+function planVisibleFrames(entries: ContentViewport[]) {
+  const plans: Array<ContentViewport & { camera: ViewportCamera }> = [];
+  const pixelRatio = getDevicePixelRatio();
+
+  for (const entry of entries) {
+    const canvas = getCornerstoneCanvas(entry.element);
+    if (!canvas || !canvasNeedsResize(canvas)) continue;
+
+    const camera = getCameraForResizedElement(
+      readCamera(entry.viewport),
+      { width: canvas.width / pixelRatio, height: canvas.height / pixelRatio },
+      { width: canvas.clientWidth, height: canvas.clientHeight }
+    );
+    if (camera) plans.push({ ...entry, camera });
+  }
+
+  return plans;
+}
+
+/**
+ * Keeps a copy of the current frame above the canvas until Cornerstone has
+ * rendered into the resized buffer. Returns a function that releases it early.
+ */
+function holdFrameUntilRendered(element: HTMLElement) {
+  const snapshot = preserveCurrentFrame(element);
+  let released = false;
+  let fallbackTimer: number | null = null;
+
+  const release = () => {
+    if (released) return;
+    released = true;
+    element.removeEventListener(IMAGE_RENDERED_EVENT, release);
+    if (fallbackTimer != null) window.clearTimeout(fallbackTimer);
+
+    // IMAGE_RENDERED is dispatched during Cornerstone's render pass. Keep the
+    // preserved frame through the next paint so a cleared canvas is never shown.
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.setTimeout(() => snapshot.remove(), 34);
+      });
+    });
+  };
+
+  element.addEventListener(IMAGE_RENDERED_EVENT, release, { once: true });
+  fallbackTimer = window.setTimeout(release, SNAPSHOT_FALLBACK_MS);
+  return release;
+}
+
+/**
+ * Settles a container resize for every viewer-owned pane at once: the shared
+ * engine is resized only when a canvas no longer fits its cell, and every
+ * resized pane keeps the frame it was showing instead of snapping to the
+ * absolute camera Cornerstone restores with `keepCamera`.
+ *
+ * Call it from a task, never from a requestAnimationFrame callback. Resizing
+ * clears the canvases and Cornerstone renders on the next animation frame; from
+ * a task that frame still lands before the browser paints.
+ */
+export function resizeViewportsKeepingVisibleFrame(
+  engine: RenderingEngine | null,
+  { excludeViewportIds = [] }: { excludeViewportIds?: readonly string[] } = {}
+) {
+  if (!engine || !contentCanvasesNeedResize(engine)) return false;
+
+  const excluded = new Set(excludeViewportIds);
+  const plans = planVisibleFrames(
+    getContentViewports(engine, { requireImage: true }).filter(
+      ({ viewportId }) => !excluded.has(viewportId)
+    )
+  );
+
+  try {
+    // `immediate=true` schedules the render that picks up the cameras below.
+    engine.resize(true, true);
+  } catch {
+    return false;
+  }
+  for (const plan of plans) restoreCamera(plan.viewport, plan.camera);
+  return true;
+}
+
 export function fitViewportToElement({
   element,
   engine,
@@ -148,38 +307,23 @@ export function fitViewportToElement({
     previousSize,
     { width, height }
   );
-  const snapshot = preserveCurrentFrame(element);
-  let fallbackTimer: number | null = null;
-  let removalTimer: number | null = null;
-  let firstRemovalFrame: number | null = null;
-  let secondRemovalFrame: number | null = null;
-  let rendered = false;
-
-  const handleImageRendered = () => {
-    if (rendered) return;
-    rendered = true;
-    element.removeEventListener(IMAGE_RENDERED_EVENT, handleImageRendered);
-    if (fallbackTimer != null) window.clearTimeout(fallbackTimer);
-    if (removalTimer != null) window.clearTimeout(removalTimer);
-    if (firstRemovalFrame != null) window.cancelAnimationFrame(firstRemovalFrame);
-    if (secondRemovalFrame != null) window.cancelAnimationFrame(secondRemovalFrame);
-
-    // IMAGE_RENDERED is dispatched during Cornerstone's render pass. Keep the
-    // preserved frame through the next paint so a cleared canvas is never shown.
-    firstRemovalFrame = window.requestAnimationFrame(() => {
-      firstRemovalFrame = null;
-      secondRemovalFrame = window.requestAnimationFrame(() => {
-        secondRemovalFrame = null;
-        removalTimer = window.setTimeout(() => {
-          removalTimer = null;
-          snapshot.remove();
-        }, 34);
-      });
-    });
+  // This runs from a requestAnimationFrame callback, so a resized canvas is
+  // painted once before Cornerstone renders into it. Sibling panes in a split
+  // layout share the engine resize below and need the same frame protection
+  // and visible-frame camera as the primary pane.
+  const siblingPlans = planVisibleFrames(
+    getContentViewports(engine, { requireImage: true }).filter(
+      (entry) => entry.element !== element && entry.viewportId !== viewportId
+    )
+  );
+  const handleImageRendered = holdFrameUntilRendered(element);
+  const releaseSiblingFrames = siblingPlans.map((plan) =>
+    holdFrameUntilRendered(plan.element)
+  );
+  const releaseAllFrames = () => {
+    handleImageRendered();
+    releaseSiblingFrames.forEach((release) => release());
   };
-
-  element.addEventListener(IMAGE_RENDERED_EVENT, handleImageRendered, { once: true });
-  fallbackTimer = window.setTimeout(handleImageRendered, 500);
 
   normalizeCanvasAndContext(element);
 
@@ -203,10 +347,12 @@ export function fitViewportToElement({
   }
 
   try {
-    // Resize all backing canvases without resetting sibling cameras. The
-    // requested viewport is then either fitted to its new grid cell or given
-    // the absolute camera that preserves a deliberate user pan/zoom.
-    engine.resize(true, true);
+    // Resize all backing canvases without resetting sibling cameras, and only
+    // when one is out of date: every resize clears every canvas. The requested
+    // viewport is then either fitted to its new grid cell or given the camera
+    // that preserves a deliberate user pan/zoom.
+    if (contentCanvasesNeedResize(engine)) engine.resize(true, true);
+    for (const plan of siblingPlans) restoreCamera(plan.viewport, plan.camera);
     if (mode === 'fit-image') {
       viewport.resetCamera({
         resetPan: true,
@@ -218,6 +364,6 @@ export function fitViewportToElement({
     }
     engine.renderViewport(viewportId);
   } catch {
-    handleImageRendered();
+    releaseAllFrames();
   }
 }

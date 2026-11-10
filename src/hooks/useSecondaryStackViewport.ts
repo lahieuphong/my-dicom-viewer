@@ -16,6 +16,7 @@ import {
   RENDERER_ID,
 } from '@/lib/cornerstone/renderer';
 import { useStackScrollWheel } from '@/hooks/useStackScrollWheel';
+import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
 
 type VoiRange = { lower: number; upper: number };
 
@@ -233,6 +234,10 @@ export function useSecondaryStackViewport({
         }
 
         enableElement(element);
+        // Panel drags keep the backing buffer unchanged until they settle; the
+        // canvas must scale uniformly (object-fit: contain) meanwhile, exactly
+        // like the primary pane, instead of being stretched to its new cell.
+        normalizeCanvasAndContext(element);
         try {
           element.dataset.viewportRole = 'content';
           element.dataset.viewportUid = viewportId;

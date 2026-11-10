@@ -5,6 +5,7 @@ import { Enums as CoreEnums, type StackViewport } from '@cornerstonejs/core';
 
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { getRenderingEngine, RENDERER_ID } from '@/lib/cornerstone/renderer';
+import { resizeViewportsKeepingVisibleFrame } from '@/lib/viewer/fitViewport';
 import {
   clearViewportCameraUserModified,
   isViewportCameraUserModified,
@@ -23,13 +24,28 @@ type UseViewportGridResizeOptions = {
 };
 
 const SETTLING_RENDER_DELAYS_MS = [100, 260, 600, 1200] as const;
+/**
+ * The primary viewport's auto-fit settles container resizes after 80 ms plus
+ * one frame and already resizes every pane. Settling later keeps this pass a
+ * no-op in that case; it only has work left when that hook is inactive, for
+ * example while the primary pane has no image.
+ */
+const CONTAINER_RESIZE_SETTLE_MS = 180;
+const WORKSPACE_GRID_SELECTOR = '.viewer-workspace-grid';
+
+function isPanelResizeActive(workspaceElement: HTMLElement | null) {
+  return workspaceElement?.dataset.panelResizing === 'true';
+}
 
 /**
  * Keeps every Cornerstone canvas aligned with its CSS grid cell.
  *
- * Normal container resizing preserves the user's camera. A real layout change
- * is different: each viewport must be fitted to its new cell, otherwise the
- * primary viewport keeps the zoom calculated for the previous large canvas.
+ * Normal container resizing preserves the frame each pane shows. Resizing a
+ * backing buffer clears it, so nothing is resized while a side panel is being
+ * dragged; panes stay CSS-scaled and settle once the drag ends. A real layout
+ * change is different: each viewport must be fitted to its new cell,
+ * otherwise the primary viewport keeps the zoom calculated for the previous
+ * large canvas.
  */
 export function useViewportGridResize({
   layout,
@@ -42,8 +58,12 @@ export function useViewportGridResize({
       '[data-viewport-grid]'
     );
     if (!gridElement || !primaryElement) return;
+    const workspaceElement = gridElement.closest<HTMLElement>(
+      WORKSPACE_GRID_SELECTOR
+    );
 
-    let resizeFrame: number | null = null;
+    let containerResizeTimer: number | null = null;
+    let containerResizePending = false;
     let firstFitFrame: number | null = null;
     let secondFitFrame: number | null = null;
     let layoutFitCompleted = false;
@@ -51,15 +71,56 @@ export function useViewportGridResize({
 
     const getEngine = () => getRenderingEngine(RENDERER_ID);
 
-    const renderGridKeepingCamera = () => {
+    const cancelContainerResize = () => {
+      if (containerResizeTimer === null) return;
+      window.clearTimeout(containerResizeTimer);
+      containerResizeTimer = null;
+    };
+
+    const settleContainerResize = () => {
+      containerResizeTimer = null;
+      if (isPanelResizeActive(workspaceElement)) {
+        containerResizePending = true;
+        return;
+      }
+      containerResizePending = false;
       try {
-        const engine = getEngine();
-        engine.resize(true, true);
-        engine.render();
+        // The primary camera is converted by its own auto-fit hook from the
+        // size it last fitted; converting it here as well would scale it twice.
+        resizeViewportsKeepingVisibleFrame(getEngine(), {
+          excludeViewportIds: [VIEWPORT_ID],
+        });
       } catch {}
     };
 
+    const scheduleContainerResize = () => {
+      cancelContainerResize();
+      if (isPanelResizeActive(workspaceElement)) {
+        containerResizePending = true;
+        return;
+      }
+      // A timer, not requestAnimationFrame: see resizeViewportsKeepingVisibleFrame.
+      containerResizeTimer = window.setTimeout(
+        settleContainerResize,
+        CONTAINER_RESIZE_SETTLE_MS
+      );
+    };
+
+    const handlePanelResizeStateChange = () => {
+      if (isPanelResizeActive(workspaceElement)) {
+        containerResizePending = true;
+        cancelContainerResize();
+        return;
+      }
+      if (containerResizePending) scheduleContainerResize();
+    };
+
     const fitGridToCurrentLayout = () => {
+      // Never resize buffers mid-drag; the drag-end settle pass takes over.
+      if (isPanelResizeActive(workspaceElement)) {
+        containerResizePending = true;
+        return false;
+      }
       try {
         const engine = getEngine();
 
@@ -121,18 +182,9 @@ export function useViewportGridResize({
       });
     };
 
-    const scheduleResize = () => {
-      if (resizeFrame !== null) return;
-      resizeFrame = window.requestAnimationFrame(() => {
-        resizeFrame = null;
-        renderGridKeepingCamera();
-      });
-    };
-
     const scheduleSettlingRenders = () => {
       retryTimers.forEach((timer) => window.clearTimeout(timer));
       retryTimers.clear();
-      scheduleResize();
 
       for (const delay of SETTLING_RENDER_DELAYS_MS) {
         const timer = window.setTimeout(() => {
@@ -158,8 +210,19 @@ export function useViewportGridResize({
       if (!layoutFitCompleted) scheduleLayoutFit();
     };
 
-    const observer = new ResizeObserver(scheduleResize);
+    const observer = new ResizeObserver(scheduleContainerResize);
     observer.observe(gridElement);
+
+    const panelResizeObserver =
+      workspaceElement && typeof MutationObserver !== 'undefined'
+        ? new MutationObserver(handlePanelResizeStateChange)
+        : null;
+    if (panelResizeObserver && workspaceElement) {
+      panelResizeObserver.observe(workspaceElement, {
+        attributes: true,
+        attributeFilter: ['data-panel-resizing'],
+      });
+    }
 
     const viewportElements = Array.from(
       gridElement.querySelectorAll<HTMLElement>(
@@ -185,6 +248,8 @@ export function useViewportGridResize({
 
     return () => {
       observer.disconnect();
+      panelResizeObserver?.disconnect();
+      cancelContainerResize();
       viewportElements.forEach((element) => {
         element.removeEventListener(
           CoreEnums.Events.VIEWPORT_NEW_IMAGE_SET,
@@ -196,7 +261,6 @@ export function useViewportGridResize({
         CoreEnums.Events.IMAGE_RENDERED,
         handlePrimaryImageRendered
       );
-      if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
       if (firstFitFrame !== null) window.cancelAnimationFrame(firstFitFrame);
       if (secondFitFrame !== null) window.cancelAnimationFrame(secondFitFrame);
       retryTimers.forEach((timer) => window.clearTimeout(timer));
