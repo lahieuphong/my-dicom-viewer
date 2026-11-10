@@ -9,7 +9,7 @@
 // CDP_ORIGIN are reused. Otherwise this script starts `next dev --webpack`
 // and a headless Chrome (CHROME_PATH overrides the binary), and stops
 // whatever it started when it exits. Per-regression logs are kept in a
-// temporary directory and printed for failures.
+// temporary directory (CDP_LOG_DIR overrides it) and printed for failures.
 //
 // Chrome renders WebGL with SwiftShader by default, which works without a
 // GPU (e.g. in CI) but loads and renders far slower. --gpu uses the hardware
@@ -17,7 +17,7 @@
 // that SwiftShader hides surface. Run both before relying on a change.
 
 import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,7 +54,10 @@ const viewerUrl = `${viewerOrigin}/viewer?StudyInstanceUIDs=${
   process.env.STUDY_INSTANCE_UID ?? DEFAULT_STUDY_UID
 }`;
 const useHardwareGpu = process.argv.includes('--gpu');
-const logDir = mkdtempSync(path.join(tmpdir(), 'viewer-cdp-'));
+// CDP_LOG_DIR keeps the logs in a known place, e.g. for CI artifacts.
+const logDir = process.env.CDP_LOG_DIR
+  ? (mkdirSync(process.env.CDP_LOG_DIR, { recursive: true }), process.env.CDP_LOG_DIR)
+  : mkdtempSync(path.join(tmpdir(), 'viewer-cdp-'));
 const started = [];
 
 function parseArguments(argv) {
@@ -196,6 +199,8 @@ async function ensureChrome() {
       ...(useHardwareGpu
         ? []
         : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']),
+      // e.g. CHROME_EXTRA_ARGS=--no-sandbox on CI runners without a sandbox.
+      ...String(process.env.CHROME_EXTRA_ARGS ?? '').split(/\s+/).filter(Boolean),
       'about:blank',
     ],
     { cleanupPaths: [profileDir] }

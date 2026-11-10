@@ -44,6 +44,10 @@ also runs without a GPU, e.g. in CI. `--gpu` is about three times faster and
 closer to what users run; timing races that the slow SwiftShader path hides
 show up there, so run both before relying on a viewer change.
 
+GitHub Actions (`.github/workflows/ci.yml`) runs `yarn verify`, the production
+build and `yarn test:cdp` with SwiftShader on every push to `main` and every
+pull request; failing regression logs are uploaded as the `cdp-logs` artifact.
+
 Before a production/Vercel build, run:
 
 ```bash

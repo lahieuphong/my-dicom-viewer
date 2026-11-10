@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Architecture, lint and types
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn verify
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      # prebuild generates the DICOM manifest and runs the readiness check.
+      - run: yarn build
+
+  browser-regressions:
+    name: Browser regressions (CDP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - run: yarn dicom:manifest
+      # Starts `next dev` and the runner's Google Chrome. Hosted runners have
+      # no GPU, so Chrome renders with SwiftShader (the runner's default).
+      - run: yarn test:cdp
+        env:
+          CDP_LOG_DIR: ${{ runner.temp }}/cdp-logs
+          # Chrome only opens the local viewer; hosted Ubuntu images may not
+          # provide the user namespaces its sandbox needs.
+          CHROME_EXTRA_ARGS: --no-sandbox
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdp-logs
+          path: ${{ runner.temp }}/cdp-logs
+          retention-days: 7
