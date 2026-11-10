@@ -123,6 +123,21 @@ async function evaluate(expression) {
   return response.result?.value;
 }
 
+// Radix menus open with a zoom-in-95 animation, and getBoundingClientRect()
+// includes the animated transform. A fixed sleep is not enough when the main
+// thread is busy, so wait until every animation in the open menus finished.
+async function waitForMenuAnimations() {
+  await evaluate(`(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const menus = document.querySelectorAll('[data-slot="dropdown-menu-content"]');
+    await Promise.all(
+      [...menus]
+        .flatMap((menu) => menu.getAnimations({ subtree: true }))
+        .map((animation) => animation.finished.catch(() => {}))
+    );
+  })()`);
+}
+
 async function waitFor(expression, timeout = 30000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeout) {
@@ -205,6 +220,21 @@ async function pointerClick(point, clickCount = 1) {
     },
     pageSessionId
   );
+}
+
+// Cornerstone holds every left mousedown for up to 400 ms to detect a double
+// click and ignores another left mousedown while that window is open, unless
+// pointer movement flushes it first. Multi-click tools (Spline, Livewire) must
+// therefore place points like a person does: one click per window.
+const CORNERSTONE_DOUBLE_CLICK_WINDOW_MS = 450;
+
+async function placeContourPoints(points) {
+  for (const contourPoint of points) {
+    await pointerClick(contourPoint);
+    await new Promise((resolve) =>
+      setTimeout(resolve, CORNERSTONE_DOUBLE_CLICK_WINDOW_MS)
+    );
+  }
 }
 
 async function pointerDrag(start, end) {
@@ -375,7 +405,7 @@ await waitFor(
 );
 // Radix applies a short zoom-in animation to the menu. Measure the final
 // rendered geometry instead of the transient 95% animation frame.
-await new Promise((resolve) => setTimeout(resolve, 250));
+await waitForMenuAnimations();
 const measurementMenuState = await evaluate(`(() => {
   const control = document.querySelector(
     '[data-testid="measurement-tools-control"]'
@@ -431,6 +461,11 @@ const measurementMenuState = await evaluate(`(() => {
     triggerSize: trigger
       ? [Math.round(trigger.getBoundingClientRect().width), Math.round(trigger.getBoundingClientRect().height)]
       : null,
+    // The 56 x 36 control owns the 1px border; its single menu trigger fills
+    // the control's padding box (54 x 34), so compare against that box.
+    controlInnerSize: control
+      ? [control.clientWidth, control.clientHeight]
+      : null,
   };
 })()`);
 const expectedMeasurementMenuIds = [
@@ -465,7 +500,11 @@ if (
     (size) => !size || size[0] !== 16 || size[1] !== 16
   ) ||
   measurementMenuState.primaryIconSize?.some((size) => size !== 16) ||
-  measurementMenuState.triggerSize?.[0] !== 56 ||
+  !measurementMenuState.controlInnerSize ||
+  measurementMenuState.triggerSize?.[0] !==
+    measurementMenuState.controlInnerSize[0] ||
+  measurementMenuState.triggerSize?.[1] !==
+    measurementMenuState.controlInnerSize[1] ||
   measurementMenuState.controlVisual?.width !== 56 ||
   measurementMenuState.controlVisual?.height !== 36
 ) {
@@ -503,7 +542,7 @@ await waitFor(
     (label) => label.textContent?.trim() === 'Other'
   )`
 );
-await new Promise((resolve) => setTimeout(resolve, 250));
+await waitForMenuAnimations();
 const otherMenuStyle = await evaluate(`(() => {
   const label = [...document.querySelectorAll(
     '[data-slot="dropdown-menu-label"]'
@@ -592,10 +631,11 @@ await waitFor(
 
 if (testGhostCancellation) {
   await selectMeasurementTool('splineROI');
-  await pointerClick(point(0.40, 0.44));
-  await pointerClick(point(0.46, 0.37));
-  await pointerClick(point(0.54, 0.42));
-  await new Promise((resolve) => setTimeout(resolve, 350));
+  await placeContourPoints([
+    point(0.40, 0.44),
+    point(0.46, 0.37),
+    point(0.54, 0.42),
+  ]);
   const draftState = await evaluate(`(() => {
     const createButton = [...document.querySelectorAll('button')].find(
       (button) => button.textContent?.trim() === 'Create SR'
@@ -722,10 +762,12 @@ if (!singleToolName || singleToolName === 'planarFreehandROI') {
 
 if (!singleToolName || singleToolName === 'splineROI') {
   await selectMeasurementTool('splineROI');
-  await pointerClick(point(0.40, 0.44));
-  await pointerClick(point(0.46, 0.37));
-  await pointerClick(point(0.54, 0.42));
-  await pointerClick(point(0.52, 0.51));
+  await placeContourPoints([
+    point(0.40, 0.44),
+    point(0.46, 0.37),
+    point(0.54, 0.42),
+    point(0.52, 0.51),
+  ]);
   await pointerClick(point(0.40, 0.44), 2);
   measurementCount += 1;
   await waitForMeasurementCount(measurementCount);
@@ -733,10 +775,12 @@ if (!singleToolName || singleToolName === 'splineROI') {
 
 if (!singleToolName || singleToolName === 'livewireContour') {
   await selectMeasurementTool('livewireContour');
-  await pointerClick(point(0.58, 0.46));
-  await pointerClick(point(0.66, 0.47));
-  await pointerClick(point(0.68, 0.56));
-  await pointerClick(point(0.61, 0.59));
+  await placeContourPoints([
+    point(0.58, 0.46),
+    point(0.66, 0.47),
+    point(0.68, 0.56),
+    point(0.61, 0.59),
+  ]);
   await pointerClick(point(0.58, 0.46), 2);
   measurementCount += 1;
   await waitForMeasurementCount(measurementCount);

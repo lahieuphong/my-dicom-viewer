@@ -353,6 +353,21 @@ async function openOtherMenu() {
     `Boolean(document.querySelector('[data-testid="other-tools-menu"]'))`,
     'Other menu to open'
   );
+  await waitForMenuInteractive();
+}
+
+// Radix registers a DismissableLayer's outside-pointerdown listener in a
+// setTimeout(0) after the menu mounts, while the modal menu already sets
+// `pointer-events: none` on <body>. Chrome runs input before timers, so a click
+// sent the moment the menu appears can reach neither the trigger nor that
+// listener and the menu stays open. Two frames plus one timer tick (timers of
+// equal delay run in FIFO order) guarantee the listener is in place.
+async function waitForMenuInteractive() {
+  await evaluate(`new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+    });
+  })`);
 }
 
 async function selectOtherItem(itemId) {
