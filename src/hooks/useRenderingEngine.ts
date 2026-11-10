@@ -140,7 +140,6 @@ export function useRenderingEngine({
   const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null);
 
   const stackEventHandlerRef = useRef<((e: any) => void) | null>(null);
-  const watchdogTimerRef = useRef<number | null>(null);
 
   const initTokenRef = useRef<symbol | null>(null);
   const cleanupTimerRef = useRef<number | null>(null);
@@ -281,12 +280,6 @@ export function useRenderingEngine({
     // per-series observers immediately so the next stack gets one clean set of
     // listeners without tearing down the viewport itself.
     try {
-      if (watchdogTimerRef.current) {
-        window.clearInterval(watchdogTimerRef.current);
-        watchdogTimerRef.current = null;
-      }
-    } catch {}
-    try {
       const previousHandler = stackEventHandlerRef.current;
       const previousElement =
         renderingEngineRef.current?.getViewport?.(VIEWPORT_ID)?.element ??
@@ -408,7 +401,7 @@ export function useRenderingEngine({
       }
       if (isStale()) return;
 
-      // --- wrap setStack / setImageId to avoid stomping after recent user interaction ---
+      // --- wrap setStack to avoid stomping after recent user interaction ---
       try {
         if (vp) {
           try {
@@ -442,35 +435,6 @@ export function useRenderingEngine({
             }
           } catch {}
 
-          try {
-            const origSetImageId = (vp as any).setImageId;
-            if (
-              typeof origSetImageId === 'function' &&
-              !(vp as any).__viewerInteractionGuardedSetImageId
-            ) {
-              (vp as any).setImageId = async function wrappedSetImageId(id: string) {
-                try {
-                  const el = (vp as any).element ?? mountEl ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
-                  let lastUserTs = 0;
-                  try { lastUserTs = Number((el as HTMLElement)?.dataset?.__lastUserInteraction ?? 0) || 0; } catch {}
-                  const now = Date.now();
-                  if (lastUserTs && now - lastUserTs < USER_COOLDOWN_MS) {
-                    try {
-                      const ids = (vp as any).getImageIds?.() ?? [];
-                      const currentIdx = (typeof (vp as any).getCurrentImageIdIndex === 'function') ? (vp as any).getCurrentImageIdIndex() : -1;
-                      const targetIdx = ids.findIndex((x: string) => String(x) === String(id));
-                      if (currentIdx >= 0 && targetIdx >= 0 && currentIdx !== targetIdx) {
-                        return false;
-                      }
-                    } catch {}
-                  }
-                } catch {}
-                // eslint-disable-next-line prefer-rest-params
-                return await (origSetImageId as any).apply(this, arguments as any);
-              };
-              (vp as any).__viewerInteractionGuardedSetImageId = true;
-            }
-          } catch {}
         }
       } catch {}
 
@@ -514,27 +478,11 @@ export function useRenderingEngine({
         const attempts = ATTEMPTS_ENGINE;
         for (let i = 0; i < attempts && !isStale(); i++) {
           try {
-            if (vpCandidate && typeof vpCandidate.setStack === 'function') {
-              await vpCandidate.setStack(ids, idx);
-            } else if (vpCandidate && typeof vpCandidate.setImageId === 'function') {
-              await vpCandidate.setImageId(ids[idx]);
-            } else if (renderingEngineRef.current && typeof (renderingEngineRef.current as any).setStacks === 'function') {
-              (renderingEngineRef.current as any).setStacks([{ viewportId: VIEWPORT_ID, imageIds: ids, index: idx, __requestToken: reqToken }]);
-            } else {
-              return true;
-            }
-
-            try {
-              if (vpCandidate && typeof vpCandidate.setImageIndex === 'function') {
-                vpCandidate.setImageIndex(idx);
-              } else if (vpCandidate && typeof vpCandidate.getImageIds === 'function') {
-                const idsLocal = vpCandidate.getImageIds?.() ?? [];
-                if (idsLocal && idsLocal.length) {
-                  const safeIdx = Math.max(0, Math.min(idx, idsLocal.length - 1));
-                  try { vpCandidate.setImageId?.(idsLocal[safeIdx]); } catch {}
-                }
-              }
-            } catch (e) {}
+            // setStack(imageIds, index) loads and shows the image at `index`.
+            // Cornerstone 3D has no StackViewport.setImageId/setImageIndex or
+            // RenderingEngine.setStacks, so the former fallbacks never ran.
+            if (typeof vpCandidate?.setStack !== 'function') return true;
+            await vpCandidate.setStack(ids, idx);
 
             try { normalizeCanvasAndContext((vpCandidate?.element as HTMLElement) ?? mountEl); } catch {}
             try { renderingEngineRef.current?.resize?.(); } catch {}
@@ -557,81 +505,6 @@ export function useRenderingEngine({
         return false;
       }
 
-      async function performFallbackAttach(ids: string[]) {
-        try {
-          const csCore: any = (window as any).__cornerstoneCore ?? null;
-          const preferIdx =
-            shouldPreserveInitialIndex && typeof lastImageIndexRef.current === 'number'
-              ? lastImageIndexRef.current
-              : initialIndex;
-          const chosenIndex = Math.max(0, Math.min(preferIdx, Math.max(0, (ids?.length ?? 1) - 1)));
-
-          const reqToken = `stk-fb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          const elForLock = vp?.element ?? mountEl ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
-          try {
-            if (elForLock && elForLock instanceof HTMLElement) {
-              elForLock.dataset.__stackLocked = '1';
-              elForLock.dataset.__stackLockedOwner = reqToken;
-            }
-          } catch (e) {}
-
-          try {
-            if (renderingEngineRef.current && typeof (renderingEngineRef.current as any).setStacks === 'function') {
-              (renderingEngineRef.current as any).setStacks([{ viewportId: VIEWPORT_ID, imageIds: ids, index: chosenIndex, __requestToken: reqToken }]);
-            }
-          } catch (e) {}
-
-          try {
-            if (csCore && typeof csCore.addImageSlicesToViewports === 'function') {
-              try {
-                csCore.addImageSlicesToViewports([{ viewportId: VIEWPORT_ID, imageIds: ids }]);
-              } catch (e) {
-                try {
-                  csCore.addImageSlicesToViewports(VIEWPORT_ID, ids);
-                } catch (e2) {}
-              }
-            }
-          } catch (e) {}
-
-          try {
-            const first = ids[chosenIndex] ?? ids[0];
-            if (first) {
-              const win: any = window;
-              const globalFn = win?.__cornerstoneImageLoaderFn ?? null;
-              if (typeof globalFn === 'function') {
-                await globalFn(first).catch(() => {});
-              } else if (csCore && csCore.imageLoader && typeof csCore.imageLoader.loadAndCacheImage === 'function') {
-                await csCore.imageLoader.loadAndCacheImage(first).catch(() => {});
-              }
-            }
-          } catch (e) {}
-
-          try {
-            const eventName = (CoreEnums as any)?.Events?.STACK_NEW_IMAGE ?? 'cornerstone-stack-new-image';
-            const detail = { imageIdIndex: chosenIndex };
-            const targetEl = (vp?.element ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`)) as HTMLElement | null;
-            try {
-              targetEl?.dispatchEvent(new CustomEvent(eventName, { detail, bubbles: true }));
-            } catch (e) {}
-          } catch (e) {}
-
-          try { await forceRenderFrames(4, vp); } catch (e) {}
-          try { normalizeCanvasAndContext((vp?.element as HTMLElement) ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`)); } catch {}
-          try { renderingEngineRef.current?.resize?.(); } catch {}
-          try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-          try { await vp?.render?.(); } catch {}
-
-        } catch (e) {} finally {
-          try {
-            const elForLock = vp?.element ?? mountEl ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
-            if (elForLock && elForLock instanceof HTMLElement) {
-              delete elForLock.dataset.__stackLocked;
-              delete elForLock.dataset.__stackLockedOwner;
-            }
-          } catch (e) {}
-        }
-      }
-
       if (vp && imageIds && imageIds.length > 0) {
         try {
           const preferIdx =
@@ -648,11 +521,11 @@ export function useRenderingEngine({
           try { normalizeCanvasAndContext((vp?.element as HTMLElement) ?? mountEl); } catch {}
 
           const elToCheck = (vp?.element ?? mountEl) as HTMLDivElement | null;
-          const attachedOk = await waitForEnabledImage(elToCheck, vp, 3000, 120);
-
-          if (!attachedOk) {
-            await performFallbackAttach(imageIds);
-          }
+          // Nudge rendering until the stack's image has rendered; the render
+          // checks below follow either way. The former fallback attach only
+          // called APIs Cornerstone 3D does not have and dispatched a
+          // synthetic STACK_NEW_IMAGE event.
+          await waitForEnabledImage(elToCheck, vp, 3000, 120);
 
           try {
             const polling = await import('@/lib/viewer/polling');
@@ -685,95 +558,6 @@ export function useRenderingEngine({
             }, 900);
           } catch {}
 
-          function startWatchdog(missThreshold = 5, intervalMs = 800, cooldownMs = 8000) {
-            try {
-              try { if (watchdogTimerRef.current) { window.clearInterval(watchdogTimerRef.current); watchdogTimerRef.current = null; } } catch {}
-              let missCount = 0;
-              let lastReattachTs = 0;
-
-              const id = window.setInterval(async () => {
-                if (isStale()) return;
-                try {
-                  const elToCheck = (vp?.element ?? (document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`))) as HTMLDivElement | null;
-                  if (!elToCheck) { missCount = 0; return; }
-                  if (!(elToCheck as HTMLElement).isConnected) { missCount = 0; return; }
-
-                  const csCore: any = (window as any).__cornerstoneCore ?? null;
-                  let enabled: any = null;
-                  try { if (csCore?.getEnabledElementByViewportId) enabled = csCore.getEnabledElementByViewportId(VIEWPORT_ID); else if (csCore?.getEnabledElement) enabled = csCore.getEnabledElement(elToCheck); else enabled = (typeof getEnabledElementSafeLocal === 'function') ? getEnabledElementSafeLocal(elToCheck) : null; } catch (e) { enabled = null; }
-
-                  const activeViewport =
-                    (enabled as any)?.viewport ??
-                    vp ??
-                    renderingEngineRef.current?.getViewport?.(VIEWPORT_ID) ??
-                    null;
-                  let imageExists = Boolean((enabled as any)?.image);
-                  try {
-                    imageExists = imageExists || Boolean(activeViewport?.getCurrentImageId?.());
-                  } catch {}
-                  try {
-                    imageExists = imageExists || Boolean(activeViewport?.getCornerstoneImage?.());
-                  } catch {}
-                  try {
-                    imageExists = imageExists || Boolean(activeViewport?.getImageData?.());
-                  } catch {}
-                  try {
-                    imageExists =
-                      imageExists ||
-                      String(activeViewport?.viewportStatus ?? '').toLowerCase() === 'rendered';
-                  } catch {}
-                  if (imageExists) { missCount = 0; return; }
-
-                  missCount += 1;
-
-                  const now = Date.now();
-                  if (now - lastReattachTs < cooldownMs) { return; }
-
-                  if (missCount >= missThreshold) {
-                    lastReattachTs = Date.now();
-                    try {
-                      if (vp && typeof vp.setImageIndex === 'function') {
-                        const idx = typeof vp.getCurrentImageIdIndex === 'function' ? (vp.getCurrentImageIdIndex() ?? 0) : 0;
-                        try { 
-                          vp.setImageIndex(idx);
-                        } catch (e) {}
-                      } else if (vp && typeof vp.getImageIds === 'function') {
-                        const ids = vp.getImageIds?.() ?? [];
-                        if (ids && ids.length) {
-                          try {
-                            let currentIdx = -1;
-                            try { if (typeof (vp as any).getCurrentImageIdIndex === 'function') currentIdx = (vp as any).getCurrentImageIdIndex(); } catch {}
-                            const safeIdx = (typeof currentIdx === 'number' && currentIdx >= 0)
-                              ? currentIdx
-                              : (shouldPreserveInitialIndex && typeof lastImageIndexRef.current === 'number' ? lastImageIndexRef.current : -1);
-
-                            if (safeIdx >= 0 && typeof vp.setImageIndex === 'function') {
-                              try {
-                                vp.setImageIndex(safeIdx);
-                              } catch (e) {
-                                try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-                              }
-                            } else {
-                              try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch (e) {}
-                            }
-                          } catch (e) {}
-                        }
-                      } else {
-                        await performFallbackAttach(mergedSeriesMap[selectedSeriesId]?.files ?? []);
-                      }
-
-                      try { await forceRenderFrames(3, vp); } catch (e) {}
-                      try { normalizeCanvasAndContext((vp?.element as HTMLElement) ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`)); } catch {}
-                    } catch (e) {} finally { missCount = 0; }
-                  }
-                } catch (err) {}
-              }, intervalMs);
-
-              watchdogTimerRef.current = id;
-            } catch (e) {}
-          }
-
-          startWatchdog();
         } catch (e) {}
       }
 
@@ -883,8 +667,6 @@ export function useRenderingEngine({
         cleanupTimerRef.current = window.setTimeout(() => {
           try {
             if (initTokenRef.current !== tokenAtCleanup) return;
-
-            try { if (watchdogTimerRef.current) { window.clearInterval(watchdogTimerRef.current); watchdogTimerRef.current = null; } } catch (e) {}
 
             try {
               const handler = stackEventHandlerRef.current;
