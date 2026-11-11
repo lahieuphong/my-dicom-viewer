@@ -172,6 +172,57 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 - Mỗi bước phải chạy TypeScript, lint/build phù hợp và architecture guard.
   Thay đổi lifecycle Cornerstone cần thêm smoke test viewer trước khi xóa fallback.
 
+## Kiểm thử
+
+- `yarn verify`: architecture guard, ESLint và TypeScript.
+- `yarn test:cdp`: chạy toàn bộ browser regression trong Chrome headless qua
+  Chrome DevTools Protocol (`scripts/run-cdp-tests.mjs`, harness chung
+  `scripts/lib/cdp-harness.mjs`). Runner dùng lại viewer ở `VIEWER_ORIGIN` và
+  Chrome ở `CDP_ORIGIN` nếu đang chạy; nếu không thì tự bật `next dev` và Chrome
+  (theo port của hai biến này), rồi tắt chúng khi xong. `--list` liệt kê các
+  regression, `--only a,b` chạy một nhóm.
+- Chrome mặc định render WebGL bằng SwiftShader (chạy được khi không có GPU,
+  như trên CI). `--gpu` dùng GPU thật: nhanh hơn khoảng 3 lần và làm lộ các
+  timing race mà SwiftShader che đi.
+- CI (`.github/workflows/ci.yml`) chạy `verify`, `build` và `test:cdp` cho mỗi
+  push lên `main` và mỗi pull request; khi regression lỗi, log được upload thành
+  artifact `cdp-logs`.
+- Thay đổi lifecycle Cornerstone (attach, readiness, resize, camera) phải pass
+  `test:cdp` cả mặc định lẫn `--gpu`.
+
+## Tiến độ
+
+**Phase 2 (viewport ownership)** đã xong một phần ở pane chính, nhưng
+`ViewportService` chưa được implement:
+
+- `useRenderingEngine` là owner duy nhất của `StackViewport.setStack` ở pane
+  chính. Đường attach dự phòng (`attachDisplaySet`, `ensureStackOnViewport`,
+  watchdog, wrapper `setImageId`), guard "cooldown sau thao tác người dùng" và
+  `useForceZoomOne` đã bị xóa. Effect settle trong mode chỉ chờ engine gắn
+  stack, rồi áp dụng navigation đang chờ.
+- Readiness lấy từ event thật của Cornerstone 3D (`STACK_NEW_IMAGE`,
+  `IMAGE_RENDERED`) qua `useImageReadiness`: ảnh đang hiển thị
+  (`getCornerstoneImage()`) có thuộc series đã chọn hay không. Polling/retry
+  (`useEnsureImageRendered`, `lib/viewer/polling`) đã bị xóa. Hook không dựa vào
+  `viewportStatus`, vì nó về `PRE_RENDER` mỗi lần cuộn hoặc đổi VOI, còn
+  `setStack` đổi current image ID trước khi ảnh mới được load.
+- Engine chỉ resize khi một canvas lệch kích thước với element của nó
+  (`resizeEngineIfNeeded`), vì `engine.resize()` xóa canvas của mọi pane. Fit
+  tự động giữ rotation/flip (`fitViewportKeepingOrientation`); chỉ Reset View
+  đưa orientation về mặc định.
+- Split layout dùng `ViewportGrid`. Mỗi pane phụ có một lifecycle gọn
+  (`useSecondaryStackViewport`: `setStack`, rồi chờ `IMAGE_RENDERED`). Image
+  Slice Sync dùng vị trí ảnh từ manifest cho series chưa load
+  (`lib/cornerstone/imageSliceSync`).
+
+Còn lại:
+
+- Chuyển pane chính sang cùng mô hình với pane phụ, rồi gom cả hai sau
+  `ViewportService`.
+- Phase 1: `createBasicViewerRuntime` đã có, nhưng `BasicViewer` chưa dùng.
+- Phase 3–4: `BasicViewerImplementation.tsx` vẫn giữ phần lớn điều phối
+  measurement và selection.
+
 ## Các phase tiếp theo
 
 1. **Runtime adoption:** tạo một `ViewerRuntime` cho mỗi `BasicViewer`, register static
@@ -189,6 +240,6 @@ Mỗi bước migration kiến trúc phải tuân thủ:
    xóa prop drilling và deep legacy imports.
 7. **Facade removal:** xóa `lib/pacs`, legacy Cornerstone hook re-exports và legacy
    Viewer wrapper khi không còn consumer.
-8. **Mở rộng khi có nhu cầu:** chỉ thêm viewport-grid/hanging-protocol engine khi
-   có multi-viewport, comparison, fusion hoặc MPR; không sao chép toàn bộ OHIF
-   service graph sớm.
+8. **Mở rộng khi có nhu cầu:** viewport grid đã có cho split layout; chỉ thêm
+   hanging-protocol engine khi có comparison, fusion hoặc MPR. Không sao chép
+   toàn bộ OHIF service graph sớm.
