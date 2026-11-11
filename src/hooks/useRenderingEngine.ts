@@ -5,7 +5,6 @@ import { RenderingEngine, StackViewport, Enums as CoreEnums } from '@cornerstone
 import { ToolGroupManager } from '@cornerstonejs/tools';
 import { initCornerstone } from '@/lib/cornerstone';
 import { getRenderingEngine, RENDERER_ID } from '@/lib/cornerstone/renderer';
-import voiLib from '@/lib/cornerstone/voi';
 import { TOOL_GROUP } from '@/constants/toolgroup';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { enableElement } from '@/lib/cornerstone/element';
@@ -386,15 +385,16 @@ export function useRenderingEngine({
       }
 
       // A newer run took over while this one awaited setStack. It owns the
-      // VOI and the stack listener; registering this run's listener as well
-      // would leak it, because cleanup only removes the latest handler.
+      // stack listener; registering this run's listener as well would leak
+      // it, because cleanup only removes the latest handler.
       if (isStale()) return;
 
-      // The cached VOI is only an initialization fallback. Re-applying it every
-      // time the stack loops back to image 0 would overwrite a user's current
-      // Window/Level adjustment with the first image's original VOI.
-      let initialVoiEventPending = true;
-
+      // Tracks the shown image for the frame UI and for keeping the index on
+      // a re-run. The initial VOI is Cornerstone's default for the image. A
+      // one-time "initial VOI" step used to run here
+      // too, but it was registered after setStack and so missed the first
+      // image: it only ever ran when a re-run's first event landed on image
+      // 1, and then overwrote the user's Window/Level.
       const onStackNewImage = (e: any) => {
         try {
           const eventIndex = e?.detail?.imageIdIndex;
@@ -418,45 +418,6 @@ export function useRenderingEngine({
               lastImageIndexRef.current = idx;
             }
           } catch {}
-
-          const shouldInitializeVoi = initialVoiEventPending && idx === initialIndex;
-          // Consume the one-time initialization opportunity on the first valid
-          // stack event. A later return to image 0 is navigation, not setup.
-          initialVoiEventPending = false;
-
-          if (!shouldInitializeVoi) return;
-
-          (async () => {
-            try {
-              const imgId = vp?.getImageIds?.()?.[idx];
-              if (!imgId) return;
-
-              try {
-                if (voiLib && (voiLib as any).cacheVOI?.has?.(String(imgId))) {
-                  const cached = (voiLib as any).cacheVOI.get(String(imgId));
-                  if (cached) {
-                    try { vp.setProperties?.({ voiRange: cached }); } catch {}
-                    try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-                    return;
-                  }
-                }
-              } catch {}
-
-              try {
-                if (voiLib && typeof (voiLib as any).applyVOI === 'function') {
-                  await (voiLib as any).applyVOI(vp, imgId, {
-                    persistTo: (v: any) => {
-                      try {
-                        (voiLib as any).cacheVOI.set(String(imgId), v);
-                      } catch {}
-                    },
-                  }).catch(() => {});
-                  try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-                }
-              } catch (err) {
-              }
-            } catch (err) {}
-          })();
         } catch (err) {}
       };
 
