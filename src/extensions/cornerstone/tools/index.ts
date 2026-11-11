@@ -13,7 +13,6 @@ export type {
   UseCalibrationLineResult,
 } from '@/hooks/useCalibrationLine';
 export { useFlipHorizontal } from '@/hooks/useFlip';
-export { useForceZoomOne } from '@/hooks/useForceZoomOne';
 export { useInvert } from '@/hooks/useInvert';
 export type { UseInvertOptions, UseInvertResult } from '@/hooks/useInvert';
 export { useResetViewer } from '@/hooks/useResetViewer';

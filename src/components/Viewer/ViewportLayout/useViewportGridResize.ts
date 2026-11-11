@@ -5,7 +5,10 @@ import { Enums as CoreEnums, type StackViewport } from '@cornerstonejs/core';
 
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { getRenderingEngine, RENDERER_ID } from '@/lib/cornerstone/renderer';
-import { resizeViewportsKeepingVisibleFrame } from '@/lib/viewer/fitViewport';
+import {
+  resizeEngineIfNeeded,
+  resizeViewportsKeepingVisibleFrame,
+} from '@/lib/viewer/fitViewport';
 import { fitViewportKeepingOrientation } from '@/lib/viewer/viewportActions';
 import {
   clearViewportCameraUserModified,
@@ -126,10 +129,11 @@ export function useViewportGridResize({
       try {
         const engine = getEngine();
 
-        // Resize every canvas, but do not globally reset sibling cameras. Each
-        // untouched viewport is fitted explicitly below; a viewport that the
-        // user panned/zoomed keeps its own camera.
-        engine.resize(true, true);
+        // Resize the canvases only when one no longer fits its cell (a resize
+        // clears them all), without resetting sibling cameras. Each untouched
+        // viewport is fitted explicitly below; a viewport that the user
+        // panned/zoomed keeps its own camera.
+        resizeEngineIfNeeded(engine);
 
         let primaryReady = false;
         const viewportCount = getViewportCount(layout);

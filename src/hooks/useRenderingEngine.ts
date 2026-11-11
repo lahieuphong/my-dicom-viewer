@@ -13,6 +13,7 @@ import { getEnabledElementSafeLocal } from '@/lib/viewer/dom';
 import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canvasUtils';
 import { ATTEMPTS_ENGINE, USER_COOLDOWN_MS } from '@/lib/viewer/constants';
 import { areImageStacksEqual } from '@/lib/cornerstone/helpers';
+import { resizeEngineIfNeeded } from '@/lib/viewer/fitViewport';
 
 const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 const VIEWPORT_BACKGROUND: [number, number, number] = [0, 0, 0];
@@ -386,7 +387,7 @@ export function useRenderingEngine({
         await sleep(60);
         if (isStale()) return;
 
-        try { renderingEngineRef.current?.resize?.(); } catch {}
+        try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
         try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
       } catch (err) {}
 
@@ -485,7 +486,7 @@ export function useRenderingEngine({
             await vpCandidate.setStack(ids, idx);
 
             try { normalizeCanvasAndContext((vpCandidate?.element as HTMLElement) ?? mountEl); } catch {}
-            try { renderingEngineRef.current?.resize?.(); } catch {}
+            try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
             try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
             try { if (typeof (vpCandidate?.render) === 'function') await vpCandidate.render(); } catch {}
             try { await forceRenderFrames(2, vpCandidate); } catch {}
@@ -516,7 +517,7 @@ export function useRenderingEngine({
           await robustSetStack(vp, imageIds, safePreferIdx);
 
           try { vp.reset?.(); } catch {}
-          try { renderingEngineRef.current?.resize?.(); } catch {}
+          try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
           try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
           try { normalizeCanvasAndContext((vp?.element as HTMLElement) ?? mountEl); } catch {}
 
@@ -525,39 +526,17 @@ export function useRenderingEngine({
           // checks below follow either way. The former fallback attach only
           // called APIs Cornerstone 3D does not have and dispatched a
           // synthetic STACK_NEW_IMAGE event.
-          await waitForEnabledImage(elToCheck, vp, 3000, 120);
+          const rendered = await waitForEnabledImage(elToCheck, vp, 3000, 120);
 
-          try {
-            const polling = await import('@/lib/viewer/polling');
-            if (polling?.forceRenderCheck) {
-              try { await polling.forceRenderCheck(elToCheck as HTMLDivElement, vp, renderingEngineRef); } catch {}
-            }
-          } catch (e) {}
-
-          try {
-            setTimeout(async () => {
-              if (isStale()) return;
-              try {
-                const polling = await import('@/lib/viewer/polling');
-                if (polling?.forceRenderCheck) {
-                  await polling.forceRenderCheck(elToCheck as HTMLDivElement, vp, renderingEngineRef);
-                }
-              } catch {}
-            }, 300);
-          } catch {}
-
-          try {
-            setTimeout(async () => {
-              if (isStale()) return;
-              try {
-                const polling = await import('@/lib/viewer/polling');
-                if (polling?.forceRenderCheck) {
-                  await polling.forceRenderCheck(elToCheck as HTMLDivElement, vp, renderingEngineRef);
-                }
-              } catch {}
-            }, 900);
-          } catch {}
-
+          // One render check only when the image did not render. It used to run
+          // unconditionally and again 300 ms and 900 ms later, each time
+          // resizing the whole engine after the stack had already rendered.
+          if (!rendered && !isStale()) {
+            try {
+              const polling = await import('@/lib/viewer/polling');
+              await polling.forceRenderCheck?.(elToCheck as HTMLDivElement, vp, renderingEngineRef);
+            } catch {}
+          }
         } catch (e) {}
       }
 

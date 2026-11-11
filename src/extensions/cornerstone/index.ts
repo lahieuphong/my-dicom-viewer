@@ -46,7 +46,6 @@ export {
   useCine,
   useCalibrationLine,
   useFlipHorizontal,
-  useForceZoomOne,
   useInvert,
   useResetViewer,
   useRotate,

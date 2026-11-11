@@ -195,6 +195,18 @@ export function contentCanvasesNeedResize(engine: RenderingEngine | null) {
 }
 
 /**
+ * RenderingEngine.resize() clears every canvas of the engine and resets each
+ * viewport's camera for the new size. Callers that only want the canvases to
+ * match their cells must not pay that on every call: resize only when one is
+ * actually out of date.
+ */
+export function resizeEngineIfNeeded(engine: RenderingEngine | null | undefined) {
+  if (!engine || !contentCanvasesNeedResize(engine)) return false;
+  engine.resize(true, true);
+  return true;
+}
+
+/**
  * Until its backing buffer is resized, a canvas shows its last frame scaled
  * with object-fit: contain. Derive the camera that keeps exactly that frame
  * from the buffer size, so applying it after any number of keep-camera engine

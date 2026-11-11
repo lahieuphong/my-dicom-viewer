@@ -38,7 +38,6 @@ import {
   toolNameMap,
   useEnsureImageRendered,
   useFlipHorizontal,
-  useForceZoomOne,
   useImageReadiness,
   useInvert,
   useMeasurementBridge,
@@ -77,6 +76,7 @@ import { hasActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInte
 
 
 import { normalizeId } from '@/lib/viewer/dom';
+import { resizeEngineIfNeeded } from '@/lib/viewer/fitViewport';
 import { waitForElementVisible, waitForCornerstoneReady, waitForEngineAndViewport, forceRenderCheck } from '@/lib/viewer/polling';
 import { preloadImagesWithTimeout, loadAndCacheImageWithTimeout } from '@/lib/viewer/preload';
 import {
@@ -341,11 +341,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     viewportReady,
   });
 
-  useForceZoomOne(viewportInstance, renderingEngineRef, {
-    enabled: true,   // 👈 bật/tắt cực dễ
-    delayMs: 80,     // 👈 có thể chỉnh nếu cần
-  });
-
   const clearPersistedVoi = useStackVoiPersistence({
     viewportInstance,
     viewportEl,
@@ -367,7 +362,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
     const timer = window.setTimeout(() => {
       if (cancelled) return;
-      try { renderingEngineRef.current?.resize?.(); } catch {}
+      try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
       try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
     }, 60);
 
@@ -1280,7 +1275,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
         // initial reset / present / render
         try { (viewportInstance as any).reset?.(); } catch {}
-        try { renderingEngineRef.current?.resize?.(); } catch {}
+        try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
         try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
         try { (viewportInstance as any).render?.(); } catch {}
 
@@ -1293,7 +1288,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         try {
           nudgeId = window.setTimeout(() => {
             if (cancelled) return;
-            try { renderingEngineRef.current?.resize?.(); } catch {}
+            try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
             try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
             try { (viewportInstance as any).reset?.(); } catch {}
             try { (viewportInstance as any).render?.(); } catch {}
