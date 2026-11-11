@@ -224,8 +224,6 @@ export function useRenderingEngine({
       try { enableElement(mountEl); } catch {}
       try { normalizeCanvasAndContext(mountEl); } catch {}
 
-      const viewportType = (CoreEnums as any)?.ViewportType?.STACK ?? (CoreEnums as any)?.ViewportType?.Stack ?? (CoreEnums as any)?.ViewportType?.stack ?? 'stack';
-
       await waitForVisibleSize(mountEl, 2000);
       if (isStale()) return;
 
@@ -253,9 +251,9 @@ export function useRenderingEngine({
       try {
         if (isStale()) return;
         if (!reuseExistingViewport) {
+          // disableElement and enableElement are synchronous; the former
+          // 80 ms pause between them only delayed the first image.
           tryDetachViewportSafely(renderingEngineRef.current);
-          await sleep(80);
-          if (isStale()) return;
 
           try {
             // `setViewports([primary])` replaces the complete RenderingEngine
@@ -264,7 +262,7 @@ export function useRenderingEngine({
             // this viewport so sibling panes keep their canvases and stacks.
             engine.enableElement?.({
               viewportId: VIEWPORT_ID,
-              type: viewportType,
+              type: CoreEnums.ViewportType.STACK,
               element: mountEl,
               defaultOptions: {
                 background: VIEWPORT_BACKGROUND,
@@ -280,21 +278,16 @@ export function useRenderingEngine({
 
         try { removeStrayCornerstoneCanvases(mountEl); } catch {}
 
-        await sleep(60);
-        if (isStale()) return;
-
+        // setStack fits the camera to the canvas it finds, so the canvas must
+        // match its element first. A fixed 60 ms pause and an empty render
+        // used to precede this.
         try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
-        try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
       } catch (err) {}
 
+      // enableElement registers the viewport synchronously; when it threw,
+      // polling for the viewport (formerly six times 80 ms) cannot help.
       if (!vp) {
         try { vp = engine.getViewport?.(VIEWPORT_ID); } catch {}
-      }
-      if (!vp) {
-        for (let i = 0; i < 6 && !vp && !isStale(); i++) {
-          await sleep(80);
-          try { vp = engine.getViewport?.(VIEWPORT_ID); } catch {}
-        }
       }
       if (isStale()) return;
 
