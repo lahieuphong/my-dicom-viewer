@@ -30,7 +30,3 @@ export function normalizeCanvasAndContext(containerEl?: HTMLElement | null) {
     return null;
   }
 }
-
-export function ensureCanvasSizing(container: HTMLElement | null) {
-  normalizeCanvasAndContext(container);
-}

@@ -9,11 +9,11 @@ import voiLib from '@/lib/cornerstone/voi';
 import { TOOL_GROUP } from '@/constants/toolgroup';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { enableElement } from '@/lib/cornerstone/element';
-import { getEnabledElementSafeLocal } from '@/lib/viewer/dom';
-import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canvasUtils';
+import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
 import { ATTEMPTS_ENGINE } from '@/lib/viewer/constants';
 import { areImageStacksEqual } from '@/lib/cornerstone/helpers';
 import { resizeEngineIfNeeded } from '@/lib/viewer/fitViewport';
+import { renderViewportUntilReady } from '@/lib/viewer/renderUntilReady';
 import { resetViewportCamera } from '@/lib/viewer/viewportActions';
 
 const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -155,109 +155,6 @@ export function useRenderingEngine({
     }
   }, [selectedSeriesId, mergedSeriesMap]);
 
-  const forceRenderFrames = async (frames = 3, vpLocal?: any) => {
-    try {
-      const eng = renderingEngineRef.current;
-      let count = 0;
-      const doOne = async () => {
-        try {
-          if (vpLocal && vpLocal.element && (vpLocal.element as HTMLElement).isConnected && typeof vpLocal.render === 'function') {
-            try {
-              await (vpLocal.render() as Promise<any>);
-            } catch {}
-          }
-          try {
-            if (eng && typeof (eng as any).renderViewport === 'function') (eng as any).renderViewport?.(VIEWPORT_ID);
-          } catch {}
-        } catch {}
-      };
-      const loop = () => {
-        if (count >= frames) return;
-        count += 1;
-        void doOne();
-        requestAnimationFrame(loop);
-      };
-      requestAnimationFrame(loop);
-    } catch (e) {
-    }
-  };
-
-  async function waitForEnabledImage(el: HTMLElement | null, vpLocal: any, timeoutMs = 3000, intervalMs = 120): Promise<boolean> {
-    const start = Date.now();
-    const csCore: any = (window as any).__cornerstoneCore ?? null;
-
-    const getEnabled = () => {
-      try {
-        if (csCore?.getEnabledElementByViewportId) {
-          try {
-            return csCore.getEnabledElementByViewportId(VIEWPORT_ID);
-          } catch {}
-        }
-        if (csCore?.getEnabledElement) {
-          try {
-            return csCore.getEnabledElement(vpLocal?.element ?? el);
-          } catch {}
-        }
-        try {
-          if (typeof getEnabledElementSafeLocal === 'function') {
-            return getEnabledElementSafeLocal(vpLocal?.element ?? el);
-          }
-        } catch {}
-      } catch {}
-      return null;
-    };
-
-    // Cornerstone 3D enabled elements expose `viewport`, not the legacy
-    // Cornerstone 2D `image` field, so checking `enabled.image` never
-    // succeeded: every attach polled for the full timeout and then ran the
-    // fallback attach. The stack is ready once its current image rendered.
-    const checkOnce = () => {
-      try {
-        const viewport = getEnabled()?.viewport ?? vpLocal;
-        return (
-          Boolean(viewport?.getCurrentImageId?.()) &&
-          String(viewport?.viewportStatus ?? '').toLowerCase() === 'rendered'
-        );
-      } catch {
-        return false;
-      }
-    };
-
-    if (checkOnce()) return true;
-
-    while (Date.now() - start < timeoutMs) {
-      try {
-        try {
-          const candidateEl = vpLocal?.element ?? el;
-          if (candidateEl) {
-            try { enableElement(candidateEl); } catch {}
-
-            const vpReportsImages =
-              Boolean(vpLocal && typeof vpLocal.getImageIds === 'function' && Array.isArray(vpLocal.getImageIds?.()) && (vpLocal.getImageIds() || []).length > 0);
-
-            // Nudge rendering only. Resizing here cleared every pane's canvas
-            // on each poll and fought panel drags and layout fits; canvas
-            // sizing is owned by the viewport auto-fit and grid resize hooks.
-            if (vpReportsImages) {
-              try { vpLocal?.render?.(); } catch {}
-              try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-            }
-
-            try { normalizeCanvasAndContext(candidateEl); } catch {}
-          }
-        } catch {}
-
-        try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-        try { await forceRenderFrames(1, vpLocal); } catch {}
-
-        if (checkOnce()) return true;
-      } catch {}
-      await sleep(intervalMs);
-    }
-
-    try { return checkOnce(); } catch { return false; }
-  }
-
   useEffect(() => {
     if (!selectedSeriesId) return;
     const shouldPreserveInitialIndex = previousSeriesIdRef.current === selectedSeriesId;
@@ -378,8 +275,9 @@ export function useRenderingEngine({
           if (isStale()) return;
         }
 
+        // Panel drags keep the backing buffer until they settle; the canvas
+        // must scale uniformly (object-fit: contain) meanwhile.
         try { normalizeCanvasAndContext(mountEl); } catch {}
-        try { ensureCanvasSizing(mountEl); } catch {}
 
         try { removeStrayCornerstoneCanvases(mountEl); } catch {}
 
@@ -400,9 +298,6 @@ export function useRenderingEngine({
         }
       }
       if (isStale()) return;
-
-      try { enableElement((vp?.element as HTMLElement) ?? mountEl); } catch {}
-      try { normalizeCanvasAndContext((vp?.element as HTMLElement) ?? mountEl); } catch {}
 
       // register viewport with tool group
       try {
@@ -455,12 +350,6 @@ export function useRenderingEngine({
             // after Reset View. setStack itself only resets flips, invert and
             // VOI; the rotation used to be undone by a racing readiness retry.
             try { resetViewportCamera(vpCandidate); } catch {}
-
-            try { normalizeCanvasAndContext((vpCandidate?.element as HTMLElement) ?? mountEl); } catch {}
-            try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
-            try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-            try { if (typeof (vpCandidate?.render) === 'function') await vpCandidate.render(); } catch {}
-            try { await forceRenderFrames(2, vpCandidate); } catch {}
             return 'set';
           } catch (err) {
             await sleep(120 * (i + 1));
@@ -480,25 +369,18 @@ export function useRenderingEngine({
 
           await robustSetStack(vp, imageIds, safePreferIdx);
 
-          try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
-          try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-          try { normalizeCanvasAndContext((vp?.element as HTMLElement) ?? mountEl); } catch {}
-
-          const elToCheck = (vp?.element ?? mountEl) as HTMLDivElement | null;
-          // Nudge rendering until the stack's image has rendered; the render
-          // checks below follow either way. The former fallback attach only
-          // called APIs Cornerstone 3D does not have and dispatched a
-          // synthetic STACK_NEW_IMAGE event.
-          const rendered = await waitForEnabledImage(elToCheck, vp, 3000, 120);
-
-          // setStack resolves once the image is loaded, so an image that has
-          // still not rendered points at a canvas that does not match its
-          // element (for example one sized while hidden). Fix only that; the
-          // former forceRenderCheck resized the whole engine unconditionally,
-          // clearing every pane, and reset the viewport options.
-          if (!rendered && !isStale()) {
-            try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
-            try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
+          // Render until Cornerstone reports the draw, the way every
+          // secondary pane does. This replaces a 120 ms poll that re-enabled
+          // and re-normalised the element and nudged renders on every pass.
+          const element = (vp?.element ?? mountEl) as HTMLDivElement | null;
+          if (element && !isStale()) {
+            await renderViewportUntilReady({
+              viewport: vp,
+              viewportId: VIEWPORT_ID,
+              element,
+              expectedImageIds: new Set(imageIds),
+              isCancelled: isStale,
+            });
           }
         } catch (e) {}
       }
