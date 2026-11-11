@@ -229,8 +229,10 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 
 **Phase 3–4** đã bắt đầu: `basic-viewer/application` có thêm các phần thuần
 hoặc độc lập với Cornerstone, tách ra từ `BasicViewerImplementation.tsx`:
-`measurementSnapshot` (merge snapshot measurement, tìm series của ảnh) và
-`useSrCreateDialog` (hộp thoại tạo SR).
+`measurementSnapshot` (merge snapshot measurement, tìm series của ảnh),
+`useSrCreateDialog` (hộp thoại tạo SR) và `useHiddenMeasurements` (ẩn/hiện
+measurement). Hàng đợi chọn measurement và việc gộp các lần xóa trùng dùng
+helper thuần `lib/utils/asyncQueues`.
 
 Còn lại:
 
@@ -238,8 +240,9 @@ Còn lại:
   element hiện, tool group, listener VOI). Cần gom nó và pane phụ sau
   `ViewportService`.
 - Phase 1: `createBasicViewerRuntime` đã có, nhưng `BasicViewer` chưa dùng.
-- Phase 3–4: `BasicViewerImplementation.tsx` vẫn giữ hàng đợi chọn
-  measurement, xóa/ẩn measurement và trạng thái SR đang mở.
+- Phase 3–4: `BasicViewerImplementation.tsx` vẫn giữ luồng xóa measurement
+  (selection, style, refresh), đồng bộ selection với Cornerstone và trạng thái
+  SR đang mở.
 
 ## Các phase tiếp theo
 
