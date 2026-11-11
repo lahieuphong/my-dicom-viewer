@@ -215,18 +215,27 @@ Mỗi bước migration kiến trúc phải tuân thủ:
   (`resizeEngineIfNeeded`), vì `engine.resize()` xóa canvas của mọi pane. Fit
   tự động giữ rotation/flip (`fitViewportKeepingOrientation`); chỉ Reset View
   đưa orientation về mặc định.
-- Split layout dùng `ViewportGrid`. Mỗi pane phụ có một lifecycle gọn
-  (`useSecondaryStackViewport`: `setStack`, rồi chờ `IMAGE_RENDERED`). Image
-  Slice Sync dùng vị trí ảnh từ manifest cho series chưa load
-  (`lib/cornerstone/imageSliceSync`).
+- Sau `setStack`, mọi pane (chính và phụ) render qua cùng một helper
+  `renderViewportUntilReady` (`lib/viewer/renderUntilReady`): render, chờ
+  `IMAGE_RENDERED`, retry với độ trễ tăng dần. Vòng poll 120 ms của pane chính
+  đã bị xóa.
+- Split layout dùng `ViewportGrid`; mỗi pane phụ có lifecycle riêng trong
+  `useSecondaryStackViewport`. Image Slice Sync dùng vị trí ảnh từ manifest cho
+  series chưa load (`lib/cornerstone/imageSliceSync`).
+
+**Phase 3–4** đã bắt đầu: `basic-viewer/application` có thêm các phần thuần
+hoặc độc lập với Cornerstone, tách ra từ `BasicViewerImplementation.tsx`:
+`measurementSnapshot` (merge snapshot measurement, tìm series của ảnh) và
+`useSrCreateDialog` (hộp thoại tạo SR).
 
 Còn lại:
 
-- Chuyển pane chính sang cùng mô hình với pane phụ, rồi gom cả hai sau
+- Pane chính vẫn có lifecycle riêng trong `useRenderingEngine` (enable, chờ
+  element hiện, tool group, listener VOI). Cần gom nó và pane phụ sau
   `ViewportService`.
 - Phase 1: `createBasicViewerRuntime` đã có, nhưng `BasicViewer` chưa dùng.
-- Phase 3–4: `BasicViewerImplementation.tsx` vẫn giữ phần lớn điều phối
-  measurement và selection.
+- Phase 3–4: `BasicViewerImplementation.tsx` vẫn giữ hàng đợi chọn
+  measurement, xóa/ẩn measurement và trạng thái SR đang mở.
 
 ## Các phase tiếp theo
 
