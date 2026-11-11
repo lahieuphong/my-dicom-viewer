@@ -15,7 +15,7 @@ permissions:
 jobs:
   verify:
     name: Architecture, lint and types
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -28,7 +28,7 @@ jobs:
 
   build:
     name: Production build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -42,7 +42,7 @@ jobs:
 
   browser-regressions:
     name: Browser regressions (CDP)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
