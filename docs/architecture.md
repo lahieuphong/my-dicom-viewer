@@ -187,6 +187,11 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 - CI (`.github/workflows/ci.yml`) chạy `verify`, `build` và `test:cdp` cho mỗi
   push lên `main` và mỗi pull request; khi regression lỗi, log được upload thành
   artifact `cdp-logs`.
+- Trước khi chạy regression, runner tải viewer một lần và reload nếu ảnh đầu
+  tiên không hiện. Lần load đầu sau khi `next dev` khởi động có thể nhận chunk
+  worker decode (~1 MB) đang ghi dở; các worker báo `SyntaxError` và không bao
+  giờ trả về lần decode đầu tiên. Đây là race của dev server; bản production
+  không bị.
 - Thay đổi lifecycle Cornerstone (attach, readiness, resize, camera) phải pass
   `test:cdp` cả mặc định lẫn `--gpu`.
 

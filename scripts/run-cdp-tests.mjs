@@ -22,7 +22,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DEFAULT_STUDY_UID, delay } from './lib/cdp-harness.mjs';
+import {
+  DEFAULT_STUDY_UID,
+  PRIMARY_VIEWPORT_ID,
+  RENDERER_ID,
+  delay,
+  openViewerPage,
+} from './lib/cdp-harness.mjs';
 
 const REGRESSIONS = [
   { name: 'invert', script: 'test-invert-cdp.mjs' },
@@ -210,6 +216,48 @@ async function ensureChrome() {
   return useHardwareGpu ? 'started on the hardware GPU' : 'started with SwiftShader';
 }
 
+const DISPLAYED_IMAGE_EXPRESSION = `Boolean(
+  window.__cornerstoneCore
+    ?.getRenderingEngine?.(${JSON.stringify(RENDERER_ID)})
+    ?.getViewport?.(${JSON.stringify(PRIMARY_VIEWPORT_ID)})
+    ?.getCornerstoneImage?.()
+)`;
+
+/**
+ * Loads the viewer once before the regressions. On the first browser load
+ * after `next dev` starts, webpack may still be writing the ~1 MB
+ * dicom-image-loader decode worker chunk when the page creates its workers;
+ * the workers then receive a truncated script, fail with a SyntaxError and
+ * never answer the first decode, so the first image never appears and the
+ * first regression times out. A reload after the chunk is complete fixes
+ * it. This is a dev-server race; production chunks are static.
+ *
+ * Waits for a displayed image, not viewportStatus: the stuck viewport still
+ * reports 'rendered' after drawing its background.
+ */
+async function warmUpViewer() {
+  const page = await openViewerPage();
+  // Evaluating while the page reloads rejects; keep polling through it.
+  const waitForDisplayedImage = async (timeoutMs) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        if (await page.evaluate(DISPLAYED_IMAGE_EXPRESSION)) return true;
+      } catch {}
+      await delay(250);
+    }
+    return false;
+  };
+  try {
+    if (await waitForDisplayedImage(30000)) return 'ready';
+    await page.cdp('Page.reload', { ignoreCache: true });
+    if (await waitForDisplayedImage(60000)) return 'ready after a reload';
+    return 'no image after a reload; the regressions will report it';
+  } finally {
+    await page.close();
+  }
+}
+
 function runRegressionScript({ name, script, env = {} }) {
   const logPath = path.join(logDir, `${name}.log`);
   const log = createWriteStream(logPath);
@@ -304,6 +352,7 @@ try {
   console.log(
     `Viewer ${viewerOrigin} (${viewer}), Chrome ${cdpOrigin} (${chrome}). Logs: ${logDir}`
   );
+  console.log(`Warm-up: ${await warmUpViewer()}.`);
 
   const results = [];
   for (const regression of regressions) {

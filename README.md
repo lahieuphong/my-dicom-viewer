@@ -21,6 +21,11 @@ yarn dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+Right after `yarn dev` starts, the first viewer load can stay on the loading
+overlay: webpack may still be writing the DICOM decode worker chunk when the
+page creates its workers, which then receive a truncated script. Reload the
+page once. Production builds serve static chunks and are not affected.
+
 Before committing structural changes, run:
 
 ```bash
@@ -38,6 +43,10 @@ yarn test:cdp                         # all regressions
 yarn test:cdp --only resize,sr-tools  # a subset; --list shows the names
 yarn test:cdp --gpu                   # Chrome on the hardware GPU
 ```
+
+The runner loads the viewer once before the regressions and reloads it if
+the first image does not appear, so that dev-server race cannot fail the
+first regression.
 
 The started Chrome uses SwiftShader (software WebGL) by default so the suite
 also runs without a GPU, e.g. in CI. `--gpu` is about three times faster and
