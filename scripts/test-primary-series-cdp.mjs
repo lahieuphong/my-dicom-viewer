@@ -4,7 +4,7 @@
 // loading overlay gone and an untouched view (no rotation, flip or invert,
 // fitted), rapid successive switches must settle on the last selection, and
 // useRenderingEngine must be the only one loading the stack: one setStack per
-// switch, without the attach effect's fallback attach path.
+// switch.
 
 import {
   MULTI_SERIES_STUDY_UID,
@@ -36,8 +36,6 @@ const primaryStateExpression = `(() => {
     ),
     frame: scrollbar?.getAttribute('aria-valuenow') ?? null,
     frames: scrollbar?.getAttribute('aria-valuemax') ?? null,
-    // Set only by the attach effect's fallback attach (attachDisplaySet).
-    fallbackAttachRan: Boolean(viewport?.element?.dataset?.__stackLockedIndex),
   };
 })()`;
 
@@ -155,11 +153,6 @@ await runRegression(
 
     for (const [series, calls] of [[second, callsSecond], [first, callsFirst]]) {
       if (calls !== 1) failures.push(`switching to ${series} called setStack ${calls}x`);
-    }
-    for (const step of steps) {
-      if (step.fallbackAttachRan) {
-        failures.push(`the fallback attach path ran (${step.switchTo ?? 'rapid switches'})`);
-      }
     }
     if (page.runtimeErrors.length > 0) {
       failures.push(`${page.runtimeErrors.length} runtime error(s)`);

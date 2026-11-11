@@ -19,6 +19,5 @@ export { useViewportAutoFitOnResize } from '@/hooks/useViewportAutoFitOnResize';
 export { useStackVoiPersistence } from '@/hooks/useStackVoiPersistence';
 
 export { registerImagePositions } from '@/lib/cornerstone/imageSliceSync';
-export { attachDisplaySetToViewport } from '@/lib/viewer/attachDisplaySet';
 export { createDisplaySetFromSeries } from '@/lib/viewer/displaySet';
 export type { DisplaySet } from '@/lib/viewer/displaySet';

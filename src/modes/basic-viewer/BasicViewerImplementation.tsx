@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
-import { imageLoader, utilities as csCoreUtilities } from '@cornerstonejs/core';
+import { utilities as csCoreUtilities } from '@cornerstonejs/core';
 
 import {
   selectDefaultSeriesUID,
@@ -30,7 +30,6 @@ import { DEFAULT_CINE_FPS } from '@/constants/cine';
 
 import { ViewerWorkspace, useViewerLayout } from '@/extensions/default';
 import {
-  attachDisplaySetToViewport,
   createDisplaySetFromSeries,
   disableReleaseGraphicsResourcesGlobally,
   enableElement,
@@ -77,8 +76,6 @@ import { hasActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInte
 
 import { normalizeId } from '@/lib/viewer/dom';
 import { resizeEngineIfNeeded } from '@/lib/viewer/fitViewport';
-import { waitForElementVisible, waitForCornerstoneReady, waitForEngineAndViewport, forceRenderCheck } from '@/lib/viewer/polling';
-import { preloadImagesWithTimeout, loadAndCacheImageWithTimeout } from '@/lib/viewer/preload';
 import {
   isAnnotationRemovalTombstoned,
   safeRemoveAnnotationByUID,
@@ -87,13 +84,9 @@ import { isMeasurementInSeries } from '@/lib/viewer/measurementVisibility';
 import { createMeasurementListFingerprint } from '@/lib/viewer/measurementFingerprint';
 
 
-import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canvasUtils';
-
-import { ATTEMPTS_ATTACH } from '@/lib/viewer/constants';
-
-// How long the attach effect waits for useRenderingEngine to set the
-// selected stack before it falls back to attaching the stack itself.
-const ENGINE_ATTACH_WAIT_MS = 8000;
+// After this long without useRenderingEngine attaching the selected stack, the
+// viewer reports it once; it keeps waiting, since a slow network only delays it.
+const ENGINE_ATTACH_WARN_MS = 8000;
 
 function createFallbackStudyMeta(studyUID: string): Study {
   return {
@@ -418,324 +411,112 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     resizeSignal: `${leftPanelWidth}:${rightPanelWidth}:${sidebarCollapsed}:${measurementCollapsed}`,
   });
 
-  // ---------- Unified attach-displaySet effect (OHIF-like) ----------
-  // NOTE: This effect intentionally avoids depending on volatile refs like viewportInstance/viewportEl
-  // to reduce spurious re-triggers. We gate on viewportReady and remember the last successful attach
-  // (series + element) to skip duplicate work.
+  // ---------- Settle the selected stack ----------
+  // useRenderingEngine is the only owner of StackViewport.setStack for this
+  // pane. This effect waits until the viewport shows the selected stack, then
+  // applies a pending navigation index and settles the frame and loading UI.
+  // It used to run its own attach path (attachDisplaySet/ensureStackOnViewport)
+  // whenever the engine had not set the stack yet; the two raced and reset,
+  // resized and re-rendered the viewport twice. The effect deliberately does
+  // not depend on viewportInstance/viewportEl: it is gated on viewportReady.
   useEffect(() => {
-    // Only try to attach when we have a selected series AND viewport has settled.
-    // This prevents premature attach attempts while viewportInstance/element are still being created.
-    if (!selectedSeries) return;
-    if (!viewportReady) {
-      return;
-    }
+    if (!selectedSeries || !viewportReady) return;
 
     let cancelled = false;
-    // Every settle timer this attach flow schedules, so cleanup cancels all of
-    // them; a single handle was overwritten and lost the earlier timer.
-    const settleTimers = new Set<number>();
-    const scheduleSettle = (callback: () => void, delayMs: number) => {
-      const timer = window.setTimeout(() => {
-        settleTimers.delete(timer);
-        callback();
-      }, delayMs);
-      settleTimers.add(timer);
-    };
-    const thisSession = (currentAttachSessionRef.current = (currentAttachSessionRef.current || 0) + 1);
+    const thisSession = (currentAttachSessionRef.current =
+      (currentAttachSessionRef.current || 0) + 1);
+    const shouldAbort = () =>
+      cancelled || thisSession !== currentAttachSessionRef.current;
 
-    async function attachSelectedSeries() {
-      const sessionAtStart = thisSession;
-      const shouldAbort = () => sessionAtStart !== currentAttachSessionRef.current || cancelled;
+    async function settleSelectedSeries() {
+      const ds = createDisplaySetFromSeries(mergedSeriesMap[selectedSeries]);
+      if (!ds || !Array.isArray(ds.imageIds) || ds.imageIds.length === 0) return;
+      const pendingNavigation =
+        pendingSeriesNavigationRef.current?.seriesUID === selectedSeries
+          ? pendingSeriesNavigationRef.current
+          : null;
+      const desiredImageIndex = Math.max(
+        0,
+        Math.min(
+          Number.isInteger(pendingNavigation?.imageIndex)
+            ? pendingNavigation!.imageIndex
+            : ds.initialImageIdIndex ?? 0,
+          ds.imageIds.length - 1
+        )
+      );
 
-      try {
-        if (!selectedSeries) return;
-        const ds = createDisplaySetFromSeries(mergedSeriesMap[selectedSeries]);
-        if (!ds || !Array.isArray(ds.imageIds) || ds.imageIds.length === 0) return;
-        const pendingNavigation =
-          pendingSeriesNavigationRef.current?.seriesUID === selectedSeries
-            ? pendingSeriesNavigationRef.current
-            : null;
-        const desiredImageIndex = Math.max(
-          0,
-          Math.min(
-            Number.isInteger(pendingNavigation?.imageIndex)
-              ? pendingNavigation!.imageIndex
-              : ds.initialImageIdIndex ?? 0,
-            ds.imageIds.length - 1
-          )
-        );
-        const consumePendingNavigation = () => {
-          if (pendingSeriesNavigationRef.current === pendingNavigation) {
-            pendingSeriesNavigationRef.current = null;
-          }
-        };
-
-        const elToCheck = (viewportEl as HTMLElement | null) ?? (viewportInstance as any)?.element ?? elRef.current;
-        if (!elToCheck) return;
-
-        // useRenderingEngine owns StackViewport.setStack for this pane. This
-        // effect waits for that stack, then settles the requested image and the
-        // loading UI. It used to run its own attach path whenever the engine had
-        // not set the stack yet when it started; whichever won then reset,
-        // resized and re-rendered the viewport again. That path is now only a
-        // fallback for an engine that does not attach the stack in time.
-        const getAttachedViewport = () => {
-          try {
-            const vp: any =
-              renderingEngineRef.current?.getViewport?.(VIEWPORT_ID) ??
-              viewportInstance;
-            return areImageStacksEqual(vp?.getImageIds?.() ?? null, ds.imageIds)
-              ? vp
-              : null;
-          } catch {
-            return null;
-          }
-        };
-
-        let attachedViewport = getAttachedViewport();
-        if (!attachedViewport) {
-          setLoadingStackSafe(true);
-          const waitStartedAt = Date.now();
-          while (
-            !attachedViewport &&
-            Date.now() - waitStartedAt < ENGINE_ATTACH_WAIT_MS
-          ) {
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            if (shouldAbort()) return;
-            attachedViewport = getAttachedViewport();
-          }
-        }
-
-        if (attachedViewport) {
-          try {
-            const vp = attachedViewport;
-            let currentIndex = Number(vp.getCurrentImageIdIndex?.() ?? 0);
-            if (
-              pendingNavigation &&
-              currentIndex !== desiredImageIndex &&
-              typeof vp.setImageIdIndex === 'function'
-            ) {
-              await vp.setImageIdIndex(desiredImageIndex);
-              if (shouldAbort()) return;
-              currentIndex = Number(
-                vp.getCurrentImageIdIndex?.() ?? desiredImageIndex
-              );
-            }
-            if (!Number.isInteger(currentIndex) || currentIndex < 0) {
-              currentIndex = desiredImageIndex;
-            }
-            setCurrentFrame(currentIndex + 1);
-            if (currentIndex === desiredImageIndex) {
-              consumePendingNavigation();
-            }
-            // The overlay stays until the image renders (imageAvailable).
-            setLoadingStackSafe(false);
-            setLoadingProgress?.(null);
-            return;
-          } catch (e) {
-            // fall back to the legacy attach path below
-          }
-        }
-
-        // ===== Fallback: the engine did not attach the stack in time =====
-        setLoadingStackSafe(true);
-
-        // 1) Wait for cornerstone readiness (cancellable)
-        await waitForCornerstoneReady(5000).catch(() => false);
-        if (shouldAbort()) return;
-
-        // 2) Ensure element visible / small delay
-        const visible = await waitForElementVisible(elToCheck, 5000).catch(() => false);
-        if (shouldAbort()) return;
-        if (!visible) await new Promise((r) => setTimeout(r, 160));
-        if (shouldAbort()) return;
-
-        // 3) Warm first image quickly (best-effort)
-        const firstImageId = ds.imageIds[desiredImageIndex];
+      const getAttachedViewport = () => {
         try {
-          await loadAndCacheImageWithTimeout(firstImageId, 6000).catch(() => {});
-        } catch {}
-        if (shouldAbort()) return;
-
-        // 4) Ensure engine/viewport registration (best-effort)
-        try {
-          await waitForEngineAndViewport(renderingEngineRef, viewportInstance, elToCheck as HTMLDivElement, 5000, 100);
-        } catch (e) {
-        }
-        if (shouldAbort()) return;
-
-        // 5) Try to attach with multiple attempts + fallbacks
-        let attached = false;
-        const maxAttempts = ATTEMPTS_ATTACH;
-        for (let attempt = 1; attempt <= maxAttempts && !attached && !shouldAbort(); attempt++) {
-          try {
-            attached = await attachDisplaySetToViewport({
-              displaySet: ds,
-              renderingEngineRef,
-              viewportInstance,
-              viewportEl: elToCheck as HTMLDivElement,
-              ensureImageRendered,
-              preloadImagesWithTimeoutFn: preloadImagesWithTimeout,
-              desiredIndex: desiredImageIndex,
-              viewportId: VIEWPORT_ID,
-              isCancelled: shouldAbort,
-            }).catch(() => false);
-
-            if (shouldAbort()) return;
-
-            if (attached) break;
-
-            if (shouldAbort()) return;
-
-            // gentle nudge: normalize canvases, enable element, resize+render, force render check
-            try { enableElement(elToCheck); } catch {}
-            try { normalizeCanvasAndContext(elToCheck); } catch {}
-            try { ensureCanvasSizing(elToCheck); } catch {}
-            try { renderingEngineRef.current?.resize?.(); } catch {}
-            try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-            try { await forceRenderCheck(elToCheck as HTMLDivElement, viewportInstance, renderingEngineRef); } catch {}
-
-            if (shouldAbort()) return;
-
-            await new Promise((r) => setTimeout(r, 220 + attempt * 80));
-          } catch (err) {
-            await new Promise((r) => setTimeout(r, 200 + attempt * 100));
-          }
-        } // end attempts
-
-        // 6) If still not attached -> warm-first-image + forceRenderCheck
-        if (!attached && !shouldAbort()) {
-          try {
-            if (imageLoader && typeof (imageLoader as any).loadAndCacheImage === 'function') {
-              await (imageLoader as any).loadAndCacheImage(firstImageId).catch(() => {});
-            } else {
-              const csCore = await import('@cornerstonejs/core').catch(() => null);
-              if (csCore && csCore.imageLoader && typeof csCore.imageLoader.loadAndCacheImage === 'function') {
-                await csCore.imageLoader.loadAndCacheImage(firstImageId).catch(() => {});
-              }
-            }
-          } catch {}
-          if (shouldAbort()) return;
-
-          try {
-            try { normalizeCanvasAndContext(elToCheck); } catch {}
-            try { ensureCanvasSizing(elToCheck); } catch {}
-            await forceRenderCheck(elToCheck as HTMLDivElement, viewportInstance, renderingEngineRef);
-          } catch {}
-        }
-        if (shouldAbort()) return;
-
-        // 7) Final settle: reset/presentation -> render -> wait two RAF -> normalize + forceRenderCheck
-        try {
-          try {
-            if (viewportInstance && typeof (viewportInstance as any).setViewPresentation === 'function') {
-              try { (viewportInstance as any).setViewPresentation({ rotation: 0, zoom: 1, flipHorizontal: false, flipVertical: false }); } catch {}
-            }
-          } catch {}
-
-          try { viewportInstance?.reset?.(); } catch {}
-          try { normalizeCanvasAndContext(elToCheck); } catch {}
-          try { ensureCanvasSizing(elToCheck); } catch {}
-          try { renderingEngineRef.current?.resize?.(); } catch {}
-          try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-          try { await viewportInstance?.render?.(); } catch {}
-
-          // two rAF delay
-          await new Promise<void>((resolve) => {
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => { resolve(); });
-            });
-          });
-
-          try { normalizeCanvasAndContext(elToCheck); } catch {}
-          try { ensureCanvasSizing(elToCheck); } catch {}
-          try { await forceRenderCheck(elToCheck as HTMLDivElement, viewportInstance, renderingEngineRef); } catch {}
-        } catch (e) {
-        }
-        if (shouldAbort()) return;
-
-        // 8) Settle on the requested image. Cornerstone emits STACK_NEW_IMAGE
-        // itself; the synthetic 'cornerstone-stack-new-image' event this used
-        // to dispatch had no listeners besides legacy readiness code.
-        try {
-          const activeViewport: any =
+          const vp: any =
             renderingEngineRef.current?.getViewport?.(VIEWPORT_ID) ??
             viewportInstance;
+          return areImageStacksEqual(vp?.getImageIds?.() ?? null, ds.imageIds)
+            ? vp
+            : null;
+        } catch {
+          return null;
+        }
+      };
+
+      // A slow network only delays the engine; keep waiting until it attaches
+      // the stack or this effect is superseded, and report a long wait once.
+      let attachedViewport = getAttachedViewport();
+      if (!attachedViewport) {
+        setLoadingStackSafe(true);
+        const waitStartedAt = Date.now();
+        let reportedSlowAttach = false;
+        while (!attachedViewport) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          if (shouldAbort()) return;
+          attachedViewport = getAttachedViewport();
           if (
-            activeViewport?.getCurrentImageIdIndex?.() !== desiredImageIndex &&
-            typeof activeViewport?.setImageIdIndex === 'function'
+            !attachedViewport &&
+            !reportedSlowAttach &&
+            Date.now() - waitStartedAt > ENGINE_ATTACH_WARN_MS
           ) {
-            await activeViewport.setImageIdIndex(desiredImageIndex);
-            if (shouldAbort()) return;
+            reportedSlowAttach = true;
+            console.warn(
+              `[viewer] Series ${selectedSeries} is still not attached after ${
+                ENGINE_ATTACH_WARN_MS / 1000
+              } s.`
+            );
           }
-          const runtimeImageIndex = Number(
-            activeViewport?.getCurrentImageIdIndex?.() ?? desiredImageIndex
-          );
-          const targetImageIndex =
-            Number.isInteger(runtimeImageIndex) && runtimeImageIndex >= 0
-              ? runtimeImageIndex
-              : desiredImageIndex;
-          setCurrentFrame(targetImageIndex + 1);
-          if (targetImageIndex === desiredImageIndex) {
-            consumePendingNavigation();
-          }
-        } catch (e) {
-        }
-        if (shouldAbort()) return;
-
-        // 9) Start background preload (safe, cancellable via shouldAbort checks in onProgress)
-        // khi attach finished thành công (trong finally, khi !shouldAbort())
-        try {
-          // mark progress as complete (100%) only when attach flow is done/settled
-          setLoadingProgress(100);
-          // small delay so overlay shows 100% then hide
-          scheduleSettle(() => {
-            try {
-              if (!shouldAbort()) {
-                setLoadingStackSafe(false);
-                setLoadingProgress(null); // reset after hiding
-              }
-            } catch {}
-          }, 350); // 350ms để overlay hiển thị 100% trước khi ẩn (giống behavior cũ)
-        } catch (e) {
-          // fallback: still ensure flags cleared
-          scheduleSettle(() => {
-            try {
-              if (!shouldAbort()) {
-                setLoadingStackSafe(false);
-                setLoadingProgress?.(null);
-              }
-            } catch {}
-          }, 80);
-        }
-
-      } catch (err) {
-      } finally {
-        if (!shouldAbort()) {
-          try {
-            scheduleSettle(() => {
-              try {
-                if (!shouldAbort()) {
-                  setLoadingStackSafe(false);
-                }
-              } catch {}
-            }, 80);
-          } catch {
-            if (!shouldAbort()) {
-              setLoadingStackSafe(false);
-            }
-          }
-        } else {
-          try { setLoadingProgress?.(null); } catch {}
         }
       }
-    } // end attachSelectedSeries
 
-    // small debounce so rapid toggles don't start duplicate parallel jobs
+      try {
+        const vp = attachedViewport;
+        let currentIndex = Number(vp.getCurrentImageIdIndex?.() ?? 0);
+        if (
+          pendingNavigation &&
+          currentIndex !== desiredImageIndex &&
+          typeof vp.setImageIdIndex === 'function'
+        ) {
+          await vp.setImageIdIndex(desiredImageIndex);
+          if (shouldAbort()) return;
+          currentIndex = Number(vp.getCurrentImageIdIndex?.() ?? desiredImageIndex);
+        }
+        if (!Number.isInteger(currentIndex) || currentIndex < 0) {
+          currentIndex = desiredImageIndex;
+        }
+        setCurrentFrame(currentIndex + 1);
+        if (
+          currentIndex === desiredImageIndex &&
+          pendingSeriesNavigationRef.current === pendingNavigation
+        ) {
+          pendingSeriesNavigationRef.current = null;
+        }
+      } catch {
+        // The viewport can be replaced while settling; the next run settles it.
+      }
+      // The overlay stays until the image renders (imageAvailable).
+      setLoadingStackSafe(false);
+      setLoadingProgress(null);
+    }
+
+    // Small debounce so rapid series switches do not start parallel jobs.
     const kickTimer = window.setTimeout(() => {
-      if (!cancelled) {
-        void attachSelectedSeries();
-      }
+      if (!cancelled) void settleSelectedSeries();
     }, 60);
 
     return () => {
@@ -743,17 +524,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       clearTimeout(kickTimer);
       currentAttachSessionRef.current = (currentAttachSessionRef.current || 0) + 1;
       try { disableReleaseGraphicsResourcesGlobally(); } catch {}
-      settleTimers.forEach((timer) => window.clearTimeout(timer));
-      settleTimers.clear();
     };
-    // Only re-run when selectedSeries or viewportReady (and some stable dependencies) change.
-    // Avoid including volatile refs like viewportInstance/viewportEl to reduce spurrious retriggers.
   }, [
     selectedSeries,
     mergedSeriesMap,
     renderingEngineRef,
-    ensureImageRendered,
-    preloadImagesWithTimeout,
     viewportReady,
   ]);
 

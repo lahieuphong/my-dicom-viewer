@@ -3,62 +3,7 @@
 // Polling / wait / render-nudge helpers for Viewer.
 
 import type { RefObject } from 'react';
-import { getEnabledElementSafeLocal } from './dom';
 import { VIEWPORT_ID } from '@/constants/viewport';
-
-/**
- * Wait until element has non-zero visible size. Uses ResizeObserver when available and falls back to polling.
- */
-export async function waitForElementVisible(el: HTMLElement | null, timeout = 3000): Promise<boolean> {
-  if (!el) return false;
-  try {
-    const rect = el.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) return true;
-  } catch {}
-
-  if (typeof ResizeObserver === 'undefined') {
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-      await new Promise((r) => setTimeout(r, 80));
-      try {
-        const r2 = el.getBoundingClientRect();
-        if (r2.width > 0 && r2.height > 0) return true;
-      } catch {}
-    }
-    return false;
-  }
-
-  return await new Promise<boolean>((resolve) => {
-    let ro: ResizeObserver | null = null;
-    let done = false;
-    const timer = window.setTimeout(() => {
-      if (done) return;
-      done = true;
-      try { ro?.disconnect(); } catch {}
-      resolve(false);
-    }, timeout);
-
-    try {
-      ro = new ResizeObserver(() => {
-        try {
-          const rc = el.getBoundingClientRect();
-          if (rc.width > 0 && rc.height > 0) {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            try { ro?.disconnect(); } catch {}
-            resolve(true);
-          }
-        } catch {}
-      });
-      ro.observe(el);
-    } catch (err) {
-      clearTimeout(timer);
-      try { ro?.disconnect(); } catch {}
-      resolve(false);
-    }
-  });
-}
 
 /**
  * Poll for a global flag window.__cornerstoneReady (used as a signal that cornerstone init finished).
@@ -83,30 +28,6 @@ export async function waitForCornerstoneReady(timeoutMs = 3500): Promise<boolean
       resolve(false);
     }
   });
-}
-
-/**
- * Wait for rendering engine + viewportInstance + enabled element to exist.
- */
-export async function waitForEngineAndViewport(
-  renderingEngineRef: RefObject<any> | null,
-  viewportInstance: any,
-  viewportEl: HTMLElement | null,
-  timeout = 3000,
-  interval = 100
-): Promise<boolean> {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    try {
-      if (renderingEngineRef?.current && viewportInstance && viewportEl) {
-        // use safe getter and avoid expanding huge objects
-        const enabled = getEnabledElementSafeLocal(viewportEl);
-        if (enabled) return true;
-      }
-    } catch {}
-    await new Promise((r) => setTimeout(r, interval));
-  }
-  return false;
 }
 
 /**

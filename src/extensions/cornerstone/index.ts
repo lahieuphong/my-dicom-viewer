@@ -22,7 +22,6 @@ export {
   DicomViewport,
   ViewportLoadingOverlay,
   ViewportOverlay,
-  attachDisplaySetToViewport,
   createDisplaySetFromSeries,
   registerImagePositions,
   useEnsureImageRendered,
