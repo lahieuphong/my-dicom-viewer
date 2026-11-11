@@ -263,26 +263,36 @@ async function printLogTail(name, logPath, lines = 25) {
   }
 }
 
-function stopStartedProcesses() {
-  for (const { child, cleanupPaths } of started.reverse()) {
-    if (child.exitCode === null) {
+// Wait until what this run started has exited: a run started right after
+// could otherwise find the previous Chrome still listening, reuse it while it
+// shuts down and lose the CDP connection.
+async function stopStartedProcesses(timeoutMs = 5000) {
+  const stopping = started.reverse().map(({ child, cleanupPaths }) => {
+    const exited =
+      child.exitCode !== null || child.signalCode !== null
+        ? Promise.resolve()
+        : new Promise((resolve) => child.once('exit', resolve));
+    if (child.exitCode === null && child.signalCode === null) {
       try {
         if (process.platform === 'win32') child.kill();
         else process.kill(-child.pid, 'SIGTERM');
       } catch {}
     }
-    for (const cleanupPath of cleanupPaths) {
-      try {
-        rmSync(cleanupPath, { recursive: true, force: true });
-      } catch {}
-    }
-  }
+    return Promise.race([exited, delay(timeoutMs)]).then(() => {
+      for (const cleanupPath of cleanupPaths) {
+        try {
+          rmSync(cleanupPath, { recursive: true, force: true });
+        } catch {}
+      }
+    });
+  });
   started.length = 0;
+  await Promise.all(stopping);
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => {
-    stopStartedProcesses();
+  process.on(signal, async () => {
+    await stopStartedProcesses();
     process.exit(130);
   });
 }
@@ -316,5 +326,5 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 } finally {
-  stopStartedProcesses();
+  await stopStartedProcesses();
 }
