@@ -13,6 +13,8 @@ import { toast } from 'sonner';
 import { utilities as csCoreUtilities } from '@cornerstonejs/core';
 
 import {
+  mergeMeasurementSnapshot,
+  resolveSeriesFromImageId as resolveSeriesUIDFromImageId,
   selectDefaultSeriesUID,
   useBatchedFrameState,
   useSeriesLoader,
@@ -66,10 +68,7 @@ import {
   syncMeasurementNativeSelection,
   syncMeasurementSelectionStyles,
 } from '@/lib/cornerstone/measurementStyles';
-import {
-  areImageStacksEqual,
-  findMatchingImageIdIndex,
-} from '@/lib/cornerstone/helpers';
+import { areImageStacksEqual } from '@/lib/cornerstone/helpers';
 import { hasActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 
 
@@ -511,192 +510,26 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     viewportReady,
   ]);
 
-  function resolveSeriesFromImageId(refId?: string) {
-    if (!refId) return undefined;
-
-    for (const uid of Object.keys(mergedSeriesMapRef.current || {})) {
-      const files = mergedSeriesMapRef.current[uid]?.files ?? [];
-      if (findMatchingImageIdIndex(files, refId) >= 0) return uid;
-    }
-
-    const sopMatch = String(refId).replace(/^imageId:/, '').split('/').pop();
-    if (sopMatch) {
-      for (const uid of Object.keys(mergedSeriesMapRef.current || {})) {
-        const files = mergedSeriesMapRef.current[uid]?.files ?? [];
-        if (files.some((f) => normalizeId(f).includes(sopMatch))) return uid;
-      }
-    }
-
-    return undefined;
-  }
+  const resolveSeriesFromImageId = useCallback(
+    (refId?: string) =>
+      resolveSeriesUIDFromImageId(mergedSeriesMapRef.current || {}, refId),
+    []
+  );
   // -------------------------------------------------
 
   const handleMeasurementsChange = useCallback(
     (current: AnnotationMeasurement[]) => {
       setAllMeasurements((prev) => {
-        const currentUIDs = new Set(
-          current.map((measurement) => measurement.annotationUID)
-        );
         const getAnnotation = (csAnnotation.state as any)?.getAnnotation;
-        const prevMap = new Map(
-          prev
-            .filter(
-              (measurement) =>
-                !isAnnotationRemovalTombstoned(measurement.annotationUID)
-            )
-            .filter((measurement) => {
-              if (
-                currentUIDs.has(measurement.annotationUID) ||
-                typeof getAnnotation !== 'function'
-              ) {
-                return true;
-              }
-              try {
-                // Cornerstone is the runtime source of truth. This removes
-                // ghost cards after Escape/cancel or an external annotation
-                // removal, while retaining annotations outside the mounted FOR.
-                return Boolean(
-                  getAnnotation.call(
-                    csAnnotation.state,
-                    measurement.annotationUID
-                  )
-                );
-              } catch {
-                return true;
-              }
-            })
-            .map((measurement) => [measurement.annotationUID, measurement])
-        );
-        const mergedMap = new Map(prevMap);
-
-      for (const m of current) {
-        if (isAnnotationRemovalTombstoned(m.annotationUID)) continue;
-        try {
-          const old = prevMap.get(m.annotationUID);
-
-          if (!old) {
-            // New measurement -> attempt to enrich
-            let seriesUID = m.metadata?.seriesUID ?? '';
-
-            if (!seriesUID) {
-              const ref = (m.metadata?.referencedImageId ?? m.metadata?.imageId ?? m.data?.imageId ?? '').toString();
-              if (ref) {
-                for (const [uid, data] of Object.entries(mergedSeriesMapRef.current || {})) {
-                  if (
-                    findMatchingImageIdIndex(data.files || [], ref) >= 0
-                  ) {
-                    seriesUID = uid;
-                    break;
-                  }
-                }
-              }
-            }
-
-            const filesForSeries = mergedSeriesMapRef.current?.[seriesUID]?.files ?? [];
-
-            let newFrameIdx = Number.isFinite(Number(m.metadata?.frameIndex)) ? Number(m.metadata.frameIndex) : undefined;
-            if (newFrameIdx === undefined) {
-              const ref = (m.metadata?.referencedImageId ?? m.metadata?.imageId ?? m.data?.imageId ?? '').toString();
-              if (ref && filesForSeries.length) {
-                const found = findMatchingImageIdIndex(
-                  filesForSeries,
-                  ref,
-                  m.metadata?.frameIndex
-                );
-                if (found >= 0) newFrameIdx = found;
-              }
-            }
-            if (newFrameIdx === undefined) newFrameIdx = 0;
-
-            const mergedMeta = {
-              ...(m.metadata || {}),
-              seriesUID,
-              frameIndex: newFrameIdx,
-            };
-
-            const newItem: AnnotationMeasurement = {
-              ...m,
-              label: m.label ?? '',
-              data: m.data ?? {},
-              metadata: mergedMeta,
-              createdAt: m.createdAt || new Date().toISOString(),
-            };
-
-            mergedMap.set(m.annotationUID, newItem);
-            continue;
-          }
-
-          // Merge when old exists
-          const newSeries = m.metadata?.seriesUID ?? '';
-          const oldSeries = old.metadata?.seriesUID ?? '';
-
-          let finalSeriesUID = '';
-          if (typeof newSeries === 'string' && newSeries.length > 0 && Boolean(mergedSeriesMapRef.current?.[newSeries])) {
-            finalSeriesUID = newSeries;
-          } else if (oldSeries && Boolean(mergedSeriesMapRef.current?.[oldSeries])) {
-            finalSeriesUID = oldSeries;
-          } else {
-            const ref = (m.metadata?.referencedImageId ?? m.metadata?.imageId ?? m.data?.imageId ?? '').toString();
-            if (ref) {
-              for (const [uid, data] of Object.entries(mergedSeriesMapRef.current || {})) {
-                if (
-                  findMatchingImageIdIndex(data.files || [], ref) >= 0
-                ) {
-                  finalSeriesUID = uid;
-                  break;
-                }
-              }
-            }
-          }
-
-          const filesForFinal = mergedSeriesMapRef.current?.[finalSeriesUID]?.files ?? [];
-
-          let newFrameIdx = Number.isFinite(Number(m.metadata?.frameIndex)) ? Number(m.metadata.frameIndex) : undefined;
-          if (
-            newFrameIdx === undefined ||
-            newFrameIdx < 0 ||
-            (filesForFinal.length && newFrameIdx >= filesForFinal.length)
-          ) {
-            const ref = (m.metadata?.referencedImageId ?? '').toString();
-            if (ref && filesForFinal.length) {
-              const found = findMatchingImageIdIndex(
-                filesForFinal,
-                ref,
-                m.metadata?.frameIndex
-              );
-              if (found >= 0) {
-                newFrameIdx = found;
-              } else {
-                const oldIdx = typeof old.metadata?.frameIndex === 'number' ? old.metadata.frameIndex : 0;
-                newFrameIdx = Math.max(0, Math.min(oldIdx, filesForFinal.length ? filesForFinal.length - 1 : oldIdx));
-              }
-            } else {
-              newFrameIdx = typeof old.metadata?.frameIndex === 'number' ? old.metadata.frameIndex : 0;
-            }
-          }
-
-          const mergedMeta = {
-            ...(old.metadata || {}),
-            ...(m.metadata || {}),
-            seriesUID: finalSeriesUID,
-            frameIndex: newFrameIdx,
-          };
-
-          const mergedItem: AnnotationMeasurement = {
-            ...old,
-            ...m,
-            label: m.label ?? old.label,
-            data: m.data ?? old.data,
-            metadata: mergedMeta,
-            createdAt: m.createdAt || old.createdAt || new Date().toISOString(),
-          };
-
-          mergedMap.set(m.annotationUID, mergedItem);
-        } catch (err) {
-        }
-      }
-
-        const next = Array.from(mergedMap.values());
+        const next = mergeMeasurementSnapshot(prev, current, {
+          seriesMap: mergedSeriesMapRef.current || {},
+          isRemoved: isAnnotationRemovalTombstoned,
+          getAnnotation:
+            typeof getAnnotation === 'function'
+              ? (annotationUID) =>
+                  getAnnotation.call(csAnnotation.state, annotationUID)
+              : undefined,
+        });
 
         // If selectedMeasurementUID no longer present, clear it (defer)
         setTimeout(() => {
