@@ -76,7 +76,7 @@ import {
 import { hasActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 
 
-import { normalizeId, getEnabledElementSafeLocal } from '@/lib/viewer/dom';
+import { normalizeId } from '@/lib/viewer/dom';
 import { waitForElementVisible, waitForCornerstoneReady, waitForEngineAndViewport, forceRenderCheck } from '@/lib/viewer/polling';
 import { preloadImagesWithTimeout, loadAndCacheImageWithTimeout } from '@/lib/viewer/preload';
 import {
@@ -373,86 +373,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     };
   }, [renderingEngineRef, viewportInstance]);
 
-  // --- Robust runtime check of enabled element presence (safe, effect-based)
-  const [runtimeHasImage, setRuntimeHasImage] = useState<boolean>(false);
-  const selectedSeriesImageIdSet = useMemo(
-    () => new Set(mergedSeriesMap[selectedSeries]?.files ?? []),
-    [mergedSeriesMap, selectedSeries]
-  );
-
-  const isSelectedSeriesImageVisible = useCallback(() => {
-    try {
-      const enabled = getEnabledElementSafeLocal(viewportEl);
-      const currentImageId =
-        enabled?.viewport?.getCurrentImageId?.() ??
-        (enabled as any)?.image?.imageId;
-      return (
-        typeof currentImageId === 'string' &&
-        selectedSeriesImageIdSet.has(currentImageId)
-      );
-    } catch {
-      return false;
-    }
-  }, [selectedSeriesImageIdSet, viewportEl]);
-
-  // Poll once (immediate) then a few retries to catch when Cornerstone finishes enabling
-  useEffect(() => {
-    let cancelled = false;
-    let tries = 0;
-    const maxTries = 8; // ~8 * intervalMs = ~1 second of polling
-    const intervalMs = 120;
-
-    const checkOnce = () => {
-      return isSelectedSeriesImageVisible();
-    };
-
-    // immediate check
-    if (checkOnce()) {
-      setRuntimeHasImage(true);
-      return () => { cancelled = true; };
-    } else {
-      setRuntimeHasImage(false);
-    }
-
-    const id = window.setInterval(() => {
-      if (cancelled) {
-        clearInterval(id);
-        return;
-      }
-      tries += 1;
-      const found = checkOnce();
-      if (found) {
-        setRuntimeHasImage(true);
-        clearInterval(id);
-        return;
-      }
-      if (tries >= maxTries) {
-        clearInterval(id);
-      }
-    }, intervalMs);
-
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [isSelectedSeriesImageVisible]);
-
-  // Combine signals from useImageReadiness hook + hook's enabledHasImage + this runtime check
-  // --- add viewportInstance signal as extra fallback ---
-  const viewportRenderedSignal = (() => {
-    try {
-      if (!viewportInstance) return false;
-      const vi: any = viewportInstance;
-      const hasRenderedImage = isSelectedSeriesImageVisible();
-      if (vi.viewportStatus === 'rendered') return hasRenderedImage;
-      if (hasRenderedImage) return true;
-      return false;
-    } catch {
-      return false;
-    }
-  })();
-
-  const imageAvailable = Boolean(hookImageReady) || Boolean(enabledHasImage) || Boolean(runtimeHasImage) || Boolean(viewportRenderedSignal);
+  // Whether the viewport shows an image of the selected series: the hook's
+  // state (updated from render events and polling) or the current reading.
+  // Two further copies of the same check (an extra 1 s poll and a render-time
+  // viewportStatus reading) were redundant and have been removed.
+  const imageAvailable = Boolean(hookImageReady) || Boolean(enabledHasImage);
 
 
   const rotate = useRotate(viewportInstance);
@@ -706,10 +631,10 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         }
         if (shouldAbort()) return;
 
-        // 8) Fire STACK_NEW_IMAGE so tools react like OHIF
+        // 8) Settle on the requested image. Cornerstone emits STACK_NEW_IMAGE
+        // itself; the synthetic 'cornerstone-stack-new-image' event this used
+        // to dispatch had no listeners besides legacy readiness code.
         try {
-          const evName = (ToolEnums as any)?.Events?.STACK_NEW_IMAGE ?? 'cornerstone-stack-new-image';
-          const targetEl = elToCheck ?? (viewportInstance as any)?.element ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
           const activeViewport: any =
             renderingEngineRef.current?.getViewport?.(VIEWPORT_ID) ??
             viewportInstance;
@@ -731,7 +656,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
           if (targetImageIndex === desiredImageIndex) {
             consumePendingNavigation();
           }
-          targetEl?.dispatchEvent?.(new CustomEvent(evName, { detail: { imageIdIndex: targetImageIndex }, bubbles: true }));
         } catch (e) {
         }
         if (shouldAbort()) return;

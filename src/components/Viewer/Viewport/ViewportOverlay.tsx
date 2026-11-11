@@ -163,9 +163,7 @@ export default function ViewportOverlay({
   const VOI_MODIFIED_EVENT =
     (CoreEnums && (CoreEnums as any).Events && (CoreEnums as any).Events.VOI_MODIFIED) ??
     'cornerstone-vm-voi-modified';
-  const STACK_NEW_IMAGE_EVENT =
-    (CoreEnums && (CoreEnums as any).Events && (CoreEnums as any).Events.STACK_NEW_IMAGE) ??
-    'cornerstone-stack-new-image';
+  const STACK_NEW_IMAGE_EVENT = CoreEnums.Events.STACK_NEW_IMAGE;
   const CAMERA_MODIFIED_EVENT =
     (CoreEnums && (CoreEnums as any).Events && (CoreEnums as any).Events.CAMERA_MODIFIED) ??
     'cornerstone-camera-modified';
@@ -397,16 +395,6 @@ export default function ViewportOverlay({
               } else if (typeof anyVp.getImageIdIndex === 'function') {
                 const v2 = anyVp.getImageIdIndex();
                 if (typeof v2 === 'number' && !Number.isNaN(v2)) idx = v2;
-              } else {
-                // last-resort: compare enabled.image.imageId against vp.getImageIds()
-                try {
-                  const ids = anyVp.getImageIds?.() ?? [];
-                  const curId = (en as any).image?.imageId ?? null;
-                  if (curId && Array.isArray(ids) && ids.length) {
-                    const found = ids.findIndex((id: string) => String(id) === String(curId));
-                    if (found >= 0) idx = found;
-                  }
-                } catch {}
               }
 
               if (typeof idx === 'number' && !Number.isNaN(idx)) {

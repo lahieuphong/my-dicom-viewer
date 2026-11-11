@@ -8,10 +8,6 @@ export {
   useRenderingEngine as useStackRenderingEngine,
 } from '@/hooks/useRenderingEngine';
 export {
-  default as useViewportState,
-  useViewportState as useCornerstoneViewportState,
-} from '@/hooks/useViewportState';
-export {
   default as useImageReadiness,
   useImageReadiness as useViewportImageReadiness,
 } from '@/hooks/useImageReadiness';

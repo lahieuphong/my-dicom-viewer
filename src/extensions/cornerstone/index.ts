@@ -25,7 +25,6 @@ export {
   attachDisplaySetToViewport,
   createDisplaySetFromSeries,
   registerImagePositions,
-  useCornerstoneViewportState,
   useEnsureImageRendered,
   useImageReadiness,
   useRenderedImageGuard,
@@ -34,7 +33,6 @@ export {
   useStackVoiPersistence,
   useViewportAutoFitOnResize,
   useViewportImageReadiness,
-  useViewportState,
 } from './viewport';
 export type {
   DisplaySet,

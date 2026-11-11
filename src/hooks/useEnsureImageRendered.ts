@@ -279,9 +279,7 @@ export function useEnsureImageRendered(options: {
       const enabledShowsTargetStack = (enabled: ReturnType<typeof getEnabledSafe>) => {
         if (!enabled) return false;
         try {
-          const currentImageId =
-            enabled.viewport?.getCurrentImageId?.() ??
-            (enabled as any)?.image?.imageId;
+          const currentImageId = enabled.viewport?.getCurrentImageId?.();
           return (
             typeof currentImageId === 'string' &&
             imageIds.includes(currentImageId)

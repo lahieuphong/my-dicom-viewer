@@ -2,7 +2,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RenderingEngine } from '@cornerstonejs/core';
-import { getEnabledElement } from '@cornerstonejs/core';
+import { Enums as CoreEnums, getEnabledElement } from '@cornerstonejs/core';
 import { safeGetEnabledElement } from '@/lib/cornerstone/helpers';
 
 import { waitForCornerstoneReady as waitForCornerstoneReadyShared } from '@/lib/viewer/polling';
@@ -83,9 +83,7 @@ export function useImageReadiness({
       if (imageIds.length === 0) return false;
 
       try {
-        const currentImageId =
-          enabledElement.viewport?.getCurrentImageId?.() ??
-          (enabledElement as any)?.image?.imageId;
+        const currentImageId = enabledElement.viewport?.getCurrentImageId?.();
         return (
           typeof currentImageId === 'string' &&
           selectedImageIdSet.has(currentImageId)
@@ -263,7 +261,10 @@ export function useImageReadiness({
     };
   }, [getEnabledSafe, hasSelectedStackImage, pollTimeoutMs, selectedSeries, viewportEl]);
 
-  // Listen to common render events (best effort)
+  // Re-check when Cornerstone renders or changes the image. These are the
+  // Cornerstone 3D event names; the former 'cornerstoneimagerendered' and
+  // 'cornerstone-stack-new-image' listeners only ever received synthetic
+  // events the viewer dispatched itself.
   useEffect(() => {
     if (!viewportEl) return () => {};
     const onRendered = () => {
@@ -274,12 +275,11 @@ export function useImageReadiness({
       } catch {}
     };
 
-    try { viewportEl.addEventListener('cornerstoneimagerendered', onRendered as EventListener); } catch {}
-    try { viewportEl.addEventListener('cornerstone-stack-new-image', onRendered as EventListener); } catch {}
+    const events = [CoreEnums.Events.IMAGE_RENDERED, CoreEnums.Events.STACK_NEW_IMAGE];
+    events.forEach((type) => viewportEl.addEventListener(type, onRendered));
 
     return () => {
-      try { viewportEl.removeEventListener('cornerstoneimagerendered', onRendered as EventListener); } catch {}
-      try { viewportEl.removeEventListener('cornerstone-stack-new-image', onRendered as EventListener); } catch {}
+      events.forEach((type) => viewportEl.removeEventListener(type, onRendered));
     };
   }, [getEnabledSafe, hasSelectedStackImage, viewportEl]);
 

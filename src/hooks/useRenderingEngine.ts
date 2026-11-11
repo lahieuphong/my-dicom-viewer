@@ -644,11 +644,10 @@ export function useRenderingEngine({
 
       stackEventHandlerRef.current = onStackNewImage;
       try {
-        if (vp?.element && (CoreEnums as any)?.Events) {
-          vp.element.addEventListener((CoreEnums as any).Events?.STACK_NEW_IMAGE ?? 'cornerstone-stack-new-image', onStackNewImage as any);
-        } else {
-          mountEl?.addEventListener('cornerstone-stack-new-image', onStackNewImage as any);
-        }
+        vp?.element?.addEventListener(
+          CoreEnums.Events.STACK_NEW_IMAGE,
+          onStackNewImage as EventListener
+        );
       } catch (e) {}
 
       if (!isStale()) {
@@ -672,8 +671,7 @@ export function useRenderingEngine({
               const handler = stackEventHandlerRef.current;
               if (handler) {
                 const elToRemove = (renderingEngineRef.current?.getViewport?.(VIEWPORT_ID)?.element ?? elRef.current);
-                try { elToRemove?.removeEventListener((CoreEnums as any).Events?.STACK_NEW_IMAGE ?? 'cornerstone-stack-new-image', handler as any); } catch (e) {}
-                try { elToRemove?.removeEventListener('cornerstone-stack-new-image', handler as any); } catch (e) {}
+                try { elToRemove?.removeEventListener(CoreEnums.Events.STACK_NEW_IMAGE, handler as EventListener); } catch (e) {}
               }
             } catch (e) {}
 

@@ -313,20 +313,8 @@ export async function attachDisplaySetToViewport(opts: {
     // swallow
   }
 
-  // 5) Dispatch STACK_NEW_IMAGE with effectiveIndex (so tools/annotations sync)
-  try {
-    const eventName =
-      (typeof window !== 'undefined' &&
-        (window as any).__cornerstoneCore &&
-        (window as any).__cornerstoneCore?.Events?.STACK_NEW_IMAGE) ??
-      'cornerstone-stack-new-image';
-    const targetEl = viewportEl ?? (viewportInstance as any)?.element ?? document.querySelector(`[data-viewport-uid="${viewportId}"]`);
-    try {
-      targetEl?.dispatchEvent?.(new CustomEvent(eventName, { detail: { imageIdIndex: Number(effectiveIndex) }, bubbles: true }));
-    } catch (err) {
-    }
-  } catch (err) {
-  }
+  // 5) Cornerstone emits STACK_NEW_IMAGE for the image it shows; the former
+  // synthetic 'cornerstone-stack-new-image' event had no live listeners.
 
   // 6) ensure VOI if displaySet has it
   if (isCancelled?.()) return false;
