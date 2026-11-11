@@ -91,6 +91,10 @@ import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canv
 
 import { ATTEMPTS_ATTACH } from '@/lib/viewer/constants';
 
+// How long the attach effect waits for useRenderingEngine to set the
+// selected stack before it falls back to attaching the stack itself.
+const ENGINE_ATTACH_WAIT_MS = 8000;
+
 function createFallbackStudyMeta(studyUID: string): Study {
   return {
     studyInstanceUID: studyUID,
@@ -474,47 +478,71 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         const elToCheck = (viewportEl as HTMLElement | null) ?? (viewportInstance as any)?.element ?? elRef.current;
         if (!elToCheck) return;
 
-        // ===== QUICK GUARD -> skip reattach if viewport already showing same series/frame =====
-        try {
-          const vp = viewportInstance as any;
-          if (vp) {
-            // get current ids & index from viewportInstance if possible
-            let vpIds: string[] | null = null;
-            try { vpIds = typeof vp.getImageIds === 'function' ? vp.getImageIds() ?? null : null; } catch {}
-
-            const vpShowsDesired = areImageStacksEqual(vpIds, ds.imageIds);
-
-            if (vpShowsDesired) {
-              let currentIndex = Number(vp.getCurrentImageIdIndex?.() ?? 0);
-              if (
-                pendingNavigation &&
-                currentIndex !== desiredImageIndex &&
-                typeof vp.setImageIdIndex === 'function'
-              ) {
-                await vp.setImageIdIndex(desiredImageIndex);
-                if (shouldAbort()) return;
-                currentIndex = Number(
-                  vp.getCurrentImageIdIndex?.() ?? desiredImageIndex
-                );
-              }
-              if (!Number.isInteger(currentIndex) || currentIndex < 0) {
-                currentIndex = desiredImageIndex;
-              }
-              setCurrentFrame(currentIndex + 1);
-              if (currentIndex === desiredImageIndex) {
-                consumePendingNavigation();
-              }
-              // Ensure loading UI is not stuck
-              setLoadingStackSafe(false);
-              setLoadingProgress?.(null);
-              return;
-            }
+        // useRenderingEngine owns StackViewport.setStack for this pane. This
+        // effect waits for that stack, then settles the requested image and the
+        // loading UI. It used to run its own attach path whenever the engine had
+        // not set the stack yet when it started; whichever won then reset,
+        // resized and re-rendered the viewport again. That path is now only a
+        // fallback for an engine that does not attach the stack in time.
+        const getAttachedViewport = () => {
+          try {
+            const vp: any =
+              renderingEngineRef.current?.getViewport?.(VIEWPORT_ID) ??
+              viewportInstance;
+            return areImageStacksEqual(vp?.getImageIds?.() ?? null, ds.imageIds)
+              ? vp
+              : null;
+          } catch {
+            return null;
           }
-        } catch (e) {
-          // ignore guard errors — proceed with normal attach if guard fails
+        };
+
+        let attachedViewport = getAttachedViewport();
+        if (!attachedViewport) {
+          setLoadingStackSafe(true);
+          const waitStartedAt = Date.now();
+          while (
+            !attachedViewport &&
+            Date.now() - waitStartedAt < ENGINE_ATTACH_WAIT_MS
+          ) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            if (shouldAbort()) return;
+            attachedViewport = getAttachedViewport();
+          }
         }
 
-        // ===== END QUICK GUARD =====
+        if (attachedViewport) {
+          try {
+            const vp = attachedViewport;
+            let currentIndex = Number(vp.getCurrentImageIdIndex?.() ?? 0);
+            if (
+              pendingNavigation &&
+              currentIndex !== desiredImageIndex &&
+              typeof vp.setImageIdIndex === 'function'
+            ) {
+              await vp.setImageIdIndex(desiredImageIndex);
+              if (shouldAbort()) return;
+              currentIndex = Number(
+                vp.getCurrentImageIdIndex?.() ?? desiredImageIndex
+              );
+            }
+            if (!Number.isInteger(currentIndex) || currentIndex < 0) {
+              currentIndex = desiredImageIndex;
+            }
+            setCurrentFrame(currentIndex + 1);
+            if (currentIndex === desiredImageIndex) {
+              consumePendingNavigation();
+            }
+            // The overlay stays until the image renders (imageAvailable).
+            setLoadingStackSafe(false);
+            setLoadingProgress?.(null);
+            return;
+          } catch (e) {
+            // fall back to the legacy attach path below
+          }
+        }
+
+        // ===== Fallback: the engine did not attach the stack in time =====
         setLoadingStackSafe(true);
 
         // 1) Wait for cornerstone readiness (cancellable)
