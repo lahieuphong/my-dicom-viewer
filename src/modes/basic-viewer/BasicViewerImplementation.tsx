@@ -8,7 +8,6 @@ import {
   useLayoutEffect,
   useMemo,
 } from 'react';
-import { toast } from 'sonner';
 
 import { utilities as csCoreUtilities } from '@cornerstonejs/core';
 
@@ -18,6 +17,7 @@ import {
   selectDefaultSeriesUID,
   useBatchedFrameState,
   useSeriesLoader,
+  useSrCreateDialog,
 } from './application';
 
 import {
@@ -655,10 +655,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   >([]);
 
   const [activeSrId, setActiveSrId] = useState<string | null>(null);
-  const [isCreatingSr, setIsCreatingSr] = useState(false);
-  const [srDialogOpen, setSrDialogOpen] = useState(false);
-  const [srNameValue, setSrNameValue] = useState('');
-  const isCreatingSrRef = useRef(false);
 
   useEffect(() => {
     currentAttachSessionRef.current += 1;
@@ -694,47 +690,18 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const isSeriesReadOnly = Boolean(activeSrId);
 
-  const openSrNameDialog = () => {
-    if (isCreatingSrRef.current || isSeriesReadOnly) return;
-    if (hasActiveAnnotationInteraction()) {
-      toast.error(
-        'Vui lòng hoàn tất thao tác vẽ hoặc chỉnh sửa Measurement trước khi tạo SR.'
-      );
-      return;
-    }
-    setSrNameValue('Measurement Report');
-    setSrDialogOpen(true);
-  };
-
-  const executeSrExportWithName = async (name: string) => {
-    if (isCreatingSrRef.current) return;
-
-    isCreatingSrRef.current = true;
-    setIsCreatingSr(true);
-    try {
-      const createdReportUID = await exportSRAsDICOM(name);
-
-      if (createdReportUID) {
-        toast.success('Đã tạo và tải xuống DICOM SR.');
-      }
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : 'Không thể tạo Structured Report.'
-      );
-    } finally {
-      isCreatingSrRef.current = false;
-      setIsCreatingSr(false);
-      setSrDialogOpen(false);
-      setSrNameValue('');
-    }
-  };
-
-  const cancelSrDialog = () => {
-    setSrDialogOpen(false);
-    setSrNameValue('');
-  };
+  const {
+    isCreatingSr,
+    srDialogOpen,
+    srNameValue,
+    openSrNameDialog,
+    saveSrDialog,
+    cancelSrDialog,
+  } = useSrCreateDialog({
+    exportReport: exportSRAsDICOM,
+    readOnly: isSeriesReadOnly,
+    isAnnotationInteractionActive: hasActiveAnnotationInteraction,
+  });
 
   const lastActivatedToolRef = useRef<ToolID | null>(null);
 
@@ -1192,7 +1159,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       srNameValue={srNameValue}
       isCreatingSr={isCreatingSr}
       onCancelSrDialog={cancelSrDialog}
-      onSaveSrDialog={executeSrExportWithName}
+      onSaveSrDialog={saveSrDialog}
       blurViewportActiveElement={blurViewportActiveElement}
     />
   );

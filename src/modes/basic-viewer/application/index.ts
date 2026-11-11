@@ -10,3 +10,7 @@ export type {
   MergeMeasurementSnapshotOptions,
   SeriesFilesMap,
 } from './measurementSnapshot';
+export {
+  DEFAULT_SR_DOCUMENT_TITLE,
+  useSrCreateDialog,
+} from './useSrCreateDialog';
