@@ -32,6 +32,12 @@ Before committing structural changes, run:
 yarn verify
 ```
 
+`yarn verify` also runs the unit tests (`yarn test:unit`): `node:test`
+suites in `scripts/unit/` for framework-free modules in `src/`. Node 24 runs
+the TypeScript sources directly; `scripts/unit/loader.mjs` resolves the `@/`
+alias and replaces Cornerstone with a stub, so only code that does not need
+a browser can be tested this way.
+
 Browser regressions drive the real viewer through the Chrome DevTools
 Protocol. One command runs all of them, reusing a viewer on
 `VIEWER_ORIGIN` (default `http://127.0.0.1:3000`) and a Chrome exposing

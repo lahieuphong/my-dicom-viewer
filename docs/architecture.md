@@ -174,7 +174,11 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 
 ## Kiểm thử
 
-- `yarn verify`: architecture guard, ESLint và TypeScript.
+- `yarn verify`: architecture guard, ESLint, TypeScript và unit test
+  (`yarn test:unit`). Unit test là các suite `node:test` trong `scripts/unit/`,
+  chạy thẳng source TypeScript trên Node 24 qua loader `scripts/unit/loader.mjs`
+  (map alias `@/`, thay Cornerstone bằng stub). Logic thuần nên được tách khỏi
+  hook/component để test được theo cách này.
 - `yarn test:cdp`: chạy toàn bộ browser regression trong Chrome headless qua
   Chrome DevTools Protocol (`scripts/run-cdp-tests.mjs`, harness chung
   `scripts/lib/cdp-harness.mjs`). Runner dùng lại viewer ở `VIEWER_ORIGIN` và
