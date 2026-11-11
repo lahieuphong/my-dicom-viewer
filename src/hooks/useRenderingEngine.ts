@@ -11,9 +11,10 @@ import { VIEWPORT_ID } from '@/constants/viewport';
 import { enableElement } from '@/lib/cornerstone/element';
 import { getEnabledElementSafeLocal } from '@/lib/viewer/dom';
 import { normalizeCanvasAndContext, ensureCanvasSizing } from '@/lib/viewer/canvasUtils';
-import { ATTEMPTS_ENGINE, USER_COOLDOWN_MS } from '@/lib/viewer/constants';
+import { ATTEMPTS_ENGINE } from '@/lib/viewer/constants';
 import { areImageStacksEqual } from '@/lib/cornerstone/helpers';
 import { resizeEngineIfNeeded } from '@/lib/viewer/fitViewport';
+import { resetViewportCamera } from '@/lib/viewer/viewportActions';
 
 const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 const VIEWPORT_BACKGROUND: [number, number, number] = [0, 0, 0];
@@ -402,43 +403,6 @@ export function useRenderingEngine({
       }
       if (isStale()) return;
 
-      // --- wrap setStack to avoid stomping after recent user interaction ---
-      try {
-        if (vp) {
-          try {
-            const origSetStack = (vp as any).setStack;
-            if (
-              typeof origSetStack === 'function' &&
-              !(vp as any).__viewerInteractionGuardedSetStack
-            ) {
-              (vp as any).setStack = async function wrappedVpSetStack(_imageIds: string[], idx: number) {
-                try {
-                  const el = (vp as any).element ?? mountEl ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
-                  let lastUserTs = 0;
-                  try { lastUserTs = Number((el as HTMLElement)?.dataset?.__lastUserInteraction ?? 0) || 0; } catch {}
-                  const now = Date.now();
-                  const targetIndex = Number.isFinite(Number(idx)) ? Number(idx) : 0;
-
-                  if (lastUserTs && now - lastUserTs < USER_COOLDOWN_MS) {
-                    let currentIdx = -1;
-                    try { if (typeof (vp as any).getCurrentImageIdIndex === 'function') currentIdx = (vp as any).getCurrentImageIdIndex(); } catch {}
-                    const currentIds = (vp as any).getImageIds?.() ?? [];
-                    const isSameStack = areImageStacksEqual(currentIds, _imageIds);
-                    if (isSameStack && currentIdx >= 0 && currentIdx !== targetIndex) {
-                      return false;
-                    }
-                  }
-                } catch {}
-                // eslint-disable-next-line prefer-rest-params
-                return await (origSetStack as any).apply(this, arguments as any);
-              };
-              (vp as any).__viewerInteractionGuardedSetStack = true;
-            }
-          } catch {}
-
-        }
-      } catch {}
-
       try { enableElement((vp?.element as HTMLElement) ?? mountEl); } catch {}
       try { normalizeCanvasAndContext((vp?.element as HTMLElement) ?? mountEl); } catch {}
 
@@ -456,23 +420,28 @@ export function useRenderingEngine({
       const imageIds = mergedSeriesMap[selectedSeriesId]?.files ?? [];
       const initialIndex = 0;
 
-      async function robustSetStack(vpCandidate: any, ids: string[], idx = 0) {
-        if (!ids || ids.length === 0) return false;
+      /** 'kept' when the viewport already showed the stack, 'set' when it was set. */
+      async function robustSetStack(
+        vpCandidate: any,
+        ids: string[],
+        idx = 0
+      ): Promise<'kept' | 'set' | 'failed'> {
+        if (!ids || ids.length === 0) return 'failed';
 
         try {
-          const currentIds = vpCandidate && typeof vpCandidate.getImageIds === 'function' ? vpCandidate.getImageIds() : null;
-          const currentIdx = vpCandidate && typeof vpCandidate.getCurrentImageIdIndex === 'function' ? vpCandidate.getCurrentImageIdIndex() : null;
-          if (Array.isArray(currentIds) && currentIds.length && areImageStacksEqual(currentIds, ids) && typeof currentIdx === 'number' && currentIdx === idx) {
-            return true;
-          }
-        } catch {}
-
-        const reqToken = `stk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const elForLock = (vpCandidate?.element as HTMLElement) ?? mountEl ?? document.querySelector(`[data-viewport-uid="${VIEWPORT_ID}"]`);
-        try {
-          if (elForLock && elForLock instanceof HTMLElement) {
-            elForLock.dataset.__stackLocked = '1';
-            elForLock.dataset.__stackLockedOwner = reqToken;
+          const currentIds = vpCandidate?.getImageIds?.();
+          if (
+            Array.isArray(currentIds) &&
+            currentIds.length > 0 &&
+            areImageStacksEqual(currentIds, ids)
+          ) {
+            // The effect re-runs for the series already shown when its VOI
+            // defaults arrive. Setting the same stack again would move the
+            // user back to the remembered index and reset the view; this
+            // replaces the former "3 s after a user interaction" setStack
+            // wrapper, which only covered re-runs right after a gesture.
+            if (shouldPreserveInitialIndex) return 'kept';
+            if (vpCandidate.getCurrentImageIdIndex?.() === idx) return 'kept';
           }
         } catch {}
 
@@ -482,28 +451,25 @@ export function useRenderingEngine({
             // setStack(imageIds, index) loads and shows the image at `index`.
             // Cornerstone 3D has no StackViewport.setImageId/setImageIndex or
             // RenderingEngine.setStacks, so the former fallbacks never ran.
-            if (typeof vpCandidate?.setStack !== 'function') return true;
+            if (typeof vpCandidate?.setStack !== 'function') return 'failed';
             await vpCandidate.setStack(ids, idx);
+            // A newly selected series opens in the default orientation, like
+            // after Reset View. setStack itself only resets flips, invert and
+            // VOI; the rotation used to be undone by a racing readiness retry.
+            try { resetViewportCamera(vpCandidate); } catch {}
 
             try { normalizeCanvasAndContext((vpCandidate?.element as HTMLElement) ?? mountEl); } catch {}
             try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
             try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
             try { if (typeof (vpCandidate?.render) === 'function') await vpCandidate.render(); } catch {}
             try { await forceRenderFrames(2, vpCandidate); } catch {}
-            return true;
+            return 'set';
           } catch (err) {
             await sleep(120 * (i + 1));
           }
         }
 
-        try {
-          if (elForLock && elForLock instanceof HTMLElement) {
-            delete elForLock.dataset.__stackLocked;
-            delete elForLock.dataset.__stackLockedOwner;
-          }
-        } catch {}
-
-        return false;
+        return 'failed';
       }
 
       if (vp && imageIds && imageIds.length > 0) {
@@ -516,7 +482,6 @@ export function useRenderingEngine({
 
           await robustSetStack(vp, imageIds, safePreferIdx);
 
-          try { vp.reset?.(); } catch {}
           try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
           try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
           try { normalizeCanvasAndContext((vp?.element as HTMLElement) ?? mountEl); } catch {}
@@ -528,17 +493,22 @@ export function useRenderingEngine({
           // synthetic STACK_NEW_IMAGE event.
           const rendered = await waitForEnabledImage(elToCheck, vp, 3000, 120);
 
-          // One render check only when the image did not render. It used to run
-          // unconditionally and again 300 ms and 900 ms later, each time
-          // resizing the whole engine after the stack had already rendered.
+          // setStack resolves once the image is loaded, so an image that has
+          // still not rendered points at a canvas that does not match its
+          // element (for example one sized while hidden). Fix only that; the
+          // former forceRenderCheck resized the whole engine unconditionally,
+          // clearing every pane, and reset the viewport options.
           if (!rendered && !isStale()) {
-            try {
-              const polling = await import('@/lib/viewer/polling');
-              await polling.forceRenderCheck?.(elToCheck as HTMLDivElement, vp, renderingEngineRef);
-            } catch {}
+            try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
+            try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
           }
         } catch (e) {}
       }
+
+      // A newer run took over while this one awaited setStack. It owns the
+      // VOI and the stack listener; registering this run's listener as well
+      // would leak it, because cleanup only removes the latest handler.
+      if (isStale()) return;
 
       // apply VOI defaults (if provided)
       try {

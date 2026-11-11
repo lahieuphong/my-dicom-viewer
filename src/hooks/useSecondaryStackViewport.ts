@@ -408,9 +408,6 @@ export function useSecondaryStackViewport({
         Math.max(0, Math.round(Number(frameOneBased) || 1) - 1)
       );
 
-      try {
-        viewportEl.dataset.__lastUserInteraction = String(Date.now());
-      } catch {}
       setCurrentFrame(targetIndex + 1);
 
       try {

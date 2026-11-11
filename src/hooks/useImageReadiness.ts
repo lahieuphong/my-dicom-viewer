@@ -1,304 +1,91 @@
 // src/hooks/useImageReadiness.ts
 'use client';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { RenderingEngine } from '@cornerstonejs/core';
-import { Enums as CoreEnums, getEnabledElement } from '@cornerstonejs/core';
-import { safeGetEnabledElement } from '@/lib/cornerstone/helpers';
-
-import { waitForCornerstoneReady as waitForCornerstoneReadyShared } from '@/lib/viewer/polling';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import {
+  Enums as CoreEnums,
+  getEnabledElement,
+  type StackViewport,
+} from '@cornerstonejs/core';
 
 type UseImageReadinessOpts = {
-  renderingEngineRef: React.RefObject<RenderingEngine | null>;
-  viewportInstance: any | null;
   viewportEl: HTMLDivElement | null;
   selectedSeries?: string | null;
-  mergedSeriesMap?: Record<string, { files: string[]; metadata?: any }>;
-  ensureImageRendered?: (
-    vpInstanceParam: any,
-    vpElParam: HTMLDivElement | null,
-    imageIds: string[],
-    desiredIndex: number,
-    maxRetries?: number,
-    retryDelay?: number,
-    isCancelled?: () => boolean
-  ) => Promise<boolean>;
-  viewportReady?: boolean;
-  // optional: how long to wait in total when doing fallback poll (ms)
-  pollTimeoutMs?: number;
+  mergedSeriesMap?: Record<string, { files: string[]; metadata?: unknown }>;
 };
 
+/**
+ * Cornerstone fires STACK_NEW_IMAGE right after a loaded image replaces the
+ * displayed one and IMAGE_RENDERED after every draw, so together they cover
+ * every change of the image this hook reads.
+ */
+const READINESS_EVENTS = [
+  CoreEnums.Events.STACK_NEW_IMAGE,
+  CoreEnums.Events.IMAGE_RENDERED,
+] as const;
+
+const getServerSnapshot = () => false;
+
+function getDisplayedImageId(element: HTMLDivElement) {
+  try {
+    const viewport = getEnabledElement(element)?.viewport as
+      | StackViewport
+      | undefined;
+    return viewport?.getCornerstoneImage?.()?.imageId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether the primary viewport displays an image of the selected series.
+ *
+ * This reads the image Cornerstone actually displays, not the current image
+ * ID: setStack switches the current ID (and status) before the new image has
+ * loaded, while the previous series is still on screen. The viewport status is
+ * no signal either, as it drops to PRE_RENDER on every scroll or VOI change
+ * until the next draw. The value is derived from Cornerstone's own events, so
+ * the former polling loops and render/resize retries are no longer needed;
+ * useRenderingEngine owns setStack and the render nudges for this pane.
+ */
 export function useImageReadiness({
-  renderingEngineRef,
-  viewportInstance,
   viewportEl,
   selectedSeries,
   mergedSeriesMap = {},
-  ensureImageRendered,
-  viewportReady = false,
-  pollTimeoutMs = 5000,
 }: UseImageReadinessOpts) {
-  const [imageReady, setImageReady] = useState<boolean>(false);
-  const mountedRef = useRef(true);
-  const refreshGenerationRef = useRef(0);
-
-  const selectedImageIds = useMemo(() => {
-    try {
-      return (mergedSeriesMap?.[selectedSeries ?? '']?.files ?? []) as string[];
-    } catch {
-      return [];
-    }
-  }, [mergedSeriesMap, selectedSeries]);
-  const selectedImageIdSet = useMemo(
-    () => new Set(selectedImageIds),
-    [selectedImageIds]
+  const selectedFiles = mergedSeriesMap[selectedSeries ?? '']?.files;
+  const selectedImageIds = useMemo(
+    () => new Set<string>(selectedFiles ?? []),
+    [selectedFiles]
   );
 
-  // helper: extract imageIds for selected series
-  const getImageIdsForSelected = useCallback(
-    () => selectedImageIds,
-    [selectedImageIds]
-  );
-
-  // Helper: get enabled element safely (use existing helper where possible)
-  const getEnabledSafe = useCallback((el: HTMLDivElement | null) => {
-    if (!el) return null;
-    try {
-      const en = safeGetEnabledElement(el);
-      if (en) return en;
-    } catch {
-      try {
-        return getEnabledElement(el);
-      } catch {
-        // ignore
-      }
-    }
-    return null;
-  }, []);
-
-  const hasSelectedStackImage = useCallback(
-    (enabledElement: ReturnType<typeof getEnabledSafe>) => {
-      if (!enabledElement) return false;
-
-      const imageIds = getImageIdsForSelected();
-      if (imageIds.length === 0) return false;
-
-      try {
-        const currentImageId = enabledElement.viewport?.getCurrentImageId?.();
-        return (
-          typeof currentImageId === 'string' &&
-          selectedImageIdSet.has(currentImageId)
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      if (!viewportEl) return () => {};
+      READINESS_EVENTS.forEach((type) =>
+        viewportEl.addEventListener(type, onChange)
+      );
+      return () => {
+        READINESS_EVENTS.forEach((type) =>
+          viewportEl.removeEventListener(type, onChange)
         );
-      } catch {
-        return false;
-      }
+      };
     },
-    [getImageIdsForSelected, selectedImageIdSet]
+    [viewportEl]
   );
 
-  // Core refresh function: attempt robust ensureImageRendered -> fallback poll -> fallback setStack
-  const refresh = useCallback(async (): Promise<boolean> => {
-    const generation = ++refreshGenerationRef.current;
-    mountedRef.current = true;
-    const isCancelled = () =>
-      !mountedRef.current || refreshGenerationRef.current !== generation;
-    // reset each refresh
-    try { if (!isCancelled()) setImageReady(false); } catch {}
+  const getSnapshot = useCallback(() => {
+    if (!viewportEl || selectedImageIds.size === 0) return false;
+    const imageId = getDisplayedImageId(viewportEl);
+    return Boolean(imageId && selectedImageIds.has(imageId));
+  }, [selectedImageIds, viewportEl]);
 
-    try {
-      const imageIds = getImageIdsForSelected();
-      const enabledElement = getEnabledSafe(viewportEl);
+  const imageReady = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot
+  );
 
-      // Series changes can briefly leave the previous image on the enabled
-      // element. Only short-circuit when the rendered image belongs to the
-      // currently selected stack.
-      if (hasSelectedStackImage(enabledElement)) {
-        if (!isCancelled()) setImageReady(true);
-        return true;
-      }
-
-      const canUseEnsure =
-        typeof ensureImageRendered === 'function' &&
-        renderingEngineRef?.current &&
-        viewportInstance &&
-        viewportEl &&
-        Array.isArray(imageIds) &&
-        imageIds.length > 0;
-
-      if (canUseEnsure) {
-        // wait short time for cornerstone init (use shared helper)
-        const csOk = await waitForCornerstoneReadyShared(3500).catch(() => false);
-        if (isCancelled()) return false;
-        if (!csOk) {
-          // allow fallback path (don't crash) — continue to poll fallback later
-        } else {
-          try {
-            const ok = await ensureImageRendered(
-              viewportInstance,
-              viewportEl,
-              imageIds,
-              0,
-              40,
-              200,
-              isCancelled
-            );
-            if (!isCancelled() && ok && hasSelectedStackImage(getEnabledSafe(viewportEl))) {
-              try { setImageReady(true); } catch {}
-              return true;
-            }
-          } catch {
-            // fallthrough to fallback
-          }
-        }
-      }
-
-      // fallback 1: quick polling enabled element
-      const start = Date.now();
-      const interval = 80;
-      while (!isCancelled() && Date.now() - start < pollTimeoutMs) {
-        try {
-          const en = getEnabledSafe(viewportEl);
-          if (hasSelectedStackImage(en)) {
-            if (!isCancelled()) {
-              try { setImageReady(true); } catch {}
-            }
-            return true;
-          }
-        } catch {
-          // ignore ephemeral errors
-        }
-        await new Promise((r) => setTimeout(r, interval));
-      }
-      if (isCancelled()) return false;
-
-      // final fail-open if viewportReady
-      if (
-        viewportReady &&
-        hasSelectedStackImage(getEnabledSafe(viewportEl))
-      ) {
-        if (!isCancelled()) {
-          try { setImageReady(true); } catch {}
-        }
-        return true;
-      }
-
-      return false;
-    } catch {
-      return false;
-    }
-  }, [
-    ensureImageRendered,
-    getEnabledSafe,
-    getImageIdsForSelected,
-    hasSelectedStackImage,
-    viewportEl,
-    viewportInstance,
-    renderingEngineRef,
-    pollTimeoutMs,
-    viewportReady,
-  ]);
-
-  // Run refresh when dependencies change
-  useEffect(() => {
-    mountedRef.current = true;
-    (async () => {
-      try {
-        await refresh();
-      } catch {
-        // ignore
-      }
-    })();
-
-    return () => {
-      mountedRef.current = false;
-      refreshGenerationRef.current += 1;
-    };
-  }, [refresh]);
-
-  // Short poll watcher to catch race where enabled element gets image shortly after mount
-  useEffect(() => {
-    if (!viewportEl) return () => {};
-    let mounted = true;
-    let intervalId: number | null = null;
-
-    const checkOnce = () => {
-      try {
-        const en = getEnabledSafe(viewportEl);
-        if (hasSelectedStackImage(en)) {
-          setImageReady(true);
-          return true;
-        }
-      } catch {
-        // ignore
-      }
-      return false;
-    };
-
-    if (checkOnce()) return () => { mounted = false; };
-
-    const start = Date.now();
-    intervalId = window.setInterval(() => {
-      if (!mounted) return;
-      if (Date.now() - start > Math.min(5000, pollTimeoutMs)) {
-        if (intervalId != null) {
-          clearInterval(intervalId);
-          intervalId = null;
-        }
-        return;
-      }
-      try {
-        if (checkOnce()) {
-          if (intervalId != null) {
-            clearInterval(intervalId);
-            intervalId = null;
-          }
-        }
-      } catch {}
-    }, 200);
-
-    return () => {
-      mounted = false;
-      if (intervalId != null) clearInterval(intervalId);
-    };
-  }, [getEnabledSafe, hasSelectedStackImage, pollTimeoutMs, selectedSeries, viewportEl]);
-
-  // Re-check when Cornerstone renders or changes the image. These are the
-  // Cornerstone 3D event names; the former 'cornerstoneimagerendered' and
-  // 'cornerstone-stack-new-image' listeners only ever received synthetic
-  // events the viewer dispatched itself.
-  useEffect(() => {
-    if (!viewportEl) return () => {};
-    const onRendered = () => {
-      try {
-        if (hasSelectedStackImage(getEnabledSafe(viewportEl))) {
-          setImageReady(true);
-        }
-      } catch {}
-    };
-
-    const events = [CoreEnums.Events.IMAGE_RENDERED, CoreEnums.Events.STACK_NEW_IMAGE];
-    events.forEach((type) => viewportEl.addEventListener(type, onRendered));
-
-    return () => {
-      events.forEach((type) => viewportEl.removeEventListener(type, onRendered));
-    };
-  }, [getEnabledSafe, hasSelectedStackImage, viewportEl]);
-
-  // compute enabled presence quickly for callers
-  const enForEnabledHasImage = getEnabledSafe(viewportEl);
-  const enabledHasImage = hasSelectedStackImage(enForEnabledHasImage);
-
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-      refreshGenerationRef.current += 1;
-    };
-  }, []);
-
-  return {
-    imageReady,
-    refresh,
-    enabledHasImage,
-  };
+  return { imageReady };
 }
 
 export default useImageReadiness;

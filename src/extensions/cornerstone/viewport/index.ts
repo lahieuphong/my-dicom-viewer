@@ -11,10 +11,6 @@ export {
   default as useImageReadiness,
   useImageReadiness as useViewportImageReadiness,
 } from '@/hooks/useImageReadiness';
-export {
-  default as useEnsureImageRendered,
-  useEnsureImageRendered as useRenderedImageGuard,
-} from '@/hooks/useEnsureImageRendered';
 export { useViewportAutoFitOnResize } from '@/hooks/useViewportAutoFitOnResize';
 export { useStackVoiPersistence } from '@/hooks/useStackVoiPersistence';
 

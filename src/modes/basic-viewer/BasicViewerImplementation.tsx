@@ -35,7 +35,6 @@ import {
   enableElement,
   readOnlyBlockedToolIDs,
   toolNameMap,
-  useEnsureImageRendered,
   useFlipHorizontal,
   useImageReadiness,
   useInvert,
@@ -282,10 +281,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         Math.max(0, Math.round(Number(frameOneBased) || 1) - 1)
       );
 
-      try {
-        viewportEl.dataset.__lastUserInteraction = String(Date.now());
-      } catch {}
-
       setCurrentFrame(targetIndex + 1);
 
       try {
@@ -310,28 +305,18 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     [setCurrentFrame, viewportEl, viewportInstance]
   );
 
-  const { ensureImageRendered } = useEnsureImageRendered({
-    renderingEngineRef,
-    mergedSeriesMap,
-    voiDefaults,
-  });
-
-
   const { activateTool, isToolReady } = useToolManager();
 
-  const [viewportReady, setViewportReady] = useState(false);
+  // The engine publishes the viewport once it is enabled on the mounted
+  // element; the series settle effect below polls for the stack from there.
+  const viewportReady = Boolean(viewportInstance && viewportEl);
 
-  const {
-    imageReady: hookImageReady,
-    enabledHasImage,
-  } = useImageReadiness({
-    renderingEngineRef,
-    viewportInstance,
+  // Whether the viewport displays an image of the selected series, derived
+  // from Cornerstone's STACK_NEW_IMAGE/IMAGE_RENDERED events.
+  const { imageReady: imageAvailable } = useImageReadiness({
     viewportEl,
     selectedSeries,
     mergedSeriesMap,
-    ensureImageRendered,
-    viewportReady,
   });
 
   const clearPersistedVoi = useStackVoiPersistence({
@@ -364,12 +349,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       window.clearTimeout(timer);
     };
   }, [renderingEngineRef, viewportInstance]);
-
-  // Whether the viewport shows an image of the selected series: the hook's
-  // state (updated from render events and polling) or the current reading.
-  // Two further copies of the same check (an extra 1 s poll and a render-time
-  // viewportStatus reading) were redundant and have been removed.
-  const imageAvailable = Boolean(hookImageReady) || Boolean(enabledHasImage);
 
 
   const rotate = useRotate(viewportInstance);
@@ -1028,119 +1007,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   }, [activeTool, isToolReady, isSeriesReadOnly, activateTool]);
 
 
-  // settle effect (mình đã đề xuất trước đó) – thêm setViewportReady(true) ở cuối
-  useEffect(() => {
-    if (!viewportInstance || !viewportEl) { setViewportReady(false); return; }
-
-    let cancelled = false;
-    let nudgeId: number | null = null;
-
-    const settle = async () => {
-      try {
-        // wait two raf + small timeout so layout has a chance to settle
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              setTimeout(() => resolve(), 60);
-            });
-          });
-        });
-
-        if (cancelled) return;
-
-        // initial reset / present / render
-        try { (viewportInstance as any).reset?.(); } catch {}
-        try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
-        try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-        try { (viewportInstance as any).render?.(); } catch {}
-
-        if (cancelled) return;
-
-        // DELAYED NUDGE:
-        // call another lightweight resize/render/reset after a small delay. This
-        // helps when some CSS/layout reflow happens slightly after mount and the
-        // first render was done too early.
-        try {
-          nudgeId = window.setTimeout(() => {
-            if (cancelled) return;
-            try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
-            try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-            try { (viewportInstance as any).reset?.(); } catch {}
-            try { (viewportInstance as any).render?.(); } catch {}
-          }, 80);
-        } catch {
-          // ignore
-        }
-
-        if (cancelled) {
-          if (nudgeId != null) { clearTimeout(nudgeId); nudgeId = null; }
-          return;
-        }
-
-        // finally mark ready (UI can hide loading overlay etc.)
-        setViewportReady(true);
-      } catch (e) {
-        // ignore errors but ensure ready flag not left stuck
-        try { setViewportReady(true); } catch {}
-      }
-    };
-
-    setViewportReady(false);
-    const id = window.setTimeout(settle, 20);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(id);
-      if (nudgeId != null) {
-        clearTimeout(nudgeId);
-        nudgeId = null;
-      }
-      setViewportReady(false);
-    };
-  }, [viewportInstance, viewportEl, renderingEngineRef]);
 
 
-  // Nếu viewportEl thay đổi, gọi enableElement một lần nữa như final nudge.
-  // Điều này giúp khi engine đã enable phần tử khác (timing mismatch) — gọi lại trên phần tử thực tế.
-  // --- MARK: detect user interaction on the viewport to avoid aggressive background re-attach ---
-  useEffect(() => {
-    const el = (viewportEl as HTMLElement | null) ?? elRef.current;
-    if (!el) return () => {};
-
-    const markInteraction = () => {
-      try {
-        (el as HTMLElement).dataset.__lastUserInteraction = String(Date.now());
-      } catch {}
-    };
-
-    // common user gestures that indicate user intentionally moved frame/view:
-    el.addEventListener('wheel', markInteraction, { passive: true });
-    el.addEventListener('pointerdown', markInteraction);
-    el.addEventListener('touchstart', markInteraction, { passive: true });
-
-    // also listen for keyboard navigation while the viewport holds focus
-    const onKey = (ev: KeyboardEvent) => {
-      try {
-        const active = document.activeElement as HTMLElement | null;
-        if (active && el.contains(active)) {
-          // arrow keys, pageUp/Down, home/end often used for navigation
-          if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End'].includes(ev.key)) {
-            markInteraction();
-          }
-        }
-      } catch {}
-    };
-    window.addEventListener('keydown', onKey);
-
-    return () => {
-      try {
-        el.removeEventListener('wheel', markInteraction as EventListener);
-        el.removeEventListener('pointerdown', markInteraction as EventListener);
-        el.removeEventListener('touchstart', markInteraction as EventListener);
-        window.removeEventListener('keydown', onKey);
-      } catch {}
-    };
-  }, [viewportEl]);
 
 
   useEffect(() => {

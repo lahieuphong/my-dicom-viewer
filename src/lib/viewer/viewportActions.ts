@@ -12,12 +12,11 @@ import { clearViewportCameraUserModified } from '@/lib/viewer/viewportCameraInte
  */
 
 /**
- * OHIF Reset View: restore the current image's default VOI/display
- * properties, then fit the camera without rotation or flip.
+ * The default camera: no rotation or flip, image fitted and centred. Does not
+ * render. A new stack needs this too: setStack resets flips, invert and VOI,
+ * but a stack in the same orientation keeps the previous camera rotation.
  */
-export function resetViewportView(viewport: StackViewport) {
-  viewport.resetProperties();
-
+export function resetViewportCamera(viewport: StackViewport) {
   // resetCamera also resets rotation on the GPU path. Cornerstone's CPU
   // fallback does not, so normalise it through the public presentation API.
   const presentation = viewport.getViewPresentation();
@@ -31,6 +30,15 @@ export function resetViewportView(viewport: StackViewport) {
 
   // Keep Cornerstone's public flip state in sync in the CPU fallback too.
   viewport.setCamera({ flipHorizontal: false, flipVertical: false });
+}
+
+/**
+ * OHIF Reset View: restore the current image's default VOI/display
+ * properties, then fit the camera without rotation or flip.
+ */
+export function resetViewportView(viewport: StackViewport) {
+  viewport.resetProperties();
+  resetViewportCamera(viewport);
 
   // A reset view is fitted again, so later grid changes may refit it.
   clearViewportCameraUserModified(viewport.element as HTMLElement | null);
