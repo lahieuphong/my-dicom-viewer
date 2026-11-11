@@ -3,6 +3,8 @@
 import { useEffect, useRef } from 'react';
 import type { StackViewport } from '@cornerstonejs/core';
 
+import { isViewportCameraUserModified } from '@/lib/viewer/viewportCameraInteraction';
+
 type Options = {
   enabled?: boolean;
   delayMs?: number;
@@ -25,12 +27,14 @@ export function useForceZoomOne(
 
     const forceZoom = () => {
       if (cancelledRef.current) return;
+      // Zoom only: forcing rotation 0 here undid a rotation chosen right after
+      // the image appeared. A camera the user already changed is left alone.
+      if (isViewportCameraUserModified(viewportInstance.element as HTMLElement)) {
+        return;
+      }
 
       try {
-        viewportInstance.setViewPresentation?.({
-          zoom: 1,
-          rotation: 0,
-        });
+        viewportInstance.setViewPresentation?.({ zoom: 1 });
       } catch {
         try {
           (viewportInstance as any).setScale?.(1);

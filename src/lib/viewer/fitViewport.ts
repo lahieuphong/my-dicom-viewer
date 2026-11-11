@@ -3,6 +3,7 @@
 import type { RenderingEngine, StackViewport } from '@cornerstonejs/core';
 
 import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
+import { fitViewportKeepingOrientation } from '@/lib/viewer/viewportActions';
 
 type ViewPresentation = ReturnType<StackViewport['getViewPresentation']>;
 type ViewportCamera = ReturnType<StackViewport['getCamera']>;
@@ -333,11 +334,7 @@ export function fitViewportToElement({
     try {
       viewport.resetCameraForResize?.();
       if (mode === 'fit-image') {
-        viewport.resetCamera({
-          resetPan: true,
-          resetZoom: true,
-          resetToCenter: true,
-        });
+        fitViewportKeepingOrientation(viewport);
       } else if (!restoreCamera(viewport, resizedCamera)) {
         restorePresentation(viewport, presentation);
       }
@@ -356,11 +353,7 @@ export function fitViewportToElement({
     if (needsResize) engine.resize(true, true);
     for (const plan of siblingPlans) restoreCamera(plan.viewport, plan.camera);
     if (mode === 'fit-image') {
-      viewport.resetCamera({
-        resetPan: true,
-        resetZoom: true,
-        resetToCenter: true,
-      });
+      fitViewportKeepingOrientation(viewport);
     } else if (!restoreCamera(viewport, resizedCamera)) {
       restorePresentation(viewport, presentation);
     }

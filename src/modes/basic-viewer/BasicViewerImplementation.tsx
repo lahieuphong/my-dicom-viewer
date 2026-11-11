@@ -1252,7 +1252,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
         // initial reset / present / render
         try { (viewportInstance as any).reset?.(); } catch {}
-        try { (viewportInstance as any).setViewPresentation?.({ rotation: 0 }); } catch {}
         try { renderingEngineRef.current?.resize?.(); } catch {}
         try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
         try { (viewportInstance as any).render?.(); } catch {}

@@ -6,6 +6,7 @@ import { Enums as CoreEnums, type StackViewport } from '@cornerstonejs/core';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { getRenderingEngine, RENDERER_ID } from '@/lib/cornerstone/renderer';
 import { resizeViewportsKeepingVisibleFrame } from '@/lib/viewer/fitViewport';
+import { fitViewportKeepingOrientation } from '@/lib/viewer/viewportActions';
 import {
   clearViewportCameraUserModified,
   isViewportCameraUserModified,
@@ -147,11 +148,7 @@ export function useViewportGridResize({
               continue;
             }
 
-            viewport.resetCamera({
-              resetPan: true,
-              resetZoom: true,
-              resetToCenter: true,
-            });
+            fitViewportKeepingOrientation(viewport);
             viewport.render();
           } catch {}
         }

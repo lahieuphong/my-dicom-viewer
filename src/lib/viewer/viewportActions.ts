@@ -37,6 +37,23 @@ export function resetViewportView(viewport: StackViewport) {
   viewport.render();
 }
 
+/**
+ * Fits the camera to the viewport's cell (zoom, pan, centre) but keeps the
+ * rotation and flips, the way Cornerstone's own resize does. resetCamera
+ * alone also resets rotation and flips on the GPU path, so automatic fits
+ * (layout changes, new-stack settling) used to undo an orientation the user
+ * had just chosen. Only Reset View returns the orientation to default.
+ */
+export function fitViewportKeepingOrientation(viewport: StackViewport) {
+  const rotation = viewport.getRotation?.() ?? 0;
+  const { flipHorizontal = false, flipVertical = false } = viewport.getCamera();
+  viewport.resetCamera({ resetPan: true, resetZoom: true, resetToCenter: true });
+  if (flipHorizontal || flipVertical) {
+    viewport.setCamera({ flipHorizontal, flipVertical });
+  }
+  if (rotation) viewport.setViewPresentation({ rotation });
+}
+
 export function rotateViewportClockwise(viewport: StackViewport) {
   const presentation = viewport.getViewPresentation();
   viewport.setViewPresentation({
