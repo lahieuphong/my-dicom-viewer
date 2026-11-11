@@ -16,9 +16,14 @@ import {
   resolveSeriesFromImageId as resolveSeriesUIDFromImageId,
   selectDefaultSeriesUID,
   useBatchedFrameState,
+  useHiddenMeasurements,
   useSeriesLoader,
   useSrCreateDialog,
 } from './application';
+import {
+  createLatestWinsQueue,
+  createSingleFlight,
+} from '@/lib/utils/asyncQueues';
 
 import {
   ToolGroupManager,
@@ -149,10 +154,13 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const [allMeasurements, setAllMeasurements] = useState<AnnotationMeasurement[]>([]);
   const [selectedMeasurementUID, setSelectedMeasurementUID] = useState<string | null>(null);
-  const [hiddenMeasurements, setHiddenMeasurements] = useState<Set<string>>(new Set());
-  const measurementDeletionPromisesRef = useRef<
-    Map<string, Promise<boolean>>
-  >(new Map());
+  const { hiddenMeasurements, toggleVisibility, forgetMeasurement } =
+    useHiddenMeasurements(studyUID, isAnnotationRemovalTombstoned);
+  // A second delete click for a measurement that is still being removed
+  // gets the same result instead of starting another removal.
+  const [measurementDeletions] = useState(() =>
+    createSingleFlight<string, boolean>()
+  );
 
   const [mobileSeriesOpen, setMobileSeriesOpen] = useState(false);
   const [mobileMeasurementsOpen, setMobileMeasurementsOpen] = useState(false);
@@ -166,11 +174,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     // only change when different
     setLoadingStack((prev) => (prev === v ? prev : v));
   }, []);
-
-  useEffect(() => {
-    // Hidden state belongs to a study, never to the lifetime of the component.
-    setHiddenMeasurements(new Set());
-  }, [studyUID]);
 
 
 
@@ -598,42 +601,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     } catch {}
   }, []);
 
-  /**
-   * Wrapper used when user clicks a measurement in UI.
-   * Navigation is serialized and only the latest pending card is retained.
-   * This keeps rapid clicks deterministic without dropping the second click.
-  */
-  async function doUserSelectMeasurement(m: any) {
-    if (!m || isAnnotationRemovalTombstoned(m.annotationUID)) return;
-    pendingUserMeasurementRef.current = m;
-
-    if (userMeasurementSelectionLoopRef.current) {
-      return userMeasurementSelectionLoopRef.current;
-    }
-
-    const drainSelections = async () => {
-      while (pendingUserMeasurementRef.current) {
-        const nextMeasurement = pendingUserMeasurementRef.current;
-        pendingUserMeasurementRef.current = null;
-        if (
-          !nextMeasurement ||
-          isAnnotationRemovalTombstoned(nextMeasurement.annotationUID)
-        ) {
-          continue;
-        }
-        try {
-          blurViewportActiveElement();
-          await handleSelectMeasurement(nextMeasurement);
-        } catch {}
-      }
-    };
-
-    const running = drainSelections().finally(() => {
-      userMeasurementSelectionLoopRef.current = null;
-    });
-    userMeasurementSelectionLoopRef.current = running;
-    return running;
-  }
 
 
 
@@ -664,12 +631,26 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setAllMeasurements([]);
     selectedMeasurementUIDRef.current = null;
     setSelectedMeasurementUID(null);
-    measurementDeletionPromisesRef.current.clear();
-  }, [studyUID]);
+    measurementDeletions.clear();
+  }, [measurementDeletions, studyUID]);
 
-  // Serialize Measurement-panel navigation and retain the latest pending click.
-  const pendingUserMeasurementRef = useRef<any | null>(null);
-  const userMeasurementSelectionLoopRef = useRef<Promise<void> | null>(null);
+  // Measurement-panel clicks navigate one at a time and only the latest
+  // pending click is kept, so rapid clicks stay deterministic without
+  // dropping the last one. useMeasurementSelector below provides the
+  // handler; the ref always holds the one from the latest render.
+  const handleSelectMeasurementRef = useRef<
+    ((measurement: AnnotationMeasurement) => Promise<unknown> | unknown) | null
+  >(null);
+  const [measurementSelectionQueue] = useState(() =>
+    createLatestWinsQueue<AnnotationMeasurement>({
+      run: async (measurement) => {
+        blurViewportActiveElement();
+        await handleSelectMeasurementRef.current?.(measurement);
+      },
+      shouldSkip: (measurement) =>
+        !measurement || isAnnotationRemovalTombstoned(measurement.annotationUID),
+    })
+  );
 
   const commitSelectedMeasurementUID = useCallback((uid: string | null) => {
     selectedMeasurementUIDRef.current = uid;
@@ -765,11 +746,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     (uid: string, frameIndex: number) => {
       // An explicit card-navigation flow always wins over automatic selection
       // emitted while the measurement list is reconciling.
-      if (userMeasurementSelectionLoopRef.current) return;
+      if (measurementSelectionQueue.isRunning()) return;
       commitSelectedMeasurementUID(uid);
       setCurrentFrame(frameIndex + 1);
     },
-    [commitSelectedMeasurementUID, setCurrentFrame]
+    [commitSelectedMeasurementUID, measurementSelectionQueue, setCurrentFrame]
   );
 
   // Pass a safe renderer into the measurement bridge
@@ -888,16 +869,13 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     (uid: string): Promise<boolean> => {
       if (!uid) return Promise.resolve(false);
 
-      const pending = measurementDeletionPromisesRef.current.get(uid);
-      if (pending) return pending;
-
-      const deletion = (async () => {
+      return measurementDeletions.run(uid, async () => {
         const wasSelected = selectedMeasurementUIDRef.current === uid;
 
         try {
-          if (pendingUserMeasurementRef.current?.annotationUID === uid) {
-            pendingUserMeasurementRef.current = null;
-          }
+          measurementSelectionQueue.dropPending(
+            (measurement) => measurement.annotationUID === uid
+          );
           if (wasSelected) {
             commitSelectedMeasurementUID(null);
           }
@@ -919,12 +897,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
               (measurement) => measurement.annotationUID !== uid
             )
           );
-          setHiddenMeasurements((previous) => {
-            if (!previous.has(uid)) return previous;
-            const next = new Set(previous);
-            next.delete(uid);
-            return next;
-          });
+          forgetMeasurement(uid);
 
           try {
             refreshMeasurements();
@@ -940,42 +913,21 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
           }
           return false;
         }
-      })();
-
-      measurementDeletionPromisesRef.current.set(uid, deletion);
-      void deletion.then(
-        () => {
-          if (measurementDeletionPromisesRef.current.get(uid) === deletion) {
-            measurementDeletionPromisesRef.current.delete(uid);
-          }
-        },
-        () => {
-          if (measurementDeletionPromisesRef.current.get(uid) === deletion) {
-            measurementDeletionPromisesRef.current.delete(uid);
-          }
-        }
-      );
-      return deletion;
+      });
     },
-    [commitSelectedMeasurementUID, refreshMeasurements, safeRenderViewport]
+    [
+      commitSelectedMeasurementUID,
+      forgetMeasurement,
+      measurementDeletions,
+      measurementSelectionQueue,
+      refreshMeasurements,
+      safeRenderViewport,
+    ]
   );
 
 
 
 
-  const handleToggleVisibility = useCallback((uid: string) => {
-    if (!uid || isAnnotationRemovalTombstoned(uid)) return;
-
-    setHiddenMeasurements((prev) => {
-      const set = new Set(prev);
-      if (set.has(uid)) {
-        set.delete(uid);
-      } else {
-        set.add(uid);
-      }
-      return set;
-    });
-  }, []);
 
   const {
     handleSelectMeasurement,
@@ -995,6 +947,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setActiveSrId,
     safeRenderViewport,
     selectedMeasurementUIDRef,
+  });
+  useLayoutEffect(() => {
+    handleSelectMeasurementRef.current = handleSelectMeasurement;
   });
 
   // --- Auto-clear loading overlay when image becomes available OR when preload reaches 100% ---
@@ -1128,11 +1083,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       setMeasurementCollapsed={setMeasurementCollapsed}
       onUpdateLabel={updateLabel}
       onSelectMeasurement={(m) => {
-        void doUserSelectMeasurement(m);
+        void measurementSelectionQueue.enqueue(m);
       }}
       onRemoveMeasurement={handleRemoveMeasurement}
       hiddenMeasurements={hiddenMeasurements}
-      onToggleVisibility={handleToggleVisibility}
+      onToggleVisibility={toggleVisibility}
       onCreateSR={openSrNameDialog}
       currentFrame={currentFrame}
       onFrameChange={handleViewportFrameChange}

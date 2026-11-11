@@ -14,3 +14,4 @@ export {
   DEFAULT_SR_DOCUMENT_TITLE,
   useSrCreateDialog,
 } from './useSrCreateDialog';
+export { useHiddenMeasurements } from './useHiddenMeasurements';
