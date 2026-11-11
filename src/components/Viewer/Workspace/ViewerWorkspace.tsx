@@ -66,7 +66,6 @@ type ViewerWorkspaceProps = {
   studyDate: string;
   studyDescription: string;
   seriesMap: SeriesSidebarProps['seriesMap'];
-  voiDefaults: Record<string, { lower: number; upper: number }>;
   selectedSeries: string;
   onActiveViewportSeriesChange: (seriesUID: string) => void;
   onVisibleViewportSeriesChange: (seriesUIDs: string[]) => void;
@@ -129,7 +128,6 @@ export default function ViewerWorkspace({
   studyDate,
   studyDescription,
   seriesMap,
-  voiDefaults,
   selectedSeries,
   onActiveViewportSeriesChange,
   onVisibleViewportSeriesChange,
@@ -669,7 +667,6 @@ export default function ViewerWorkspace({
                 selectedSeriesUID={selectedSeries}
                 activeTool={activeTool}
                 interactionDisabled={cineInteractionLocked}
-                voiDefaults={voiDefaults}
                 primary={
                   <>
                     {!loadingSeries && (

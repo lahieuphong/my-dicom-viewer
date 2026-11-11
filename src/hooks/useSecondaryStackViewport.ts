@@ -24,7 +24,6 @@ type UseSecondaryStackViewportOptions = {
   viewportId: string;
   imageIds: readonly string[];
   stackKey: string;
-  voiRange?: VoiRange | null;
 };
 
 const VIEWPORT_BACKGROUND: [number, number, number] = [0, 0, 0];
@@ -176,7 +175,6 @@ export function useSecondaryStackViewport({
   viewportId,
   imageIds,
   stackKey,
-  voiRange = null,
 }: UseSecondaryStackViewportOptions) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState<StackViewport | null>(null);
@@ -308,9 +306,6 @@ export function useSecondaryStackViewport({
           return;
         }
 
-        if (voiRange) {
-          try { viewport.setProperties({ voiRange }); } catch {}
-        }
         try {
           viewport.resetCamera({
             resetPan: true,
@@ -371,7 +366,7 @@ export function useSecondaryStackViewport({
     return () => {
       cancelled = true;
     };
-  }, [imageIdsSignature, stackKey, viewport, viewportId, voiRange]);
+  }, [imageIdsSignature, stackKey, viewport, viewportId]);
 
   useEffect(() => {
     if (!viewportEl) return;

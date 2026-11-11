@@ -25,7 +25,6 @@ type SecondaryStackViewportProps = {
   activeTool: ToolID;
   active: boolean;
   interactionDisabled?: boolean;
-  voiDefaults?: Record<string, { lower: number; upper: number }>;
   onActivate: (
     viewportId: string,
     element: HTMLDivElement | null,
@@ -44,7 +43,6 @@ export default function SecondaryStackViewport({
   activeTool,
   active,
   interactionDisabled = false,
-  voiDefaults = {},
   onActivate,
   onSeriesChange,
 }: SecondaryStackViewportProps) {
@@ -68,7 +66,6 @@ export default function SecondaryStackViewport({
     viewportId,
     imageIds,
     stackKey: selectedSeriesUID,
-    voiRange: voiDefaults[selectedSeriesUID] ?? null,
   });
 
   useEffect(() => {

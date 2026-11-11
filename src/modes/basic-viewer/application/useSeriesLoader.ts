@@ -48,7 +48,6 @@ export function useSeriesLoader(studyUID: string) {
   const [selectedSeries, setSelectedSeries] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [voiDefaults, setVoiDefaults] = useState<Record<string, VoiRange>>({});
 
   useEffect(() => {
     if (!studyUID) return;
@@ -58,7 +57,6 @@ export function useSeriesLoader(studyUID: string) {
     setError(null);
     setSeriesMap({});
     setSelectedSeries('');
-    setVoiDefaults({});
 
     const loadSeries = async () => {
       try {
@@ -68,7 +66,6 @@ export function useSeriesLoader(studyUID: string) {
         const imageSeries = allSeries.filter(s => s.seriesModality !== 'SR');
 
         const map: Record<string, SeriesMapEntry> = {};
-        const voiMap: Record<string, VoiRange> = {};
 
         if (USE_STATIC_DICOMS) {
           // Static mode: build imageIds from instance url fields returned by the series endpoint.
@@ -130,7 +127,6 @@ export function useSeriesLoader(studyUID: string) {
 
         if (!cancelled) {
           setSeriesMap(map);
-          setVoiDefaults(voiMap);
           setSelectedSeries(selectDefaultSeriesUID(map));
         }
       } catch (error) {
@@ -161,6 +157,5 @@ export function useSeriesLoader(studyUID: string) {
     setSelectedSeries,
     loadingSeries: loading,
     seriesError: error,
-    voiDefaults,
   } as const;
 }

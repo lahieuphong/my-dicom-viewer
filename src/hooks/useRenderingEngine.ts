@@ -128,13 +128,11 @@ export function useRenderingEngine({
   elRef,
   selectedSeriesId,
   mergedSeriesMap,
-  voiDefaults,
   onFrameIndexChange,
 }: {
   elRef: React.RefObject<HTMLDivElement | null>;
   selectedSeriesId: string;
   mergedSeriesMap: Record<string, { files: string[]; metadata: any }>;
-  voiDefaults: Record<string, { lower: number; upper: number }>;
   onFrameIndexChange?: (index: number) => void;
 }) {
   const renderingEngineRef = useRef<RenderingEngine | null>(null);
@@ -435,11 +433,11 @@ export function useRenderingEngine({
             currentIds.length > 0 &&
             areImageStacksEqual(currentIds, ids)
           ) {
-            // The effect re-runs for the series already shown when its VOI
-            // defaults arrive. Setting the same stack again would move the
-            // user back to the remembered index and reset the view; this
-            // replaces the former "3 s after a user interaction" setStack
-            // wrapper, which only covered re-runs right after a gesture.
+            // A re-run for the series already shown (React's development
+            // double effect, or a remount on the same element) must not set
+            // the same stack again: that would move the user back to the
+            // remembered index and reset the view. This replaces the former
+            // "3 s after a user interaction" setStack wrapper.
             if (shouldPreserveInitialIndex) return 'kept';
             if (vpCandidate.getCurrentImageIdIndex?.() === idx) return 'kept';
           }
@@ -510,19 +508,10 @@ export function useRenderingEngine({
       // would leak it, because cleanup only removes the latest handler.
       if (isStale()) return;
 
-      // apply VOI defaults (if provided)
-      try {
-        const seriesDefault = selectedSeriesId && (voiDefaults[selectedSeriesId] ?? null);
-        if (vp && seriesDefault) {
-          try { vp.setProperties?.({ voiRange: seriesDefault }); } catch {}
-          try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-        }
-      } catch (err) {}
-
       // The cached VOI is only an initialization fallback. Re-applying it every
       // time the stack loops back to image 0 would overwrite a user's current
       // Window/Level adjustment with the first image's original VOI.
-      let initialVoiEventPending = !Boolean(voiDefaults[selectedSeriesId]);
+      let initialVoiEventPending = true;
 
       const onStackNewImage = (e: any) => {
         try {
@@ -559,8 +548,6 @@ export function useRenderingEngine({
             try {
               const imgId = vp?.getImageIds?.()?.[idx];
               if (!imgId) return;
-
-              if (voiDefaults[selectedSeriesId]) return;
 
               try {
                 if (voiLib && (voiLib as any).cacheVOI?.has?.(String(imgId))) {
@@ -644,7 +631,7 @@ export function useRenderingEngine({
         }, delayMs);
       } catch (e) {}
     };
-  }, [selectedSeriesId, imageFilesJson, voiDefaults, elRef]);
+  }, [selectedSeriesId, imageFilesJson, elRef]);
 
   return { renderingEngineRef, viewportInstance, viewportEl };
 }

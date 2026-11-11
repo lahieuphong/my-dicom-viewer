@@ -209,7 +209,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setSelectedSeries,
     loadingSeries,
     seriesError,
-    voiDefaults,
   } = useSeriesLoader(studyUID);
 
   const mergedSeriesMap = seriesMap;
@@ -254,7 +253,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     elRef,
     selectedSeriesId: selectedSeries,
     mergedSeriesMap,
-    voiDefaults,
     onFrameIndexChange: handleViewportFrameIndexChange,
   });
 
@@ -1144,7 +1142,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       studyDate={studyMeta.studyDate}
       studyDescription={studyMeta.studyDescription}
       seriesMap={mergedSeriesMap}
-      voiDefaults={voiDefaults}
       selectedSeries={selectedSeries}
       onActiveViewportSeriesChange={setWorkspaceActiveSeriesUID}
       onVisibleViewportSeriesChange={handleVisibleViewportSeriesChange}

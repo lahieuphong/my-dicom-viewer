@@ -35,7 +35,6 @@ type ViewportGridProps = {
   selectedSeriesUID: string;
   activeTool: ToolID;
   interactionDisabled?: boolean;
-  voiDefaults?: Record<string, { lower: number; upper: number }>;
 };
 
 export default function ViewportGrid({
@@ -51,7 +50,6 @@ export default function ViewportGrid({
   selectedSeriesUID,
   activeTool,
   interactionDisabled = false,
-  voiDefaults = {},
 }: ViewportGridProps) {
   const viewportCount = getViewportCount(layout);
   const secondaryIndices = useMemo(
@@ -132,7 +130,6 @@ export default function ViewportGrid({
             activeTool={activeTool}
             active={activeViewportId === viewportId}
             interactionDisabled={interactionDisabled}
-            voiDefaults={voiDefaults}
             onActivate={onActiveViewportChange}
             onSeriesChange={onViewportSeriesChange}
           />
