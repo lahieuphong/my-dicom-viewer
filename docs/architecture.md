@@ -198,6 +198,9 @@ Mỗi bước migration kiến trúc phải tuân thủ:
   không bị.
 - Thay đổi lifecycle Cornerstone (attach, readiness, resize, camera) phải pass
   `test:cdp` cả mặc định lẫn `--gpu`.
+- Harness coi một pane là sẵn sàng khi ảnh hiện tại đã thực sự hiển thị
+  (`getCornerstoneImage()`), không chỉ khi `viewportStatus` là `rendered`:
+  status đó cũng có sau một lần vẽ khi ảnh đầu tiên của stack còn đang nạp.
 
 ## Tiến độ
 
@@ -210,8 +213,9 @@ Mỗi bước migration kiến trúc phải tuân thủ:
   `useForceZoomOne` đã bị xóa. Series mở cho một navigation (measurement, SR,
   sidebar) bắt đầu ngay ở ảnh được yêu cầu (`getInitialImageIndex`), thay vì
   hiện ảnh đầu rồi nhảy. Engine publish `attachedStack` khi ảnh đầu tiên của
-  stack đã vẽ; effect settle trong mode chạy theo tín hiệu đó (trước đây poll
-  50 ms) và chỉ còn áp dụng navigation mà engine chưa áp dụng được.
+  stack đã vẽ; `useSelectedSeriesLoading` (`basic-viewer/application`) chạy
+  theo tín hiệu đó (trước đây poll 50 ms), chỉ còn áp dụng navigation mà engine
+  chưa áp dụng được, và giữ trạng thái loading của series đang chọn.
 - Pane chính và pane phụ cùng enable/disable viewport qua
   `mountStackViewport`/`unmountStackViewport`
   (`lib/viewer/stackViewportLifecycle`); helper chỉ disable viewport còn nằm
@@ -245,7 +249,9 @@ hoặc độc lập với Cornerstone, tách ra từ `BasicViewerImplementation.
 `measurementSnapshot` (merge snapshot measurement, tìm series của ảnh),
 `useSrCreateDialog` (hộp thoại tạo SR) và `useHiddenMeasurements` (ẩn/hiện
 measurement). Hàng đợi chọn measurement và việc gộp các lần xóa trùng dùng
-helper thuần `lib/utils/asyncQueues`.
+helper thuần `lib/utils/asyncQueues`. Chờ annotation xuất hiện trong state của
+Cornerstone (`ensureAnnotationAvailable`) dùng event `ANNOTATION_ADDED` thay vì
+poll.
 
 Còn lại:
 
@@ -256,6 +262,10 @@ Còn lại:
 - Phase 3–4: `BasicViewerImplementation.tsx` vẫn giữ luồng xóa measurement
   (selection, style, refresh), đồng bộ selection với Cornerstone và trạng thái
   SR đang mở.
+- Engine đặt stack theo thứ tự `files` của series, còn `useSelectedSeriesLoading`
+  so với `createDisplaySetFromSeries`, vốn sắp ảnh theo instance number. Với
+  data source hiện tại hai thứ tự trùng nhau (không có instance number theo
+  file); một data source có số này thì phải dùng chung một thứ tự.
 
 ## Các phase tiếp theo
 
