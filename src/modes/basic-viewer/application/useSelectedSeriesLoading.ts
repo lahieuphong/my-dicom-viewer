@@ -13,7 +13,6 @@ import type { RenderingEngine, StackViewport } from '@cornerstonejs/core';
 
 import { VIEWPORT_ID } from '@/constants/viewport';
 import {
-  createDisplaySetFromSeries,
   disableReleaseGraphicsResourcesGlobally,
   type AttachedStack,
 } from '@/extensions/cornerstone';
@@ -93,10 +92,10 @@ export function useSelectedSeriesLoading({
       try { disableReleaseGraphicsResourcesGlobally(); } catch {}
     };
 
-    const ds = createDisplaySetFromSeries(mergedSeriesMap[selectedSeries]);
-    if (!ds || !Array.isArray(ds.imageIds) || ds.imageIds.length === 0) {
-      return cleanup;
-    }
+    // The series' files are its stack in display order: the list
+    // useRenderingEngine sets and every frame index refers to.
+    const imageIds = mergedSeriesMap[selectedSeries]?.files ?? [];
+    if (imageIds.length === 0) return cleanup;
 
     const attachedViewport = (() => {
       if (attachedStack?.seriesId !== selectedSeries) return null;
@@ -104,7 +103,7 @@ export function useSelectedSeriesLoading({
         const vp: any =
           renderingEngineRef.current?.getViewport?.(VIEWPORT_ID) ??
           viewportInstanceRef.current;
-        return areImageStacksEqual(vp?.getImageIds?.() ?? null, ds.imageIds)
+        return areImageStacksEqual(vp?.getImageIds?.() ?? null, imageIds)
           ? vp
           : null;
       } catch {
@@ -136,8 +135,8 @@ export function useSelectedSeriesLoading({
       Math.min(
         Number.isInteger(pendingNavigation?.imageIndex)
           ? pendingNavigation!.imageIndex
-          : ds.initialImageIdIndex ?? 0,
-        ds.imageIds.length - 1
+          : 0,
+        imageIds.length - 1
       )
     );
 
