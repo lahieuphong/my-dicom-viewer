@@ -250,11 +250,24 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   }, [selectedMeasurementUID]);
 
   // ---------- Rendering engine ----------
-  const { renderingEngineRef, viewportInstance, viewportEl } = useRenderingEngine({
+  // A series opened for a navigation (a measurement, an SR or the sidebar)
+  // starts at the requested image instead of jumping there after the first.
+  const getPendingNavigationIndex = useCallback((seriesUID: string) => {
+    const pending = pendingSeriesNavigationRef.current;
+    return pending?.seriesUID === seriesUID ? pending.imageIndex : null;
+  }, []);
+
+  const {
+    renderingEngineRef,
+    viewportInstance,
+    viewportEl,
+    attachedStack,
+  } = useRenderingEngine({
     elRef,
     selectedSeriesId: selectedSeries,
     mergedSeriesMap,
     onFrameIndexChange: handleViewportFrameIndexChange,
+    getInitialImageIndex: getPendingNavigationIndex,
   });
 
   useEffect(() => {
@@ -305,8 +318,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   const { activateTool, isToolReady } = useToolManager();
 
-  // The engine publishes the viewport once it is enabled on the mounted
-  // element; the series settle effect below polls for the stack from there.
+  // The engine publishes the viewport once it shows its first stack; the
+  // series settle effect below waits for attachedStack from there.
   const viewportReady = Boolean(viewportInstance && viewportEl);
 
   // Whether the viewport displays an image of the selected series, derived
@@ -365,12 +378,13 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
   // ---------- Settle the selected stack ----------
   // useRenderingEngine is the only owner of StackViewport.setStack for this
-  // pane. This effect waits until the viewport shows the selected stack, then
-  // applies a pending navigation index and settles the frame and loading UI.
-  // It used to run its own attach path (attachDisplaySet/ensureStackOnViewport)
-  // whenever the engine had not set the stack yet; the two raced and reset,
-  // resized and re-rendered the viewport twice. The effect deliberately does
-  // not depend on viewportInstance/viewportEl: it is gated on viewportReady.
+  // pane, opens a newly selected series at its pending navigation index and
+  // publishes attachedStack once the stack's first image is drawn. This effect
+  // then applies a navigation the engine could not (one requested for the
+  // series already shown, or after the engine had started) and settles the
+  // frame and loading UI. It used to poll the viewport every 50 ms instead,
+  // after a 60 ms debounce. The effect deliberately does not depend on
+  // viewportInstance/viewportEl: it is gated on viewportReady.
   useEffect(() => {
     if (!selectedSeries || !viewportReady) return;
 
@@ -379,63 +393,63 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       (currentAttachSessionRef.current || 0) + 1);
     const shouldAbort = () =>
       cancelled || thisSession !== currentAttachSessionRef.current;
+    let slowAttachTimer: number | null = null;
+    const cleanup = () => {
+      cancelled = true;
+      if (slowAttachTimer !== null) window.clearTimeout(slowAttachTimer);
+      currentAttachSessionRef.current = (currentAttachSessionRef.current || 0) + 1;
+      try { disableReleaseGraphicsResourcesGlobally(); } catch {}
+    };
 
-    async function settleSelectedSeries() {
-      const ds = createDisplaySetFromSeries(mergedSeriesMap[selectedSeries]);
-      if (!ds || !Array.isArray(ds.imageIds) || ds.imageIds.length === 0) return;
-      const pendingNavigation =
-        pendingSeriesNavigationRef.current?.seriesUID === selectedSeries
-          ? pendingSeriesNavigationRef.current
+    const ds = createDisplaySetFromSeries(mergedSeriesMap[selectedSeries]);
+    if (!ds || !Array.isArray(ds.imageIds) || ds.imageIds.length === 0) {
+      return cleanup;
+    }
+
+    const attachedViewport = (() => {
+      if (attachedStack?.seriesId !== selectedSeries) return null;
+      try {
+        const vp: any =
+          renderingEngineRef.current?.getViewport?.(VIEWPORT_ID) ??
+          viewportInstance;
+        return areImageStacksEqual(vp?.getImageIds?.() ?? null, ds.imageIds)
+          ? vp
           : null;
-      const desiredImageIndex = Math.max(
-        0,
-        Math.min(
-          Number.isInteger(pendingNavigation?.imageIndex)
-            ? pendingNavigation!.imageIndex
-            : ds.initialImageIdIndex ?? 0,
-          ds.imageIds.length - 1
-        )
-      );
-
-      const getAttachedViewport = () => {
-        try {
-          const vp: any =
-            renderingEngineRef.current?.getViewport?.(VIEWPORT_ID) ??
-            viewportInstance;
-          return areImageStacksEqual(vp?.getImageIds?.() ?? null, ds.imageIds)
-            ? vp
-            : null;
-        } catch {
-          return null;
-        }
-      };
-
-      // A slow network only delays the engine; keep waiting until it attaches
-      // the stack or this effect is superseded, and report a long wait once.
-      let attachedViewport = getAttachedViewport();
-      if (!attachedViewport) {
-        setLoadingStackSafe(true);
-        const waitStartedAt = Date.now();
-        let reportedSlowAttach = false;
-        while (!attachedViewport) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
-          if (shouldAbort()) return;
-          attachedViewport = getAttachedViewport();
-          if (
-            !attachedViewport &&
-            !reportedSlowAttach &&
-            Date.now() - waitStartedAt > ENGINE_ATTACH_WARN_MS
-          ) {
-            reportedSlowAttach = true;
-            console.warn(
-              `[viewer] Series ${selectedSeries} is still not attached after ${
-                ENGINE_ATTACH_WARN_MS / 1000
-              } s.`
-            );
-          }
-        }
+      } catch {
+        return null;
       }
+    })();
 
+    // A slow network only delays the engine; this effect runs again when it
+    // attaches the stack. Report a long wait once.
+    if (!attachedViewport) {
+      setLoadingStackSafe(true);
+      slowAttachTimer = window.setTimeout(() => {
+        if (shouldAbort()) return;
+        console.warn(
+          `[viewer] Series ${selectedSeries} is still not attached after ${
+            ENGINE_ATTACH_WARN_MS / 1000
+          } s.`
+        );
+      }, ENGINE_ATTACH_WARN_MS);
+      return cleanup;
+    }
+
+    const pendingNavigation =
+      pendingSeriesNavigationRef.current?.seriesUID === selectedSeries
+        ? pendingSeriesNavigationRef.current
+        : null;
+    const desiredImageIndex = Math.max(
+      0,
+      Math.min(
+        Number.isInteger(pendingNavigation?.imageIndex)
+          ? pendingNavigation!.imageIndex
+          : ds.initialImageIdIndex ?? 0,
+        ds.imageIds.length - 1
+      )
+    );
+
+    void (async () => {
       try {
         const vp = attachedViewport;
         let currentIndex = Number(vp.getCurrentImageIdIndex?.() ?? 0);
@@ -461,23 +475,15 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       } catch {
         // The viewport can be replaced while settling; the next run settles it.
       }
+      if (shouldAbort()) return;
       // The overlay stays until the image renders (imageAvailable).
       setLoadingStackSafe(false);
       setLoadingProgress(null);
-    }
+    })();
 
-    // Small debounce so rapid series switches do not start parallel jobs.
-    const kickTimer = window.setTimeout(() => {
-      if (!cancelled) void settleSelectedSeries();
-    }, 60);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(kickTimer);
-      currentAttachSessionRef.current = (currentAttachSessionRef.current || 0) + 1;
-      try { disableReleaseGraphicsResourcesGlobally(); } catch {}
-    };
+    return cleanup;
   }, [
+    attachedStack,
     selectedSeries,
     mergedSeriesMap,
     renderingEngineRef,
