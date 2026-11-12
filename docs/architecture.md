@@ -190,7 +190,10 @@ Mỗi bước migration kiến trúc phải tuân thủ:
   timing race mà SwiftShader che đi.
 - CI (`.github/workflows/ci.yml`) chạy `verify`, `build` và `test:cdp` cho mỗi
   push lên `main` và mỗi pull request; khi regression lỗi, log được upload thành
-  artifact `cdp-logs`.
+  artifact `cdp-logs`. Runner in thời gian của từng bước setup (viewer, Chrome,
+  warm-up) và từng regression; trên CI, bảng này nằm trong job summary và trong
+  một annotation `CDP timings` (log của job cần quyền admin mới tải được, còn
+  annotation thì ai đọc repo cũng xem được).
 - Lần load đầu sau khi `next dev` khởi động có thể nhận chunk worker decode
   (~1 MB) đang ghi dở; các worker báo `SyntaxError` và không bao giờ trả về lần
   decode đầu tiên. Đây là race của dev server; bản production không bị.
@@ -256,9 +259,14 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 hoặc độc lập với Cornerstone, tách ra từ `BasicViewerImplementation.tsx`:
 `measurementSnapshot` (merge snapshot measurement, tìm series của ảnh),
 `useSrCreateDialog` (hộp thoại tạo SR), `useHiddenMeasurements` (ẩn/hiện
-measurement) và `useViewerToolMode` (tool đang chọn, kích hoạt trong tool group
-và khóa tool chỉnh sửa khi đang mở SR). Hàng đợi chọn measurement và việc gộp các lần xóa trùng dùng
-helper thuần `lib/utils/asyncQueues`. Chờ annotation xuất hiện trong state của
+measurement), `useViewerToolMode` (tool đang chọn, kích hoạt trong tool group
+và khóa tool chỉnh sửa khi đang mở SR), `useMeasurementSelection` (measurement
+đang chọn; bỏ chọn khi measurement không còn hiển thị, theo hàm thuần
+`isMeasurementSelectionShown`), `useMeasurementSelectionStyles` (đồng bộ style
+và selection gốc của Cornerstone; phải gọi sau `useMeasurementBridge`, vì
+selection gốc chỉ theo annotation đang hiện) và `useMeasurementRemoval` (luồng
+xóa, logic nằm trong hàm thuần `removeMeasurement`). Hàng đợi chọn measurement
+và việc gộp các lần xóa trùng dùng helper thuần `lib/utils/asyncQueues`. Chờ annotation xuất hiện trong state của
 Cornerstone (`ensureAnnotationAvailable`) dùng event `ANNOTATION_ADDED` thay vì
 poll; đường chờ này có unit test, vì với dữ liệu mẫu annotation luôn có sẵn khi
 điều hướng.
@@ -269,9 +277,10 @@ Còn lại:
   là hai owner riêng (pane phụ tự `setStack` và có hàng đợi render riêng). Cần
   gom chúng sau một service.
 - Phase 1: `createBasicViewerRuntime` đã có, nhưng `BasicViewer` chưa dùng.
-- Phase 3–4: `BasicViewerImplementation.tsx` vẫn giữ luồng xóa measurement
-  (selection, style, refresh), đồng bộ selection với Cornerstone và trạng thái
-  SR đang mở.
+- Phase 3–4: `BasicViewerImplementation.tsx` (718 dòng) vẫn giữ trạng thái SR
+  đang mở và danh sách SR, việc merge snapshot measurement vào danh sách, frame
+  và cine của pane chính. `useMeasurementSelector` (615 dòng) gộp mọi luồng
+  điều hướng tới measurement và SR trong một hook.
 
 ## Các phase tiếp theo
 
