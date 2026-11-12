@@ -17,16 +17,16 @@ import {
   selectDefaultSeriesUID,
   useBatchedFrameState,
   useHiddenMeasurements,
+  useMeasurementRemoval,
+  useMeasurementSelection,
+  useMeasurementSelectionStyles,
   useSelectedSeriesLoading,
   useSeriesLoader,
   useSrCreateDialog,
   useViewerToolMode,
   type PendingSeriesNavigation,
 } from './application';
-import {
-  createLatestWinsQueue,
-  createSingleFlight,
-} from '@/lib/utils/asyncQueues';
+import { createLatestWinsQueue } from '@/lib/utils/asyncQueues';
 
 import { annotation as csAnnotation } from '@cornerstonejs/tools';
 
@@ -59,19 +59,11 @@ import type {
   Study,
 } from '@/platform/core';
 
-import {
-  releaseMeasurementAnnotationStyle,
-  syncMeasurementNativeSelection,
-  syncMeasurementSelectionStyles,
-} from '@/lib/cornerstone/measurementStyles';
 import { hasActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 
 
 import { normalizeId } from '@/lib/viewer/dom';
-import {
-  isAnnotationRemovalTombstoned,
-  safeRemoveAnnotationByUID,
-} from '@/lib/viewer/annotationHelpers';
+import { isAnnotationRemovalTombstoned } from '@/lib/viewer/annotationHelpers';
 import { isMeasurementInSeries } from '@/lib/viewer/measurementVisibility';
 import { createMeasurementListFingerprint } from '@/lib/viewer/measurementFingerprint';
 
@@ -136,14 +128,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   );
 
   const [allMeasurements, setAllMeasurements] = useState<AnnotationMeasurement[]>([]);
-  const [selectedMeasurementUID, setSelectedMeasurementUID] = useState<string | null>(null);
   const { hiddenMeasurements, toggleVisibility, forgetMeasurement } =
     useHiddenMeasurements(studyUID, isAnnotationRemovalTombstoned);
-  // A second delete click for a measurement that is still being removed
-  // gets the same result instead of starting another removal.
-  const [measurementDeletions] = useState(() =>
-    createSingleFlight<string, boolean>()
-  );
 
   const [mobileSeriesOpen, setMobileSeriesOpen] = useState(false);
   const [mobileMeasurementsOpen, setMobileMeasurementsOpen] = useState(false);
@@ -214,10 +200,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     mergedSeriesMapRef.current = mergedSeriesMap;
   }, [mergedSeriesMap]);
 
-  const selectedMeasurementUIDRef = useRef(selectedMeasurementUID);
-  useLayoutEffect(() => {
-    selectedMeasurementUIDRef.current = selectedMeasurementUID;
-  }, [selectedMeasurementUID]);
 
   // ---------- Rendering engine ----------
   // A series opened for a navigation (a measurement, an SR or the sidebar)
@@ -377,16 +359,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
               : undefined,
         });
 
-        // If selectedMeasurementUID no longer present, clear it (defer)
-        setTimeout(() => {
-          try {
-            const selUid = selectedMeasurementUIDRef.current;
-            if (selUid && !next.some((x) => x.annotationUID === selUid)) {
-              setSelectedMeasurementUID(null);
-            }
-          } catch {}
-        }, 0);
-
+        // useMeasurementSelection clears a selection that left the list.
         const identical =
           createMeasurementListFingerprint(prev) ===
           createMeasurementListFingerprint(next);
@@ -471,10 +444,19 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setLoadedSrList([]);
     setActiveSrId(null);
     setAllMeasurements([]);
-    selectedMeasurementUIDRef.current = null;
-    setSelectedMeasurementUID(null);
-    measurementDeletions.clear();
-  }, [measurementDeletions, studyUID]);
+  }, [studyUID]);
+
+  const {
+    selectedMeasurementUID,
+    selectedMeasurementUIDRef,
+    commitSelectedMeasurementUID,
+  } = useMeasurementSelection({
+    studyUID,
+    allMeasurements,
+    activeSrId,
+    selectedSeries,
+    mergedSeriesMap,
+  });
 
   // Measurement-panel clicks navigate one at a time and only the latest
   // pending click is kept, so rapid clicks stay deterministic without
@@ -493,11 +475,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
         !measurement || isAnnotationRemovalTombstoned(measurement.annotationUID),
     })
   );
-
-  const commitSelectedMeasurementUID = useCallback((uid: string | null) => {
-    selectedMeasurementUIDRef.current = uid;
-    setSelectedMeasurementUID((previous) => (previous === uid ? previous : uid));
-  }, []);
 
 
   const { exportSRAsDICOM } = useSrExport({
@@ -581,39 +558,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
 
 
   useEffect(() => {
-    if (!selectedMeasurementUID) return;
-    const sel = allMeasurements.find((m) => m.annotationUID === selectedMeasurementUID);
-    if (!sel) {
-      commitSelectedMeasurementUID(null);
-      return;
-    }
-
-    const selectedReportUID = sel.metadata?.reportSeriesUID ?? null;
-    if (
-      (activeSrId && selectedReportUID !== activeSrId) ||
-      (!activeSrId && selectedReportUID)
-    ) {
-      commitSelectedMeasurementUID(null);
-      return;
-    }
-
-    const files = new Set(
-      (mergedSeriesMap[selectedSeries]?.files ?? []).map(normalizeId)
-    );
-    if (!isMeasurementInSeries(sel, selectedSeries, files)) {
-      commitSelectedMeasurementUID(null);
-    }
-  }, [
-    activeSrId,
-    allMeasurements,
-    commitSelectedMeasurementUID,
-    mergedSeriesMap,
-    normalizeId,
-    selectedMeasurementUID,
-    selectedSeries,
-  ]);
-
-  useEffect(() => {
     if (!loadingSeries && !selectedSeries && Object.keys(seriesMap).length > 0) {
       const defaultSeries = selectDefaultSeriesUID(seriesMap);
       if (defaultSeries) setSelectedSeries(defaultSeries);
@@ -621,65 +565,16 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   }, [loadingSeries, selectedSeries, seriesMap, setSelectedSeries]);
 
 
-  const handleRemoveMeasurement = useCallback(
-    (uid: string): Promise<boolean> => {
-      if (!uid) return Promise.resolve(false);
-
-      return measurementDeletions.run(uid, async () => {
-        const wasSelected = selectedMeasurementUIDRef.current === uid;
-
-        try {
-          measurementSelectionQueue.dropPending(
-            (measurement) => measurement.annotationUID === uid
-          );
-          if (wasSelected) {
-            commitSelectedMeasurementUID(null);
-          }
-
-          const removed = await safeRemoveAnnotationByUID(uid);
-          if (!removed) {
-            if (
-              wasSelected &&
-              (csAnnotation.state as any)?.getAnnotation?.(uid)
-            ) {
-              commitSelectedMeasurementUID(uid);
-            }
-            return false;
-          }
-
-          releaseMeasurementAnnotationStyle(uid);
-          setAllMeasurements((previous) =>
-            previous.filter(
-              (measurement) => measurement.annotationUID !== uid
-            )
-          );
-          forgetMeasurement(uid);
-
-          try {
-            refreshMeasurements();
-          } catch {}
-          safeRenderViewport(VIEWPORT_ID);
-          return true;
-        } catch {
-          if (
-            wasSelected &&
-            (csAnnotation.state as any)?.getAnnotation?.(uid)
-          ) {
-            commitSelectedMeasurementUID(uid);
-          }
-          return false;
-        }
-      });
-    },
-    [
-      commitSelectedMeasurementUID,
-      forgetMeasurement,
-      measurementDeletions,
-      measurementSelectionQueue,
-      refreshMeasurements,
-      safeRenderViewport,
-    ]
-  );
+  const handleRemoveMeasurement = useMeasurementRemoval({
+    studyUID,
+    selectedMeasurementUIDRef,
+    commitSelectedMeasurementUID,
+    selectionQueue: measurementSelectionQueue,
+    setAllMeasurements,
+    forgetMeasurement,
+    refreshMeasurements,
+    renderViewport: safeRenderViewport,
+  });
 
 
   const {
@@ -706,49 +601,16 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   });
 
 
-  const measurementUIDSignature = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          allMeasurements
-            .map((measurement) => measurement.annotationUID)
-            .filter(Boolean)
-        )
-      )
-        .sort()
-        .join('\u001f'),
-    [allMeasurements]
-  );
-
-  const hiddenMeasurementUIDSignature = useMemo(
-    () => Array.from(hiddenMeasurements).sort().join('\u001f'),
-    [hiddenMeasurements]
-  );
-
-  useEffect(() => {
-    const annotationUIDs = measurementUIDSignature
-      ? measurementUIDSignature.split('\u001f')
-      : [];
-    syncMeasurementSelectionStyles(
-      annotationUIDs,
-      selectedMeasurementUID
-    );
-    safeRenderViewport(VIEWPORT_ID);
-  }, [measurementUIDSignature, selectedMeasurementUID, safeRenderViewport]);
-
-  useEffect(() => {
-    // Hiding deselects natively inside Cornerstone. Showing the same card must
-    // restore native selection without re-running all annotation style writes.
-    // The same applies when the selected series is hidden and shown again.
-    syncMeasurementNativeSelection(selectedMeasurementUIDRef.current);
-  }, [activeSrId, hiddenMeasurementUIDSignature, selectedSeries]);
-
-  useEffect(
-    () => () => {
-      syncMeasurementSelectionStyles([], null);
-    },
-    []
-  );
+  // After useMeasurementBridge, which applies measurement visibility.
+  useMeasurementSelectionStyles({
+    allMeasurements,
+    hiddenMeasurements,
+    selectedMeasurementUID,
+    selectedMeasurementUIDRef,
+    activeSrId,
+    selectedSeries,
+    renderViewport: safeRenderViewport,
+  });
 
   const handleSelectImageSeries = useCallback(
     (uid: string) => {

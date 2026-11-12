@@ -18,3 +18,11 @@ export { useHiddenMeasurements } from './useHiddenMeasurements';
 export { useSelectedSeriesLoading } from './useSelectedSeriesLoading';
 export type { PendingSeriesNavigation } from './useSelectedSeriesLoading';
 export { useViewerToolMode } from './useViewerToolMode';
+export {
+  useMeasurementSelection,
+  useMeasurementSelectionStyles,
+} from './useMeasurementSelection';
+export { useMeasurementRemoval } from './useMeasurementRemoval';
+export { isMeasurementSelectionShown } from './measurementSelection';
+export { removeMeasurement } from './measurementRemoval';
+export type { MeasurementRemovalSteps } from './measurementRemoval';
