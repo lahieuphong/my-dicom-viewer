@@ -226,11 +226,9 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
 
             const annotationInstance =
               liveAnnotation ??
-              (await ensureAnnotationAvailable(
-                m.annotationUID,
-                800,
-                40
-              ).catch(() => null));
+              (await ensureAnnotationAvailable(m.annotationUID, 800).catch(
+                () => null
+              ));
             if (!isCurrentRequest()) return;
 
             if (
@@ -293,7 +291,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
                 selectionConfirmed = true;
               }
             } else {
-              const maybe = await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(() => null);
+              const maybe = await ensureAnnotationAvailable(m.annotationUID, 1500).catch(() => null);
               if (!isCurrentRequest()) return;
               if (maybe) {
                 const attached = await safeAddAnnotation(maybe, viewportEl);
@@ -361,16 +359,10 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
             if (!isCurrentRequest()) return;
           }
 
-          let confirmedIndex = activeViewport.getCurrentImageIdIndex?.();
-          for (
-            let attempt = 0;
-            confirmedIndex !== desiredIndex && attempt < 8;
-            attempt += 1
-          ) {
-            await new Promise((resolve) => setTimeout(resolve, 25));
-            if (!isCurrentRequest()) return;
-            confirmedIndex = activeViewport.getCurrentImageIdIndex?.();
-          }
+          // setImageIdIndex sets the current index before it loads the
+          // image, so it already holds unless another navigation took over;
+          // waiting (formerly up to 8 x 25 ms) cannot bring it back.
+          const confirmedIndex = activeViewport.getCurrentImageIdIndex?.();
 
           if (
             !isCurrentRequest() ||
@@ -381,7 +373,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
           if (confirmedIndex === desiredIndex) {
             const annotation =
               liveAnnotation ??
-              (await ensureAnnotationAvailable(m.annotationUID, 800, 40).catch(
+              (await ensureAnnotationAvailable(m.annotationUID, 800).catch(
                 () => null
               ));
             if (!isCurrentRequest()) return;
@@ -461,7 +453,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
               selectCornerstoneAnnotation(m.annotationUID);
             }
           } else {
-            const maybe = await ensureAnnotationAvailable(m.annotationUID, 600, 30).catch(() => null);
+            const maybe = await ensureAnnotationAvailable(m.annotationUID, 600).catch(() => null);
             if (!isCurrentRequest()) return;
             if (maybe) {
               try {
@@ -525,7 +517,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       try {
         const inst =
           (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ??
-          (await ensureAnnotationAvailable(m.annotationUID, 1500, 50).catch(
+          (await ensureAnnotationAvailable(m.annotationUID, 1500).catch(
             () => null
           ));
         if (!isCurrentRequest()) return;

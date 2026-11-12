@@ -1,26 +1,60 @@
 // src/lib/cornerstone/annotations.ts
-import { annotation as csAnnotation } from '@cornerstonejs/tools';
+import { eventTarget } from '@cornerstonejs/core';
+import {
+  annotation as csAnnotation,
+  Enums as ToolEnums,
+} from '@cornerstonejs/tools';
+
+function getRegisteredAnnotation(annotationUID: string) {
+  try {
+    return csAnnotation.state.getAnnotation?.(annotationUID) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
- * Chờ một annotation có annotationUID xuất hiện trong csAnnotation.state
- * Dùng trong trường hợp Cornerstone load annotation bất đồng bộ
+ * Resolves with the annotation once it is in Cornerstone's annotation state,
+ * or with null after `timeout` ms. Every way an annotation gets there (a tool
+ * drawing it, SR hydration, safeAddAnnotation) goes through
+ * annotation.state.addAnnotation, which registers it and then dispatches
+ * ANNOTATION_ADDED; this used to poll the state instead. The state is checked
+ * once more at the timeout, because Cornerstone dispatches no event for a
+ * tool that is in no tool group.
  */
-export async function ensureAnnotationAvailable(
+export function ensureAnnotationAvailable(
   annotationUID: string,
-  timeout = 2000,
-  interval = 100
+  timeout = 2000
 ): Promise<any | null> {
-  const start = Date.now();
+  const existing = getRegisteredAnnotation(annotationUID);
+  if (existing || timeout <= 0) return Promise.resolve(existing);
 
-  while (Date.now() - start < timeout) {
-    try {
-      const found = csAnnotation.state.getAnnotation?.(annotationUID);
-      if (found) return found;
-    } catch {
-      // ignore
-    }
-    await new Promise((r) => setTimeout(r, interval));
-  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (found: any | null) => {
+      if (settled) return;
+      settled = true;
+      eventTarget.removeEventListener(
+        ToolEnums.Events.ANNOTATION_ADDED,
+        onAnnotationAdded
+      );
+      window.clearTimeout(timer);
+      resolve(found);
+    };
+    const onAnnotationAdded = (event: Event) => {
+      const added = (event as CustomEvent<{ annotation?: any }>).detail
+        ?.annotation;
+      if (added?.annotationUID !== annotationUID) return;
+      finish(getRegisteredAnnotation(annotationUID) ?? added);
+    };
 
-  return null;
+    eventTarget.addEventListener(
+      ToolEnums.Events.ANNOTATION_ADDED,
+      onAnnotationAdded
+    );
+    const timer = window.setTimeout(
+      () => finish(getRegisteredAnnotation(annotationUID)),
+      timeout
+    );
+  });
 }
