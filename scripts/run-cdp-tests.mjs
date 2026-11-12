@@ -315,6 +315,39 @@ async function printLogTail(name, logPath, lines = 25) {
   }
 }
 
+/**
+ * Where a run spent its time: the setup phases and every regression. Printed
+ * as one line; on GitHub Actions also written to the job summary and raised
+ * as a notice annotation, because the job log needs admin rights to download
+ * and annotations do not.
+ */
+async function reportTimings(setup, results) {
+  const format = ([name, seconds]) => `${name} ${seconds.toFixed(1)}s`;
+  const total = [...setup, ...results.map(({ name, seconds }) => [name, seconds])]
+    .reduce((sum, [, seconds]) => sum + seconds, 0);
+  console.log(`Setup: ${setup.map(format).join(', ')}. Total ${total.toFixed(0)}s.`);
+
+  if (process.env.GITHUB_ACTIONS !== 'true') return;
+  const regressions = results.map(({ name, seconds }) => [name, seconds]);
+  console.log(
+    `::notice title=CDP timings (${total.toFixed(0)}s)::` +
+      `${setup.map(format).join(', ')}; ${regressions.map(format).join(', ')}`
+  );
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    const { appendFile } = await import('node:fs/promises');
+    const rows = [
+      ...setup.map(([name, seconds]) => `| ${name} | setup | ${seconds.toFixed(1)} |`),
+      ...results.map(({ name, code, seconds }) =>
+        `| ${name} | ${code === 0 ? 'passed' : 'failed'} | ${seconds.toFixed(1)} |`
+      ),
+    ];
+    await appendFile(
+      process.env.GITHUB_STEP_SUMMARY,
+      `### CDP regressions (${total.toFixed(0)} s)\n\n| Step | Result | Seconds |\n| --- | --- | ---: |\n${rows.join('\n')}\n`
+    ).catch(() => {});
+  }
+}
+
 // Wait until what this run started has exited: a run started right after
 // could otherwise find the previous Chrome still listening, reuse it while it
 // shuts down and lose the CDP connection.
@@ -351,12 +384,21 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 
 try {
   const regressions = parseArguments(process.argv.slice(2));
-  const viewer = await ensureViewer();
-  const chrome = await ensureChrome();
+  const setup = [];
+  const timed = async (name, task) => {
+    const startedAt = Date.now();
+    try {
+      return await task();
+    } finally {
+      setup.push([name, (Date.now() - startedAt) / 1000]);
+    }
+  };
+  const viewer = await timed('viewer', ensureViewer);
+  const chrome = await timed('chrome', ensureChrome);
   console.log(
     `Viewer ${viewerOrigin} (${viewer}), Chrome ${cdpOrigin} (${chrome}). Logs: ${logDir}`
   );
-  console.log(`Warm-up: ${await warmUpViewer()}.`);
+  console.log(`Warm-up: ${await timed('warm-up', warmUpViewer)}.`);
 
   const results = [];
   for (const regression of regressions) {
@@ -374,6 +416,7 @@ try {
   console.log(
     `\n${results.length - failed.length}/${results.length} regressions passed.`
   );
+  await reportTimings(setup, results);
   if (failed.length > 0) process.exitCode = 1;
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
