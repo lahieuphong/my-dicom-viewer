@@ -231,7 +231,10 @@ const DISPLAYED_IMAGE_EXPRESSION = `Boolean(
  * the workers then receive a truncated script, fail with a SyntaxError and
  * never answer the first decode, so the first image never appears and the
  * first regression times out. A reload after the chunk is complete fixes
- * it. This is a dev-server race; production chunks are static.
+ * it. This is a dev-server race; production chunks are static. The viewer
+ * now reloads itself once when that happens (decodeWorkerHealth.ts); this
+ * reload stays as a fallback and still compiles the viewer before the
+ * regressions.
  *
  * Waits for a displayed image, not viewportStatus: the stuck viewport still
  * reports 'rendered' after drawing its background.

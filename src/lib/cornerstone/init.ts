@@ -7,6 +7,7 @@ import { TOOL_GROUP } from '@/constants/toolgroup';
 // import { registerCornerstoneToolsOnce } from './registerCornerstoneTools';
 import { registerToolsOnce } from './tools';
 import { registerCalibrationMetadataProvider } from './calibration';
+import { watchDecodeWorkers } from './decodeWorkerHealth';
 
 
 /**
@@ -49,6 +50,21 @@ function getCornerstoneInitState(): CornerstoneInitState {
   }
 
   return windowWithState[CORNERSTONE_INIT_STATE_KEY];
+}
+
+function watchDicomDecodeWorkers(csCore: any) {
+  try {
+    const workers =
+      csCore?.getWebWorkerManager?.()?.workerRegistry?.dicomImageLoader
+        ?.nativeWorkers ?? [];
+    watchDecodeWorkers(workers, {
+      reloadOnFailure: process.env.NODE_ENV === 'development',
+      reload: () => window.location.reload(),
+      storage: (() => {
+        try { return window.sessionStorage; } catch { return null; }
+      })(),
+    });
+  } catch {}
 }
 
 function isDicomWorkerRegistered(csCore: any): boolean {
@@ -298,6 +314,7 @@ async function initCornerstoneInternal() {
           !isDicomWorkerRegistered(csCore)
         ) {
           await dicomImageLoader.init({ maxWebWorkers });
+          watchDicomDecodeWorkers(csCore);
         }
       } catch (err) {
         try { (window as any).__cornerstoneStatus.lastError = `[dicom-image-loader init] ${String(err)}`; } catch {}
