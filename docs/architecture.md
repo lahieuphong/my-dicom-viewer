@@ -177,8 +177,8 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 - `yarn verify`: architecture guard, ESLint, TypeScript và unit test
   (`yarn test:unit`). Unit test là các suite `node:test` trong `scripts/unit/`,
   chạy thẳng source TypeScript trên Node 24 qua loader `scripts/unit/loader.mjs`
-  (map alias `@/`, thay Cornerstone bằng stub). Logic thuần nên được tách khỏi
-  hook/component để test được theo cách này.
+  (map alias `@/`, thay Cornerstone core/tools bằng stub). Logic thuần nên được
+  tách khỏi hook/component để test được theo cách này.
 - `yarn test:cdp`: chạy toàn bộ browser regression trong Chrome headless qua
   Chrome DevTools Protocol (`scripts/run-cdp-tests.mjs`, harness chung
   `scripts/lib/cdp-harness.mjs`). Runner dùng lại viewer ở `VIEWER_ORIGIN` và
@@ -191,11 +191,14 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 - CI (`.github/workflows/ci.yml`) chạy `verify`, `build` và `test:cdp` cho mỗi
   push lên `main` và mỗi pull request; khi regression lỗi, log được upload thành
   artifact `cdp-logs`.
-- Trước khi chạy regression, runner tải viewer một lần và reload nếu ảnh đầu
-  tiên không hiện. Lần load đầu sau khi `next dev` khởi động có thể nhận chunk
-  worker decode (~1 MB) đang ghi dở; các worker báo `SyntaxError` và không bao
-  giờ trả về lần decode đầu tiên. Đây là race của dev server; bản production
-  không bị.
+- Lần load đầu sau khi `next dev` khởi động có thể nhận chunk worker decode
+  (~1 MB) đang ghi dở; các worker báo `SyntaxError` và không bao giờ trả về lần
+  decode đầu tiên. Đây là race của dev server; bản production không bị.
+  `lib/cornerstone/decodeWorkerHealth` theo dõi các worker cho tới khi mỗi
+  worker trả lời lần đầu: worker báo lỗi trước đó thì khi chạy dev trang tự
+  reload một lần (tối đa một lần mỗi 60 giây, mốc lưu trong `sessionStorage`),
+  còn lại thì log lỗi. Runner vẫn tải viewer một lần trước khi chạy regression
+  và reload nếu ảnh đầu tiên không hiện, làm đường dự phòng.
 - Thay đổi lifecycle Cornerstone (attach, readiness, resize, camera) phải pass
   `test:cdp` cả mặc định lẫn `--gpu`.
 - Harness coi một pane là sẵn sàng khi ảnh hiện tại đã thực sự hiển thị
@@ -216,6 +219,11 @@ Mỗi bước migration kiến trúc phải tuân thủ:
   stack đã vẽ; `useSelectedSeriesLoading` (`basic-viewer/application`) chạy
   theo tín hiệu đó (trước đây poll 50 ms), chỉ còn áp dụng navigation mà engine
   chưa áp dụng được, và giữ trạng thái loading của series đang chọn.
+- Thứ tự ảnh của một series là thứ tự `files` của nó, tức thứ tự instance từ
+  data source (`generate-dicom-manifest` sắp theo InstanceNumber). Engine,
+  `useSelectedSeriesLoading`, measurement, SR export và Image Slice Sync đều
+  đánh index theo danh sách này. `createDisplaySetFromSeries` chỉ còn dùng cho
+  display set của runtime (`stackSopClassHandler`).
 - Pane chính và pane phụ cùng enable/disable viewport qua
   `mountStackViewport`/`unmountStackViewport`
   (`lib/viewer/stackViewportLifecycle`); helper chỉ disable viewport còn nằm
@@ -247,11 +255,13 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 **Phase 3–4** đã bắt đầu: `basic-viewer/application` có thêm các phần thuần
 hoặc độc lập với Cornerstone, tách ra từ `BasicViewerImplementation.tsx`:
 `measurementSnapshot` (merge snapshot measurement, tìm series của ảnh),
-`useSrCreateDialog` (hộp thoại tạo SR) và `useHiddenMeasurements` (ẩn/hiện
-measurement). Hàng đợi chọn measurement và việc gộp các lần xóa trùng dùng
+`useSrCreateDialog` (hộp thoại tạo SR), `useHiddenMeasurements` (ẩn/hiện
+measurement) và `useViewerToolMode` (tool đang chọn, kích hoạt trong tool group
+và khóa tool chỉnh sửa khi đang mở SR). Hàng đợi chọn measurement và việc gộp các lần xóa trùng dùng
 helper thuần `lib/utils/asyncQueues`. Chờ annotation xuất hiện trong state của
 Cornerstone (`ensureAnnotationAvailable`) dùng event `ANNOTATION_ADDED` thay vì
-poll.
+poll; đường chờ này có unit test, vì với dữ liệu mẫu annotation luôn có sẵn khi
+điều hướng.
 
 Còn lại:
 
@@ -262,10 +272,6 @@ Còn lại:
 - Phase 3–4: `BasicViewerImplementation.tsx` vẫn giữ luồng xóa measurement
   (selection, style, refresh), đồng bộ selection với Cornerstone và trạng thái
   SR đang mở.
-- Engine đặt stack theo thứ tự `files` của series, còn `useSelectedSeriesLoading`
-  so với `createDisplaySetFromSeries`, vốn sắp ảnh theo instance number. Với
-  data source hiện tại hai thứ tự trùng nhau (không có instance number theo
-  file); một data source có số này thì phải dùng chung một thứ tự.
 
 ## Các phase tiếp theo
 
