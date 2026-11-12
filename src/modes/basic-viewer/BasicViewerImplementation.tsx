@@ -20,6 +20,7 @@ import {
   useSelectedSeriesLoading,
   useSeriesLoader,
   useSrCreateDialog,
+  useViewerToolMode,
   type PendingSeriesNavigation,
 } from './application';
 import {
@@ -27,20 +28,13 @@ import {
   createSingleFlight,
 } from '@/lib/utils/asyncQueues';
 
-import {
-  ToolGroupManager,
-  annotation as csAnnotation,
-  Enums as ToolEnums,
-} from '@cornerstonejs/tools';
+import { annotation as csAnnotation } from '@cornerstonejs/tools';
 
-import { TOOL_GROUP } from '@/constants/toolgroup';
 import { VIEWPORT_ID } from '@/constants/viewport';
 import { DEFAULT_CINE_FPS } from '@/constants/cine';
 
 import { ViewerWorkspace, useViewerLayout } from '@/extensions/default';
 import {
-  readOnlyBlockedToolIDs,
-  toolNameMap,
   useFlipHorizontal,
   useImageReadiness,
   useInvert,
@@ -52,10 +46,8 @@ import {
   useRotate,
   useStackScrollWheel,
   useStackVoiPersistence,
-  useToolManager,
   useViewportAutoFitOnResize,
   type AnnotationMeasurement,
-  type ToolID,
 } from '@/extensions/cornerstone';
 import { useSrExport } from '@/extensions/dicom-sr';
 
@@ -119,8 +111,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       abortRef.current = true;
     };
   }, []);
-
-  const [activeTool, setActiveTool] = useState<ToolID>('adjust');
 
   const {
     currentFrame,
@@ -296,8 +286,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     [setCurrentFrame, viewportEl, viewportInstance]
   );
 
-  const { activateTool, isToolReady } = useToolManager();
-
   // The engine publishes the viewport once it shows its first stack;
   // useSelectedSeriesLoading settles the series from there.
   const viewportReady = Boolean(viewportInstance && viewportEl);
@@ -459,8 +447,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   }, []);
 
 
-
-
   // Now we can call useMeasurements and pass stable handler
   const { refreshMeasurements, updateLabel } = useMeasurements({
     element: viewportEl,
@@ -540,28 +526,9 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     isAnnotationInteractionActive: hasActiveAnnotationInteraction,
   });
 
-  const lastActivatedToolRef = useRef<ToolID | null>(null);
-
-  const handleSelectTool = useCallback((tool: ToolID) => {
-    if (!isToolReady) {
-      lastActivatedToolRef.current = null;
-      setActiveTool(tool);
-      return;
-    }
-    try {
-      const ok = activateTool(tool, { isSeriesSR: isSeriesReadOnly });
-      if (ok) {
-        lastActivatedToolRef.current = tool;
-        setActiveTool(tool);
-      } else {
-        lastActivatedToolRef.current = null;
-        setActiveTool('adjust');
-      }
-    } catch (e) {
-      lastActivatedToolRef.current = null;
-      setActiveTool('adjust');
-    }
-  }, [isToolReady, activateTool, isSeriesReadOnly]);
+  const { activeTool, handleSelectTool } = useViewerToolMode({
+    readOnly: isSeriesReadOnly,
+  });
 
 
   const measurementsForPanel = useMemo(() => {
@@ -587,12 +554,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     );
   }, [activeSrId, allMeasurements, trackedSeriesUID, mergedSeriesMap]);
 
-  useLayoutEffect(() => {
-    if (typeof window !== 'undefined') {
-      (window as any).__CURRENT_SERIES_IS_SR = !!isSeriesReadOnly;
-    }
-  }, [isSeriesReadOnly]);
-
 
   const handleAutoSelectMeasurement = useCallback(
     (uid: string, frameIndex: number) => {
@@ -617,29 +578,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     mergedSeriesMap,
     onAutoSelect: handleAutoSelectMeasurement,
   });
-
-  useEffect(() => {
-    if (!isToolReady) return;
-
-    // nếu lần trước đã active cùng tool, skip
-    if (lastActivatedToolRef.current === activeTool) return;
-
-    try {
-      const ok = activateTool(activeTool, { isSeriesSR: isSeriesReadOnly });
-      if (ok) {
-        lastActivatedToolRef.current = activeTool;
-      } else {
-        // activation bị chặn -> clear ref để có thể thử lại sau
-        lastActivatedToolRef.current = null;
-      }
-    } catch (e) {
-      lastActivatedToolRef.current = null;
-    }
-  }, [activeTool, isToolReady, isSeriesReadOnly, activateTool]);
-
-
-
-
 
 
   useEffect(() => {
@@ -681,40 +619,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
       if (defaultSeries) setSelectedSeries(defaultSeries);
     }
   }, [loadingSeries, selectedSeries, seriesMap, setSelectedSeries]);
-
-
-  useEffect(() => {
-    const tg = ToolGroupManager.getToolGroup(TOOL_GROUP);
-    if (!tg) return;
-
-    if (isSeriesReadOnly) {
-      // only change local state if needed
-      if (activeTool !== 'adjust') setActiveTool('adjust');
-
-      readOnlyBlockedToolIDs.forEach((id) => {
-        const name = toolNameMap[id];
-        try { tg.setToolPassive(name); } catch (e) {}
-        try { tg.setToolConfiguration(name, { bindings: [] }); } catch (e) {}
-      });
-
-      if (isToolReady) {
-        // avoid redundant activateTool calls via lastActivatedToolRef
-        if (lastActivatedToolRef.current !== 'adjust') {
-          try {
-            const ok = activateTool('adjust', { isSeriesSR: true });
-            if (ok) lastActivatedToolRef.current = 'adjust';
-          } catch (e) {
-            lastActivatedToolRef.current = null;
-          }
-        }
-      }
-    } else {
-      readOnlyBlockedToolIDs.forEach((id) => {
-        const name = toolNameMap[id];
-        try { tg.setToolConfiguration(name, { bindings: [{ mouseButton: ToolEnums.MouseBindings.Primary }] }); } catch (e) {}
-      });
-    }
-  }, [isSeriesReadOnly, isToolReady, activateTool, activeTool]);
 
 
   const handleRemoveMeasurement = useCallback(
@@ -778,9 +682,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   );
 
 
-
-
-
   const {
     handleSelectMeasurement,
     handleSelectSr,
@@ -803,7 +704,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   useLayoutEffect(() => {
     handleSelectMeasurementRef.current = handleSelectMeasurement;
   });
-
 
 
   const measurementUIDSignature = useMemo(

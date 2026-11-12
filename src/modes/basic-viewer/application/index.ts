@@ -17,3 +17,4 @@ export {
 export { useHiddenMeasurements } from './useHiddenMeasurements';
 export { useSelectedSeriesLoading } from './useSelectedSeriesLoading';
 export type { PendingSeriesNavigation } from './useSelectedSeriesLoading';
+export { useViewerToolMode } from './useViewerToolMode';
