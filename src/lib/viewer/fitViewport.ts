@@ -3,11 +3,16 @@
 import type { RenderingEngine, StackViewport } from '@cornerstonejs/core';
 
 import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
+import {
+  canvasBufferNeedsResize,
+  getCameraForResizedElement,
+  getCameraForStaleCanvas,
+  type ViewportSize,
+} from '@/lib/viewer/resizeGeometry';
 import { fitViewportKeepingOrientation } from '@/lib/viewer/viewportActions';
 
 type ViewPresentation = ReturnType<StackViewport['getViewPresentation']>;
 type ViewportCamera = ReturnType<StackViewport['getCamera']>;
-type ViewportSize = { width: number; height: number };
 export type ViewportResizeMode = 'preserve-camera' | 'fit-image';
 
 const IMAGE_RENDERED_EVENT = 'CORNERSTONE_IMAGE_RENDERED';
@@ -89,37 +94,6 @@ function readCamera(viewport: StackViewport): ViewportCamera | null {
   }
 }
 
-function getCameraForResizedElement(
-  camera: ViewportCamera | null,
-  previousSize: ViewportSize | null,
-  nextSize: ViewportSize
-): ViewportCamera | null {
-  const parallelScale = camera?.parallelScale;
-  if (
-    !camera ||
-    !previousSize ||
-    !Number.isFinite(parallelScale) ||
-    parallelScale == null ||
-    parallelScale <= 0 ||
-    previousSize.width <= 0 ||
-    previousSize.height <= 0
-  ) {
-    return null;
-  }
-
-  const widthRatio = nextSize.width / previousSize.width;
-  const heightRatio = nextSize.height / previousSize.height;
-  const visibleFrameScale = Math.min(widthRatio, heightRatio);
-  if (!Number.isFinite(visibleFrameScale) || visibleFrameScale <= 0) return null;
-
-  // During a panel drag the old canvas is object-fit: contain. Convert that
-  // exact visible scale into an absolute Cornerstone camera for the new canvas.
-  const nextParallelScale = (parallelScale * heightRatio) / visibleFrameScale;
-  if (!Number.isFinite(nextParallelScale) || nextParallelScale <= 0) return null;
-
-  return { ...camera, parallelScale: nextParallelScale };
-}
-
 function restoreCamera(viewport: StackViewport, camera: ViewportCamera | null) {
   if (!camera) return false;
   try {
@@ -136,19 +110,6 @@ function getDevicePixelRatio() {
 
 function getCornerstoneCanvas(element: HTMLElement) {
   return element.querySelector<HTMLCanvasElement>(CORNERSTONE_CANVAS_SELECTOR);
-}
-
-/**
- * Cornerstone sizes every backing buffer as `clientSize * devicePixelRatio`
- * (truncated by the canvas IDL). A hidden canvas never forces a resize.
- */
-function canvasNeedsResize(canvas: HTMLCanvasElement) {
-  if (canvas.clientWidth <= 0 || canvas.clientHeight <= 0) return false;
-  const pixelRatio = getDevicePixelRatio();
-  return (
-    canvas.width !== Math.floor(canvas.clientWidth * pixelRatio) ||
-    canvas.height !== Math.floor(canvas.clientHeight * pixelRatio)
-  );
 }
 
 /**
@@ -190,7 +151,7 @@ function getContentViewports(
 export function contentCanvasesNeedResize(engine: RenderingEngine | null) {
   return getContentViewports(engine).some(({ element }) => {
     const canvas = getCornerstoneCanvas(element);
-    return Boolean(canvas && canvasNeedsResize(canvas));
+    return Boolean(canvas && canvasBufferNeedsResize(canvas, getDevicePixelRatio()));
   });
 }
 
@@ -218,12 +179,12 @@ function planVisibleFrames(entries: ContentViewport[]) {
 
   for (const entry of entries) {
     const canvas = getCornerstoneCanvas(entry.element);
-    if (!canvas || !canvasNeedsResize(canvas)) continue;
+    if (!canvas || !canvasBufferNeedsResize(canvas, pixelRatio)) continue;
 
-    const camera = getCameraForResizedElement(
+    const camera = getCameraForStaleCanvas(
       readCamera(entry.viewport),
-      { width: canvas.width / pixelRatio, height: canvas.height / pixelRatio },
-      { width: canvas.clientWidth, height: canvas.clientHeight }
+      canvas,
+      pixelRatio
     );
     if (camera) plans.push({ ...entry, camera });
   }
