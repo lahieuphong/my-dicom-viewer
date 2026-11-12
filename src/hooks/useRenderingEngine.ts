@@ -1,150 +1,160 @@
 // src/hooks/useRenderingEngine.ts
 'use client';
-import { useEffect, useRef, useState, useMemo } from 'react';
-import { RenderingEngine, StackViewport, Enums as CoreEnums } from '@cornerstonejs/core';
-import { ToolGroupManager } from '@cornerstonejs/tools';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { RenderingEngine, StackViewport } from '@cornerstonejs/core';
+import { Enums as CoreEnums } from '@cornerstonejs/core';
 import { initCornerstone } from '@/lib/cornerstone';
 import { getRenderingEngine, RENDERER_ID } from '@/lib/cornerstone/renderer';
-import { TOOL_GROUP } from '@/constants/toolgroup';
 import { VIEWPORT_ID } from '@/constants/viewport';
-import { enableElement } from '@/lib/cornerstone/element';
-import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
 import { ATTEMPTS_ENGINE } from '@/lib/viewer/constants';
 import { areImageStacksEqual } from '@/lib/cornerstone/helpers';
 import { resizeEngineIfNeeded } from '@/lib/viewer/fitViewport';
 import { renderViewportUntilReady } from '@/lib/viewer/renderUntilReady';
+import {
+  mountStackViewport,
+  unmountStackViewport,
+} from '@/lib/viewer/stackViewportLifecycle';
 import { resetViewportCamera } from '@/lib/viewer/viewportActions';
 
 const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
-const VIEWPORT_BACKGROUND: [number, number, number] = [0, 0, 0];
 
-async function waitForElement(ref: React.RefObject<HTMLElement | null>, timeout = 3000) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    if (ref.current) return ref.current;
-    await sleep(50);
-  }
-  return null;
-}
+type MountedViewport = {
+  engine: RenderingEngine;
+  viewport: StackViewport;
+  element: HTMLDivElement;
+};
 
-async function waitForVisibleSize(el: HTMLElement | null, timeout = 2000) {
-  if (!el) return false;
+/** The stack the viewport shows, published once its first image is drawn. */
+export type AttachedStack = {
+  seriesId: string;
+  imageIds: readonly string[];
+};
+
+/**
+ * Sets `imageIds` on the viewport at `index`. Returns 'kept' when the viewport
+ * already shows that stack and must keep its image and view, 'set' when the
+ * stack was set, and 'failed' otherwise.
+ */
+async function setStackAt(
+  viewport: StackViewport,
+  imageIds: string[],
+  index: number,
+  keepCurrentImage: boolean,
+  isCancelled: () => boolean
+): Promise<'kept' | 'set' | 'failed'> {
   try {
-    const rect = el.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) return true;
+    const currentIds = viewport.getImageIds?.();
+    if (
+      Array.isArray(currentIds) &&
+      currentIds.length > 0 &&
+      areImageStacksEqual(currentIds, imageIds)
+    ) {
+      // A re-run for the series already shown (a remount on the same element,
+      // or new series data with the same images) must not set the same stack
+      // again: that would move the user back to the remembered index and
+      // reset the view.
+      if (keepCurrentImage) return 'kept';
+      if (viewport.getCurrentImageIdIndex?.() === index) return 'kept';
+    }
   } catch {}
 
-  if (typeof ResizeObserver === 'undefined') {
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-      await sleep(80);
-      try {
-        const r = el.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0) return true;
-      } catch {}
-    }
-    return false;
-  }
-
-  return await new Promise<boolean>((resolve) => {
-    let done = false;
-    const ro = new ResizeObserver(() => {
-      try {
-        const r = el.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0 && !done) {
-          done = true;
-          try {
-            ro.disconnect();
-          } catch {}
-          resolve(true);
-        }
-      } catch {}
-    });
-    const t = window.setTimeout(() => {
-      if (!done) {
-        done = true;
-        try {
-          ro.disconnect();
-        } catch {}
-        resolve(false);
-      }
-    }, timeout);
+  for (let attempt = 0; attempt < ATTEMPTS_ENGINE && !isCancelled(); attempt++) {
     try {
-      ro.observe(el);
-    } catch (e) {
-      clearTimeout(t);
-      resolve(false);
+      // setStack fits the camera to the canvas it finds, so the canvas must
+      // match its element first.
+      try { resizeEngineIfNeeded(viewport.getRenderingEngine?.()); } catch {}
+      await viewport.setStack(imageIds, index);
+      // A newly selected series opens in the default orientation, like after
+      // Reset View. setStack itself only resets flips, invert and VOI.
+      try { resetViewportCamera(viewport); } catch {}
+      return 'set';
+    } catch {
+      await sleep(120 * (attempt + 1));
     }
-  });
-}
-
-/** Remove cornerstone canvases not inside mountEl to avoid confusion when picking enabled elements. */
-function removeStrayCornerstoneCanvases(mountEl: HTMLElement | null) {
-  try {
-    const canvases = Array.from(document.querySelectorAll('canvas.cornerstone-canvas')) as HTMLCanvasElement[];
-    for (const c of canvases) {
-      try {
-        const owningViewport = c.closest<HTMLElement>(
-          '[data-viewport-role="content"]'
-        );
-        // A split layout intentionally has multiple Cornerstone canvases in
-        // the same rendering engine. Preserve every connected viewer-owned
-        // viewport and only remove genuinely detached/legacy canvases.
-        if (
-          owningViewport &&
-          owningViewport.isConnected &&
-          owningViewport !== mountEl
-        ) {
-          continue;
-        }
-        if (!mountEl || !mountEl.contains(c)) {
-          try {
-            c.remove();
-          } catch {
-            try {
-              c.style.display = 'none';
-            } catch {}
-          }
-        }
-      } catch {}
-    }
-  } catch {}
-}
-
-/** Safely detach any viewport from engine (best-effort). */
-function tryDetachViewportSafely(engine: RenderingEngine | null, viewportId = VIEWPORT_ID) {
-  try {
-    if (!engine) return;
-    // setViewports([]) resets the *entire* rendering engine and therefore also
-    // destroys sibling panes in a split layout. Disable only the requested
-    // viewport; every pane owns its own lifecycle.
-    try { engine.disableElement(viewportId); } catch {}
-  } catch (e) {
   }
+  return 'failed';
 }
 
+/**
+ * Owns the primary pane's stack viewport. One effect enables the viewport on
+ * the pane's element for as long as that element is mounted; another sets the
+ * selected series' stack on it. A series switch therefore reuses the viewport
+ * instead of tearing it down, and unmounting disables it right away, the way
+ * every secondary pane (useSecondaryStackViewport) does.
+ */
 export function useRenderingEngine({
   elRef,
   selectedSeriesId,
   mergedSeriesMap,
   onFrameIndexChange,
+  getInitialImageIndex,
 }: {
   elRef: React.RefObject<HTMLDivElement | null>;
   selectedSeriesId: string;
   mergedSeriesMap: Record<string, { files: string[]; metadata: any }>;
   onFrameIndexChange?: (index: number) => void;
+  /** The image a newly selected series opens at; the first one by default. */
+  getInitialImageIndex?: (seriesId: string) => number | null | undefined;
 }) {
   const renderingEngineRef = useRef<RenderingEngine | null>(null);
-  const [viewportInstance, setViewportInstance] = useState<StackViewport | null>(null);
-  const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null);
-
-  const stackEventHandlerRef = useRef<((e: any) => void) | null>(null);
-
-  const initTokenRef = useRef<symbol | null>(null);
-  const cleanupTimerRef = useRef<number | null>(null);
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+  const [mounted, setMounted] = useState<MountedViewport | null>(null);
+  // Consumers get the viewport once it shows its first stack; it stays
+  // published across series switches.
+  const [published, setPublished] = useState<MountedViewport | null>(null);
+  const [attachedStack, setAttachedStack] = useState<AttachedStack | null>(null);
 
   const lastImageIndexRef = useRef<number | null>(null);
   const previousSeriesIdRef = useRef<string | null>(null);
+  const onFrameIndexChangeRef = useRef(onFrameIndexChange);
+  const getInitialImageIndexRef = useRef(getInitialImageIndex);
+  const observedElementRef = useRef<HTMLDivElement | null>(null);
+
+  // The pane's element mounts and unmounts with the workspace, which only
+  // happens when this component renders; mirror it into state so the viewport
+  // follows it.
+  useLayoutEffect(() => {
+    onFrameIndexChangeRef.current = onFrameIndexChange;
+    getInitialImageIndexRef.current = getInitialImageIndex;
+    const current = elRef.current;
+    if (current !== observedElementRef.current) {
+      observedElementRef.current = current;
+      setElement(current);
+    }
+  });
+
+  useEffect(() => {
+    if (!element) return;
+
+    let cancelled = false;
+    let mountedEngine: RenderingEngine | null = null;
+
+    void (async () => {
+      try {
+        await initCornerstone();
+      } catch {}
+      if (cancelled) return;
+
+      try {
+        const engine = getRenderingEngine(RENDERER_ID);
+        renderingEngineRef.current = engine;
+        // Set first, so cleanup also undoes a mount that threw halfway.
+        mountedEngine = engine;
+        const viewport = mountStackViewport(engine, VIEWPORT_ID, element);
+        setMounted({ engine, viewport, element });
+      } catch {}
+    })();
+
+    return () => {
+      cancelled = true;
+      if (mountedEngine) {
+        unmountStackViewport(mountedEngine, VIEWPORT_ID, element);
+      }
+      setMounted(null);
+      setPublished(null);
+      setAttachedStack(null);
+    };
+  }, [element]);
 
   const imageFilesJson = useMemo(() => {
     try {
@@ -155,321 +165,108 @@ export function useRenderingEngine({
   }, [selectedSeriesId, mergedSeriesMap]);
 
   useEffect(() => {
-    if (!selectedSeriesId) return;
-    const shouldPreserveInitialIndex = previousSeriesIdRef.current === selectedSeriesId;
-    if (!shouldPreserveInitialIndex) {
-      lastImageIndexRef.current = null;
-    }
+    if (!mounted || !selectedSeriesId) return;
+
+    const keepCurrentImage = previousSeriesIdRef.current === selectedSeriesId;
+    if (!keepCurrentImage) lastImageIndexRef.current = null;
     previousSeriesIdRef.current = selectedSeriesId;
 
-    const myToken = Symbol('init');
-    initTokenRef.current = myToken;
-
-    try {
-      if (cleanupTimerRef.current) {
-        window.clearTimeout(cleanupTimerRef.current);
-        cleanupTimerRef.current = null;
-      }
-    } catch {}
-
-    // A series switch reuses the same DOM element and rendering engine. Cancel
-    // per-series observers immediately so the next stack gets one clean set of
-    // listeners without tearing down the viewport itself.
-    try {
-      const previousHandler = stackEventHandlerRef.current;
-      const previousElement =
-        renderingEngineRef.current?.getViewport?.(VIEWPORT_ID)?.element ??
-        elRef.current;
-      if (previousHandler && previousElement) {
-        previousElement.removeEventListener(
-          CoreEnums.Events.STACK_NEW_IMAGE,
-          previousHandler as EventListener
-        );
-      }
-      stackEventHandlerRef.current = null;
-    } catch {}
-
+    const imageIds: string[] = JSON.parse(imageFilesJson);
+    const { viewport, element: viewportElement } = mounted;
     let cancelled = false;
-    let engine: any = null;
-    let vp: any = null;
-    const isStale = () => cancelled || initTokenRef.current !== myToken;
+    const isCancelled = () => cancelled;
+    let removeStackListener = () => {};
 
-    (async () => {
-      try {
-        await initCornerstone();
-      } catch (err) {}
-      if (isStale()) return;
-
-      try {
-        engine = getRenderingEngine(RENDERER_ID);
-        renderingEngineRef.current = engine;
-      } catch (err) {}
-      if (isStale()) return;
-
-      const container = (elRef.current ?? (await waitForElement(elRef, 5000))) as HTMLDivElement | null;
-      if (!container || isStale()) return;
-
-      try {
-        container.setAttribute('data-viewport-uid', VIEWPORT_ID);
-      } catch {}
-
-      let mountEl: HTMLDivElement | null = null;
-      try {
-        const inner = container.querySelector?.('.viewport-element') ?? container.querySelector?.('[data-viewport-role="content"]');
-        mountEl = inner instanceof HTMLElement ? (inner as HTMLDivElement) : container;
-      } catch {
-        mountEl = container;
+    void (async () => {
+      if (imageIds.length === 0) {
+        setPublished(mounted);
+        return;
       }
 
-      try { enableElement(mountEl); } catch {}
-      try { normalizeCanvasAndContext(mountEl); } catch {}
-
-      await waitForVisibleSize(mountEl, 2000);
-      if (isStale()) return;
-
-      let reuseExistingViewport = false;
-      try {
-        const existingViewport = engine.getViewport?.(VIEWPORT_ID) ?? null;
-        const existingElement = existingViewport?.element as HTMLDivElement | undefined;
-        const sharesViewerMount = Boolean(
-          existingElement &&
-          (existingElement === mountEl ||
-            container.contains(existingElement) ||
-            existingElement.contains(container))
-        );
-        if (
-          existingViewport &&
-          existingElement?.isConnected &&
-          sharesViewerMount
-        ) {
-          vp = existingViewport;
-          mountEl = existingElement;
-          reuseExistingViewport = true;
-        }
-      } catch {}
-
-      try {
-        if (isStale()) return;
-        if (!reuseExistingViewport) {
-          // disableElement and enableElement are synchronous; the former
-          // 80 ms pause between them only delayed the first image.
-          tryDetachViewportSafely(renderingEngineRef.current);
-
-          try {
-            // `setViewports([primary])` replaces the complete RenderingEngine
-            // viewport list. During a restored split layout that could remove
-            // every secondary viewport which had just mounted. Enable only
-            // this viewport so sibling panes keep their canvases and stacks.
-            engine.enableElement?.({
-              viewportId: VIEWPORT_ID,
-              type: CoreEnums.ViewportType.STACK,
-              element: mountEl,
-              defaultOptions: {
-                background: VIEWPORT_BACKGROUND,
-              },
-            });
-          } catch (err) {}
-          if (isStale()) return;
-        }
-
-        // Panel drags keep the backing buffer until they settle; the canvas
-        // must scale uniformly (object-fit: contain) meanwhile.
-        try { normalizeCanvasAndContext(mountEl); } catch {}
-
-        try { removeStrayCornerstoneCanvases(mountEl); } catch {}
-
-        // setStack fits the camera to the canvas it finds, so the canvas must
-        // match its element first. A fixed 60 ms pause and an empty render
-        // used to precede this.
-        try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
-      } catch (err) {}
-
-      // enableElement registers the viewport synchronously; when it threw,
-      // polling for the viewport (formerly six times 80 ms) cannot help.
-      if (!vp) {
-        try { vp = engine.getViewport?.(VIEWPORT_ID); } catch {}
-      }
-      if (isStale()) return;
-
-      // register viewport with tool group
-      try {
-        const tg = ToolGroupManager.getToolGroup(TOOL_GROUP);
-        if (tg && engine?.id) {
-          const present = (typeof (tg as any).getViewportIds === 'function' ? tg.getViewportIds() : typeof (tg as any).getViewports === 'function' ? (tg as any).getViewports() : []) ?? [];
-          if (!present.includes?.(VIEWPORT_ID)) {
-            try { tg.addViewport(VIEWPORT_ID, engine.id); } catch {}
-          }
-        }
-      } catch {}
-
-      const imageIds = mergedSeriesMap[selectedSeriesId]?.files ?? [];
-      const initialIndex = 0;
-
-      /** 'kept' when the viewport already showed the stack, 'set' when it was set. */
-      async function robustSetStack(
-        vpCandidate: any,
-        ids: string[],
-        idx = 0
-      ): Promise<'kept' | 'set' | 'failed'> {
-        if (!ids || ids.length === 0) return 'failed';
-
+      const rememberedIndex = keepCurrentImage ? lastImageIndexRef.current : null;
+      let requestedIndex = rememberedIndex;
+      if (requestedIndex === null) {
         try {
-          const currentIds = vpCandidate?.getImageIds?.();
-          if (
-            Array.isArray(currentIds) &&
-            currentIds.length > 0 &&
-            areImageStacksEqual(currentIds, ids)
-          ) {
-            // A re-run for the series already shown (React's development
-            // double effect, or a remount on the same element) must not set
-            // the same stack again: that would move the user back to the
-            // remembered index and reset the view. This replaces the former
-            // "3 s after a user interaction" setStack wrapper.
-            if (shouldPreserveInitialIndex) return 'kept';
-            if (vpCandidate.getCurrentImageIdIndex?.() === idx) return 'kept';
-          }
+          requestedIndex = getInitialImageIndexRef.current?.(selectedSeriesId) ?? null;
         } catch {}
-
-        const attempts = ATTEMPTS_ENGINE;
-        for (let i = 0; i < attempts && !isStale(); i++) {
-          try {
-            // setStack(imageIds, index) loads and shows the image at `index`.
-            // Cornerstone 3D has no StackViewport.setImageId/setImageIndex or
-            // RenderingEngine.setStacks, so the former fallbacks never ran.
-            if (typeof vpCandidate?.setStack !== 'function') return 'failed';
-            await vpCandidate.setStack(ids, idx);
-            // A newly selected series opens in the default orientation, like
-            // after Reset View. setStack itself only resets flips, invert and
-            // VOI; the rotation used to be undone by a racing readiness retry.
-            try { resetViewportCamera(vpCandidate); } catch {}
-            return 'set';
-          } catch (err) {
-            await sleep(120 * (i + 1));
-          }
-        }
-
-        return 'failed';
       }
+      const index = Math.max(
+        0,
+        Math.min(
+          Number.isInteger(requestedIndex) ? Number(requestedIndex) : 0,
+          imageIds.length - 1
+        )
+      );
 
-      if (vp && imageIds && imageIds.length > 0) {
-        try {
-          const preferIdx =
-            shouldPreserveInitialIndex && typeof lastImageIndexRef.current === 'number'
-              ? lastImageIndexRef.current
-              : initialIndex;
-          const safePreferIdx = Math.max(0, Math.min(preferIdx, (imageIds?.length ?? 1) - 1));
+      const outcome = await setStackAt(
+        viewport,
+        imageIds,
+        index,
+        keepCurrentImage,
+        isCancelled
+      );
+      if (cancelled) return;
 
-          await robustSetStack(vp, imageIds, safePreferIdx);
-
-          // Render until Cornerstone reports the draw, the way every
-          // secondary pane does. This replaces a 120 ms poll that re-enabled
-          // and re-normalised the element and nudged renders on every pass.
-          const element = (vp?.element ?? mountEl) as HTMLDivElement | null;
-          if (element && !isStale()) {
-            await renderViewportUntilReady({
-              viewport: vp,
-              viewportId: VIEWPORT_ID,
-              element,
-              expectedImageIds: new Set(imageIds),
-              isCancelled: isStale,
-            });
-          }
-        } catch (e) {}
+      // Render until Cornerstone reports the draw, the way every secondary
+      // pane does: callers change the camera after setStack.
+      if (outcome !== 'failed') {
+        await renderViewportUntilReady({
+          viewport,
+          viewportId: VIEWPORT_ID,
+          element: viewportElement,
+          expectedImageIds: new Set(imageIds),
+          isCancelled,
+        });
+        if (cancelled) return;
       }
-
-      // A newer run took over while this one awaited setStack. It owns the
-      // stack listener; registering this run's listener as well would leak
-      // it, because cleanup only removes the latest handler.
-      if (isStale()) return;
 
       // Tracks the shown image for the frame UI and for keeping the index on
-      // a re-run. The initial VOI is Cornerstone's default for the image. A
-      // one-time "initial VOI" step used to run here
-      // too, but it was registered after setStack and so missed the first
-      // image: it only ever ran when a re-run's first event landed on image
-      // 1, and then overwrote the user's Window/Level.
-      const onStackNewImage = (e: any) => {
-        try {
-          const eventIndex = e?.detail?.imageIdIndex;
-          let viewportIndex: unknown = null;
+      // a re-run for the same series.
+      const onStackNewImage = (event: Event) => {
+        const eventIndex = (event as CustomEvent<{ imageIdIndex?: number }>)
+          .detail?.imageIdIndex;
+        let idx: number | null = Number.isInteger(eventIndex)
+          ? Number(eventIndex)
+          : null;
+        if (idx === null) {
           try {
-            viewportIndex = vp?.getCurrentImageIdIndex?.();
+            const viewportIndex = viewport.getCurrentImageIdIndex?.();
+            if (Number.isInteger(viewportIndex)) idx = viewportIndex;
           } catch {}
+        }
+        if (idx === null) return;
 
-          const idx = Number.isInteger(eventIndex)
-            ? eventIndex
-            : Number.isInteger(viewportIndex)
-              ? (viewportIndex as number)
-              : null;
-
-          if (idx === null) return;
-
-          if (onFrameIndexChange) onFrameIndexChange(idx + 1);
-
-          try {
-            if (typeof idx === 'number' && !Number.isNaN(idx)) {
-              lastImageIndexRef.current = idx;
-            }
-          } catch {}
-        } catch (err) {}
+        try { onFrameIndexChangeRef.current?.(idx + 1); } catch {}
+        lastImageIndexRef.current = idx;
       };
-
-      stackEventHandlerRef.current = onStackNewImage;
-      try {
-        vp?.element?.addEventListener(
+      viewportElement.addEventListener(
+        CoreEnums.Events.STACK_NEW_IMAGE,
+        onStackNewImage
+      );
+      removeStackListener = () =>
+        viewportElement.removeEventListener(
           CoreEnums.Events.STACK_NEW_IMAGE,
-          onStackNewImage as EventListener
+          onStackNewImage
         );
-      } catch (e) {}
 
-      if (!isStale()) {
-        setViewportInstance(vp ?? null);
-        setViewportEl((vp?.element as HTMLDivElement) ?? mountEl);
+      setPublished(mounted);
+      if (outcome !== 'failed') {
+        setAttachedStack({ seriesId: selectedSeriesId, imageIds });
       }
     })();
 
-    // cleanup
     return () => {
       cancelled = true;
-      const tokenAtCleanup = initTokenRef.current;
-      const delayMs = 120;
-
-      try {
-        cleanupTimerRef.current = window.setTimeout(() => {
-          try {
-            if (initTokenRef.current !== tokenAtCleanup) return;
-
-            try {
-              const handler = stackEventHandlerRef.current;
-              if (handler) {
-                const elToRemove = (renderingEngineRef.current?.getViewport?.(VIEWPORT_ID)?.element ?? elRef.current);
-                try { elToRemove?.removeEventListener(CoreEnums.Events.STACK_NEW_IMAGE, handler as EventListener); } catch (e) {}
-              }
-            } catch (e) {}
-
-            try {
-              // ToolGroup.removeViewports(renderingEngineId, viewportId?). The
-              // old call passed `[VIEWPORT_ID]` as the engine ID, which matched
-              // nothing and left the primary viewport registered in the group.
-              const tg = ToolGroupManager.getToolGroup(TOOL_GROUP);
-              const engineId = renderingEngineRef.current?.id ?? RENDERER_ID;
-              tg?.removeViewports(engineId, VIEWPORT_ID);
-            } catch (e) {}
-
-            try {
-              tryDetachViewportSafely(renderingEngineRef.current);
-            } catch (e) {}
-
-            setViewportInstance(null);
-            setViewportEl(null);
-            stackEventHandlerRef.current = null;
-          } catch (outer) {} finally { cleanupTimerRef.current = null; }
-        }, delayMs);
-      } catch (e) {}
+      removeStackListener();
     };
-  }, [selectedSeriesId, imageFilesJson, elRef]);
+  }, [mounted, selectedSeriesId, imageFilesJson]);
 
-  return { renderingEngineRef, viewportInstance, viewportEl };
+  return {
+    renderingEngineRef,
+    viewportInstance: published?.viewport ?? null,
+    viewportEl: published?.element ?? null,
+    attachedStack,
+  };
 }
 
 export default useRenderingEngine;

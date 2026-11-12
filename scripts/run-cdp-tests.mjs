@@ -36,6 +36,7 @@ const REGRESSIONS = [
   { name: 'layout', script: 'test-viewport-layout-cdp.mjs' },
   { name: 'toolbar-actions', script: 'test-viewport-toolbar-cdp.mjs' },
   { name: 'primary-series', script: 'test-primary-series-cdp.mjs' },
+  { name: 'study-switch', script: 'test-study-switch-cdp.mjs' },
   { name: 'measurement-navigation', script: 'test-viewport-measurement-cdp.mjs' },
   { name: 'slice-sync', script: 'test-viewport-slice-sync-cdp.mjs' },
   { name: 'pane-tools', script: 'test-viewport-pane-tools-cdp.mjs' },

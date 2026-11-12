@@ -39,7 +39,6 @@ import { ViewerWorkspace, useViewerLayout } from '@/extensions/default';
 import {
   createDisplaySetFromSeries,
   disableReleaseGraphicsResourcesGlobally,
-  enableElement,
   readOnlyBlockedToolIDs,
   toolNameMap,
   useFlipHorizontal,
@@ -78,7 +77,6 @@ import { hasActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInte
 
 
 import { normalizeId } from '@/lib/viewer/dom';
-import { resizeEngineIfNeeded } from '@/lib/viewer/fitViewport';
 import {
   isAnnotationRemovalTombstoned,
   safeRemoveAnnotationByUID,
@@ -324,31 +322,6 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     viewportEl,
     stackKey: selectedSeries,
   });
-
-  useEffect(() => {
-    if (!viewportInstance) return;
-
-    let cancelled = false;
-    const viewportElement = (viewportInstance as any).element as
-      | HTMLDivElement
-      | null;
-    if (viewportElement) {
-      try {
-        enableElement(viewportElement);
-      } catch {}
-    }
-
-    const timer = window.setTimeout(() => {
-      if (cancelled) return;
-      try { resizeEngineIfNeeded(renderingEngineRef.current); } catch {}
-      try { renderingEngineRef.current?.renderViewport?.(VIEWPORT_ID); } catch {}
-    }, 60);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [renderingEngineRef, viewportInstance]);
 
 
   const rotate = useRotate(viewportInstance);

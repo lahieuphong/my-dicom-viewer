@@ -3,21 +3,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Enums as CoreEnums,
+  type RenderingEngine,
   StackViewport,
   utilities as csCoreUtilities,
 } from '@cornerstonejs/core';
-import { ToolGroupManager } from '@cornerstonejs/tools';
 
-import { TOOL_GROUP } from '@/constants/toolgroup';
 import { initCornerstone } from '@/lib/cornerstone';
-import { enableElement } from '@/lib/cornerstone/element';
 import {
   getRenderingEngine,
   RENDERER_ID,
 } from '@/lib/cornerstone/renderer';
 import { useStackScrollWheel } from '@/hooks/useStackScrollWheel';
-import { normalizeCanvasAndContext } from '@/lib/viewer/canvasUtils';
 import { renderViewportUntilReady } from '@/lib/viewer/renderUntilReady';
+import {
+  mountStackViewport,
+  unmountStackViewport,
+} from '@/lib/viewer/stackViewportLifecycle';
 
 type UseSecondaryStackViewportOptions = {
   viewportId: string;
@@ -25,7 +26,6 @@ type UseSecondaryStackViewportOptions = {
   stackKey: string;
 };
 
-const VIEWPORT_BACKGROUND: [number, number, number] = [0, 0, 0];
 // ContextPoolRenderingEngine renders every viewport through a shared pool of
 // WebGL contexts. Keep only the bounded final-render phase ordered; DICOM
 // loading must remain independent so one slow request cannot block every pane.
@@ -39,18 +39,6 @@ function enqueueSecondaryViewportRender(task: () => Promise<boolean>) {
     });
   secondaryViewportRenderQueue = queuedTask.catch(() => {});
   return queuedTask;
-}
-
-function removeViewportFromToolGroup(
-  renderingEngineId: string,
-  viewportId: string
-) {
-  try {
-    ToolGroupManager.getToolGroup(TOOL_GROUP)?.removeViewports(
-      renderingEngineId,
-      viewportId
-    );
-  } catch {}
 }
 
 /**
@@ -76,7 +64,8 @@ export function useSecondaryStackViewport({
 
   useEffect(() => {
     let cancelled = false;
-    let mountedEngineId: string | null = null;
+    let mounted: { engine: RenderingEngine; element: HTMLDivElement } | null =
+      null;
 
     void (async () => {
       try {
@@ -86,55 +75,11 @@ export function useSecondaryStackViewport({
         const element = elementRef.current;
         if (!element) return;
 
-        const renderingEngine = getRenderingEngine(RENDERER_ID);
-        mountedEngineId = renderingEngine.id;
+        const engine = getRenderingEngine(RENDERER_ID);
+        // Set first, so cleanup also undoes a mount that threw halfway.
+        mounted = { engine, element };
+        const stackViewport = mountStackViewport(engine, viewportId, element);
 
-        try {
-          const existing = renderingEngine.getViewport(viewportId);
-          if (existing?.element !== element) {
-            removeViewportFromToolGroup(renderingEngine.id, viewportId);
-            renderingEngine.disableElement(viewportId);
-          }
-        } catch {}
-
-        if (cancelled) return;
-        let stackViewport: StackViewport | null = null;
-        try {
-          const existing = renderingEngine.getViewport(viewportId);
-          if (existing?.element === element) {
-            stackViewport = existing as StackViewport;
-          }
-        } catch {}
-
-        if (!stackViewport) {
-          renderingEngine.enableElement({
-            viewportId,
-            type: CoreEnums.ViewportType.STACK,
-            element,
-            defaultOptions: { background: VIEWPORT_BACKGROUND },
-          });
-          stackViewport = renderingEngine.getStackViewport(
-            viewportId
-          ) as StackViewport;
-        }
-
-        enableElement(element);
-        // Panel drags keep the backing buffer unchanged until they settle; the
-        // canvas must scale uniformly (object-fit: contain) meanwhile, exactly
-        // like the primary pane, instead of being stretched to its new cell.
-        normalizeCanvasAndContext(element);
-        try {
-          element.dataset.viewportRole = 'content';
-          element.dataset.viewportUid = viewportId;
-        } catch {}
-
-        const toolGroup = ToolGroupManager.getToolGroup(TOOL_GROUP);
-        const viewportIds = toolGroup?.getViewportIds?.() ?? [];
-        if (toolGroup && !viewportIds.includes(viewportId)) {
-          toolGroup.addViewport(viewportId, renderingEngine.id);
-        }
-
-        if (cancelled) return;
         setViewport(stackViewport);
         setViewportEl(element);
       } catch (cause) {
@@ -151,12 +96,9 @@ export function useSecondaryStackViewport({
 
     return () => {
       cancelled = true;
-      try {
-        const renderingEngine = getRenderingEngine(RENDERER_ID);
-        const renderingEngineId = mountedEngineId ?? renderingEngine.id;
-        removeViewportFromToolGroup(renderingEngineId, viewportId);
-        renderingEngine.disableElement(viewportId);
-      } catch {}
+      if (mounted) {
+        unmountStackViewport(mounted.engine, viewportId, mounted.element);
+      }
       setViewport(null);
       setViewportEl(null);
     };
