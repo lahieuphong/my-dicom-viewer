@@ -207,8 +207,20 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 - `useRenderingEngine` là owner duy nhất của `StackViewport.setStack` ở pane
   chính. Đường attach dự phòng (`attachDisplaySet`, `ensureStackOnViewport`,
   watchdog, wrapper `setImageId`), guard "cooldown sau thao tác người dùng" và
-  `useForceZoomOne` đã bị xóa. Effect settle trong mode chỉ chờ engine gắn
-  stack, rồi áp dụng navigation đang chờ.
+  `useForceZoomOne` đã bị xóa. Series mở cho một navigation (measurement, SR,
+  sidebar) bắt đầu ngay ở ảnh được yêu cầu (`getInitialImageIndex`), thay vì
+  hiện ảnh đầu rồi nhảy. Engine publish `attachedStack` khi ảnh đầu tiên của
+  stack đã vẽ; effect settle trong mode chạy theo tín hiệu đó (trước đây poll
+  50 ms) và chỉ còn áp dụng navigation mà engine chưa áp dụng được.
+- Pane chính và pane phụ cùng enable/disable viewport qua
+  `mountStackViewport`/`unmountStackViewport`
+  (`lib/viewer/stackViewportLifecycle`); helper chỉ disable viewport còn nằm
+  trên element của chính nó. `useRenderingEngine` có cùng hình dạng với
+  `useSecondaryStackViewport`: một effect gắn viewport vào element trong suốt
+  thời gian element mount, một effect đặt stack khi đổi series. Teardown chạy
+  ngay khi unmount; teardown trễ 120 ms trước đây tắt nhầm viewport của viewer
+  mới khi đổi study (regression `study-switch`). Bước chờ element, chờ kích
+  thước và xóa canvas Cornerstone toàn trang đã bị xóa.
 - Readiness lấy từ event thật của Cornerstone 3D (`STACK_NEW_IMAGE`,
   `IMAGE_RENDERED`) qua `useImageReadiness`: ảnh đang hiển thị
   (`getCornerstoneImage()`) có thuộc series đã chọn hay không. Polling/retry
@@ -218,7 +230,8 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 - Engine chỉ resize khi một canvas lệch kích thước với element của nó
   (`resizeEngineIfNeeded`), vì `engine.resize()` xóa canvas của mọi pane. Fit
   tự động giữ rotation/flip (`fitViewportKeepingOrientation`); chỉ Reset View
-  đưa orientation về mặc định.
+  đưa orientation về mặc định. Phần hình học giữ khung hình khi resize
+  (`lib/viewer/resizeGeometry`) là hàm thuần và có unit test.
 - Sau `setStack`, mọi pane (chính và phụ) render qua cùng một helper
   `renderViewportUntilReady` (`lib/viewer/renderUntilReady`): render, chờ
   `IMAGE_RENDERED`, retry với độ trễ tăng dần. Vòng poll 120 ms của pane chính
@@ -236,9 +249,9 @@ helper thuần `lib/utils/asyncQueues`.
 
 Còn lại:
 
-- Pane chính vẫn có lifecycle riêng trong `useRenderingEngine` (enable, chờ
-  element hiện, tool group, listener VOI). Cần gom nó và pane phụ sau
-  `ViewportService`.
+- `ViewportService` chưa có: hai hook dùng chung helper mount/render nhưng vẫn
+  là hai owner riêng (pane phụ tự `setStack` và có hàng đợi render riêng). Cần
+  gom chúng sau một service.
 - Phase 1: `createBasicViewerRuntime` đã có, nhưng `BasicViewer` chưa dùng.
 - Phase 3–4: `BasicViewerImplementation.tsx` vẫn giữ luồng xóa measurement
   (selection, style, refresh), đồng bộ selection với Cornerstone và trạng thái

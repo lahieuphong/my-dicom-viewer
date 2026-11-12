@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   verify:
-    name: Architecture, lint and types
+    name: Architecture, lint, types and unit tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
