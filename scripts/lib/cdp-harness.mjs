@@ -324,15 +324,20 @@ export function paneStatesExpression(viewportIds) {
       const canvas = viewport?.element?.querySelector('canvas.cornerstone-canvas');
       if (!viewport || !canvas) return { viewportId, missing: true };
       let imageId = null;
+      let displayedImageId = null;
       let imageIndex = null;
       let parallelScale = null;
       try { imageId = viewport.getCurrentImageId?.() ?? null; } catch {}
+      try { displayedImageId = viewport.getCornerstoneImage?.()?.imageId ?? null; } catch {}
       try { imageIndex = viewport.getCurrentImageIdIndex?.() ?? null; } catch {}
       try { parallelScale = viewport.getCamera?.()?.parallelScale ?? null; } catch {}
       return {
         viewportId,
         imageId,
         imageIndex,
+        // viewportStatus is 'rendered' after any draw, including one while
+        // the stack's first image is still loading; this is the image shown.
+        displayed: Boolean(imageId) && displayedImageId === imageId,
         status: String(viewport.viewportStatus ?? '').toLowerCase(),
         parallelScale,
         clientWidth: canvas.clientWidth,
@@ -349,7 +354,7 @@ export function panesReadyExpression(viewportIds) {
   return `(() => {
     const panes = ${paneStatesExpression(viewportIds)};
     return panes.every((pane) =>
-      !pane.missing && pane.imageId && pane.status === 'rendered' &&
+      !pane.missing && pane.imageId && pane.displayed && pane.status === 'rendered' &&
       pane.parallelScale > 0 && pane.bufferMatches
     );
   })()`;
@@ -381,7 +386,10 @@ export async function waitForPrimaryViewport(page) {
   await page.waitFor(
     `document.readyState === 'complete' &&
       Boolean(document.querySelector('[data-testid="viewport-layout-trigger"]')) &&
-      (${paneStatesExpression([PRIMARY_VIEWPORT_ID])})[0]?.status === 'rendered'`,
+      (() => {
+        const [primary] = ${paneStatesExpression([PRIMARY_VIEWPORT_ID])};
+        return primary?.status === 'rendered' && primary.displayed;
+      })()`,
     'primary viewport to render',
     { timeoutMs: 60000 }
   );
