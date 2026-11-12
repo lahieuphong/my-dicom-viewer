@@ -12,6 +12,7 @@ import { SynchronizerManager, type Synchronizer } from '@cornerstonejs/tools';
 import areViewportsCoplanar from '@cornerstonejs/tools/synchronizers/callbacks/areViewportsCoplanar';
 import { mat4, vec3 } from 'gl-matrix';
 
+import { findClosestImageIndex } from './closestImage';
 import { getRegisteredImagePosition } from './imagePositions';
 
 const IMAGE_SLICE_SYNC_ID_PREFIX = 'viewer-image-slice-sync';
@@ -116,17 +117,10 @@ async function viewerImageSliceSyncCallback(
   }
 
   const targetPoint = vec3.transformMat4(vec3.create(), sourcePosition, registration);
-  let closestIndex = -1;
-  let closestDistance = Number.POSITIVE_INFINITY;
-  target.getImageIds().forEach((imageId, index) => {
-    const position = getImagePosition(imageId);
-    if (!position) return;
-    const distance = vec3.distance(position, targetPoint);
-    if (distance < closestDistance) {
-      closestDistance = distance;
-      closestIndex = index;
-    }
-  });
+  const closestIndex = findClosestImageIndex(
+    target.getImageIds().map(getImagePosition),
+    targetPoint
+  );
 
   if (closestIndex !== -1 && target.getCurrentImageIdIndex() !== closestIndex) {
     await coreUtilities.jumpToSlice(target.element, { imageIndex: closestIndex });
