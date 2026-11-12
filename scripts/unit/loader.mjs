@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const sourceRoot = new URL('../../src/', import.meta.url);
 const stubs = {
   '@cornerstonejs/core': new URL('./stubs/cornerstone-core.mjs', import.meta.url),
+  '@cornerstonejs/tools': new URL('./stubs/cornerstone-tools.mjs', import.meta.url),
 };
 function resolveSourceFile(base) {
   const path = fileURLToPath(base);

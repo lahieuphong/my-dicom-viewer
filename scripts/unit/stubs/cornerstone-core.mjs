@@ -3,3 +3,6 @@
 export function getEnabledElement() {
   return undefined;
 }
+
+// Cornerstone's event target; tests dispatch the events modules listen for.
+export const eventTarget = new EventTarget();
