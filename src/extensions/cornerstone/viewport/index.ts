@@ -7,6 +7,7 @@ export {
   default as useRenderingEngine,
   useRenderingEngine as useStackRenderingEngine,
 } from '@/hooks/useRenderingEngine';
+export type { AttachedStack } from '@/hooks/useRenderingEngine';
 export {
   default as useImageReadiness,
   useImageReadiness as useViewportImageReadiness,

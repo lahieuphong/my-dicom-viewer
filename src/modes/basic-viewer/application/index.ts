@@ -15,3 +15,5 @@ export {
   useSrCreateDialog,
 } from './useSrCreateDialog';
 export { useHiddenMeasurements } from './useHiddenMeasurements';
+export { useSelectedSeriesLoading } from './useSelectedSeriesLoading';
+export type { PendingSeriesNavigation } from './useSelectedSeriesLoading';

@@ -32,6 +32,7 @@ export {
   useViewportImageReadiness,
 } from './viewport';
 export type {
+  AttachedStack,
   DisplaySet,
   ViewportLoadingOverlayProps,
 } from './viewport';

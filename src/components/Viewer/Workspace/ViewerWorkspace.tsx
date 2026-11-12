@@ -107,7 +107,6 @@ type ViewerWorkspaceProps = {
   onFpsChange: (fps: number) => void;
   loadingStack: boolean;
   imageAvailable: boolean;
-  loadingProgress: number | null;
   isSeriesToolbarReadOnly: boolean;
   elementRef: RefObject<HTMLDivElement | null>;
   srDialogOpen: boolean;
@@ -169,7 +168,6 @@ export default function ViewerWorkspace({
   onFpsChange,
   loadingStack,
   imageAvailable,
-  loadingProgress,
   isSeriesToolbarReadOnly,
   elementRef,
   srDialogOpen,
@@ -672,7 +670,6 @@ export default function ViewerWorkspace({
                     {!loadingSeries && (
                       <ViewportLoadingOverlay
                         visible={loadingStack || !imageAvailable}
-                        progress={loadingProgress}
                       />
                     )}
 
