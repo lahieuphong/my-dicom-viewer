@@ -184,7 +184,10 @@ Mỗi bước migration kiến trúc phải tuân thủ:
   `scripts/lib/cdp-harness.mjs`). Runner dùng lại viewer ở `VIEWER_ORIGIN` và
   Chrome ở `CDP_ORIGIN` nếu đang chạy; nếu không thì tự bật `next dev` và Chrome
   (theo port của hai biến này), rồi tắt chúng khi xong. `--list` liệt kê các
-  regression, `--only a,b` chạy một nhóm.
+  regression, `--only a,b` chạy một nhóm, `--jobs N` chạy N regression cùng
+  lúc (mỗi regression có browser context và thư mục download riêng). CI dùng
+  `--jobs 2`: với SwiftShader, phần regression giảm từ khoảng 255 s xuống
+  133 s, còn `--jobs 3` không nhanh hơn.
 - Chrome mặc định render WebGL bằng SwiftShader (chạy được khi không có GPU,
   như trên CI). `--gpu` dùng GPU thật: nhanh hơn khoảng 3 lần và làm lộ các
   timing race mà SwiftShader che đi.

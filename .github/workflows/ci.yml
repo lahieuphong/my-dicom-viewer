@@ -54,7 +54,8 @@ jobs:
       - run: yarn dicom:manifest
       # Starts `next dev` and the runner's Google Chrome. Hosted runners have
       # no GPU, so Chrome renders with SwiftShader (the runner's default).
-      - run: yarn test:cdp
+      # Two regressions at a time; a third gave no further gain locally.
+      - run: yarn test:cdp --jobs 2
         env:
           CDP_LOG_DIR: ${{ runner.temp }}/cdp-logs
           # Chrome only opens the local viewer; hosted Ubuntu images may not

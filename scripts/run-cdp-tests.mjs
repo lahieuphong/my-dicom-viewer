@@ -4,6 +4,7 @@
 //   yarn test:cdp --only resize,sr-tools  run a subset
 //   yarn test:cdp --list                  list regression names
 //   yarn test:cdp --gpu                   start Chrome on the hardware GPU
+//   yarn test:cdp --jobs 2                run two regressions at a time
 //
 // A viewer already listening on VIEWER_ORIGIN and a Chrome already exposing
 // CDP_ORIGIN are reused. Otherwise this script starts `next dev --webpack`
@@ -15,6 +16,9 @@
 // GPU (e.g. in CI) but loads and renders far slower. --gpu uses the hardware
 // GPU instead: about 3x faster, and closer to what users run, so timing races
 // that SwiftShader hides surface. Run both before relying on a change.
+//
+// Every regression opens its own browser context, so --jobs runs several
+// against the same viewer and Chrome. Results print as they finish.
 
 import { spawn } from 'node:child_process';
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -90,6 +94,16 @@ function parseArguments(argv) {
     );
   }
   return availableRegressions().filter(({ name }) => names.includes(name));
+}
+
+function parseJobs(argv) {
+  const index = argv.indexOf('--jobs');
+  if (index === -1) return 1;
+  const jobs = Number(argv[index + 1]);
+  if (!Number.isInteger(jobs) || jobs < 1) {
+    throw new Error('--jobs takes a positive whole number.');
+  }
+  return jobs;
 }
 
 function availableRegressions() {
@@ -321,16 +335,20 @@ async function printLogTail(name, logPath, lines = 25) {
  * as a notice annotation, because the job log needs admin rights to download
  * and annotations do not.
  */
-async function reportTimings(setup, results) {
+async function reportTimings(setup, results, { jobs, regressionsSeconds }) {
   const format = ([name, seconds]) => `${name} ${seconds.toFixed(1)}s`;
-  const total = [...setup, ...results.map(({ name, seconds }) => [name, seconds])]
-    .reduce((sum, [, seconds]) => sum + seconds, 0);
-  console.log(`Setup: ${setup.map(format).join(', ')}. Total ${total.toFixed(0)}s.`);
+  const total =
+    setup.reduce((sum, [, seconds]) => sum + seconds, 0) + regressionsSeconds;
+  const title = `${total.toFixed(0)}s${jobs > 1 ? `, ${jobs} jobs` : ''}`;
+  console.log(
+    `Setup: ${setup.map(format).join(', ')}. ` +
+      `Regressions ${regressionsSeconds.toFixed(0)}s. Total ${title}.`
+  );
 
   if (process.env.GITHUB_ACTIONS !== 'true') return;
   const regressions = results.map(({ name, seconds }) => [name, seconds]);
   console.log(
-    `::notice title=CDP timings (${total.toFixed(0)}s)::` +
+    `::notice title=CDP timings (${title})::` +
       `${setup.map(format).join(', ')}; ${regressions.map(format).join(', ')}`
   );
   if (process.env.GITHUB_STEP_SUMMARY) {
@@ -343,7 +361,7 @@ async function reportTimings(setup, results) {
     ];
     await appendFile(
       process.env.GITHUB_STEP_SUMMARY,
-      `### CDP regressions (${total.toFixed(0)} s)\n\n| Step | Result | Seconds |\n| --- | --- | ---: |\n${rows.join('\n')}\n`
+      `### CDP regressions (${title})\n\n| Step | Result | Seconds |\n| --- | --- | ---: |\n${rows.join('\n')}\n`
     ).catch(() => {});
   }
 }
@@ -384,6 +402,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 
 try {
   const regressions = parseArguments(process.argv.slice(2));
+  const jobs = Math.min(parseJobs(process.argv.slice(2)), regressions.length);
   const setup = [];
   const timed = async (name, task) => {
     const startedAt = Date.now();
@@ -400,23 +419,32 @@ try {
   );
   console.log(`Warm-up: ${await timed('warm-up', warmUpViewer)}.`);
 
-  const results = [];
-  for (const regression of regressions) {
-    process.stdout.write(`- ${regression.name} ... `);
-    const result = await runRegressionScript(regression);
-    results.push(result);
-    console.log(
-      `${result.code === 0 ? 'passed' : `FAILED (exit ${result.code})`} ` +
-        `in ${result.seconds.toFixed(1)}s`
-    );
-    if (result.code !== 0) await printLogTail(result.name, result.logPath);
-  }
+  // Results keep the regressions' order; each prints when it finishes.
+  const results = new Array(regressions.length);
+  let nextIndex = 0;
+  const regressionsStartedAt = Date.now();
+  const runNext = async () => {
+    while (nextIndex < regressions.length) {
+      const index = nextIndex++;
+      const regression = regressions[index];
+      if (jobs === 1) process.stdout.write(`- ${regression.name} ... `);
+      const result = await runRegressionScript(regression);
+      results[index] = result;
+      const outcome =
+        `${result.code === 0 ? 'passed' : `FAILED (exit ${result.code})`} ` +
+        `in ${result.seconds.toFixed(1)}s`;
+      console.log(jobs === 1 ? outcome : `- ${regression.name} ... ${outcome}`);
+      if (result.code !== 0) await printLogTail(result.name, result.logPath);
+    }
+  };
+  await Promise.all(Array.from({ length: jobs }, runNext));
+  const regressionsSeconds = (Date.now() - regressionsStartedAt) / 1000;
 
   const failed = results.filter(({ code }) => code !== 0);
   console.log(
     `\n${results.length - failed.length}/${results.length} regressions passed.`
   );
-  await reportTimings(setup, results);
+  await reportTimings(setup, results, { jobs, regressionsSeconds });
   if (failed.length > 0) process.exitCode = 1;
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

@@ -13,7 +13,7 @@ const reportName = `All SR Tools ${Date.now()}`;
 const testGhostCancellation =
   process.env.SR_TEST_GHOST_CANCELLATION === '1';
 const singleToolName = process.env.SR_SINGLE_TOOL?.trim() || null;
-const downloadPath = `/tmp/dicom-sr-tools-${Date.now()}`;
+const downloadPath = `/tmp/dicom-sr-tools-${Date.now()}-${process.pid}`;
 fs.mkdirSync(downloadPath, { recursive: true });
 
 const version = await fetch(`${cdpOrigin}/json/version`).then((r) =>
