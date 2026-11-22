@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { isMeasurementSelectionShown } from '../../src/modes/basic-viewer/application/measurementSelection.ts';
+import {
+  isMeasurementSelectionShown,
+  listPanelMeasurements,
+} from '../../src/modes/basic-viewer/application/measurementSelection.ts';
 import { removeMeasurement } from '../../src/modes/basic-viewer/application/measurementRemoval.ts';
 
 const image = (file) => `wadouri:http://viewer.test/dicoms/s1/${file}.dcm`;
@@ -28,6 +31,25 @@ test('a selection follows the open SR: its own measurements while open, none of 
   assert.equal(withOtherSr(report), false);
   assert.equal(withoutSr(report), false);
   assert.equal(withoutSr(local), true);
+});
+
+test('the panel lists the open SR, else the local measurements of the active series', () => {
+  const report = { annotationUID: 'r', metadata: { seriesUID: 'S2', reportSeriesUID: 'SR1' } };
+  const otherReport = { annotationUID: 'o', metadata: { seriesUID: 'S1', reportSeriesUID: 'SR2' } };
+  const local = { annotationUID: 'l', metadata: { seriesUID: 'S1' } };
+  const elsewhere = { annotationUID: 'e', metadata: { seriesUID: 'S2' } };
+  const byImage = { annotationUID: 'i', metadata: { referencedImageId: `${image('1')}?cacheBust=1` } };
+  const all = [report, otherReport, local, elsewhere, byImage];
+  const uids = (options) => listPanelMeasurements(all, options).map((m) => m.annotationUID);
+
+  // An open SR lists its own measurements, whatever series is active.
+  assert.deepEqual(uids({ activeSrId: 'SR1', trackedSeriesUID: 'S1', seriesImageIds: [] }), ['r']);
+  // Otherwise the active series' measurements of no SR, by series or by image.
+  assert.deepEqual(
+    uids({ activeSrId: null, trackedSeriesUID: 'S1', seriesImageIds: [image('1')] }),
+    ['l', 'i']
+  );
+  assert.deepEqual(uids({ activeSrId: null, trackedSeriesUID: '', seriesImageIds: [image('1')] }), []);
 });
 
 function removalSteps({ selected = null, removes = true, stillRegistered = false } = {}) {

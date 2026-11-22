@@ -9,29 +9,29 @@ import {
   useMemo,
 } from 'react';
 
-import { utilities as csCoreUtilities } from '@cornerstonejs/core';
-
 import {
-  mergeMeasurementSnapshot,
+  listPanelMeasurements,
   resolveSeriesFromImageId as resolveSeriesUIDFromImageId,
   selectDefaultSeriesUID,
   useBatchedFrameState,
+  useCinePlayback,
   useHiddenMeasurements,
+  useMeasurementList,
   useMeasurementRemoval,
   useMeasurementSelection,
   useMeasurementSelectionStyles,
   useSelectedSeriesLoading,
   useSeriesLoader,
   useSrCreateDialog,
+  useStructuredReports,
+  useStudyMeta,
   useViewerToolMode,
+  useViewportFrameNavigation,
   type PendingSeriesNavigation,
 } from './application';
 import { createLatestWinsQueue } from '@/lib/utils/asyncQueues';
 
-import { annotation as csAnnotation } from '@cornerstonejs/tools';
-
 import { VIEWPORT_ID } from '@/constants/viewport';
-import { DEFAULT_CINE_FPS } from '@/constants/cine';
 
 import { ViewerWorkspace, useViewerLayout } from '@/extensions/default';
 import {
@@ -51,37 +51,9 @@ import {
 } from '@/extensions/cornerstone';
 import { useSrExport } from '@/extensions/dicom-sr';
 
-import {
-  fetchStudyMeta,
-} from '@/extensions/static-dicom-data-source';
-import type {
-  LocalStructuredReport,
-  Study,
-} from '@/platform/core';
-
 import { hasActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 
-
-import { normalizeId } from '@/lib/viewer/dom';
 import { isAnnotationRemovalTombstoned } from '@/lib/viewer/annotationHelpers';
-import { isMeasurementInSeries } from '@/lib/viewer/measurementVisibility';
-import { createMeasurementListFingerprint } from '@/lib/viewer/measurementFingerprint';
-
-
-function createFallbackStudyMeta(studyUID: string): Study {
-  return {
-    studyInstanceUID: studyUID,
-    patientName: '-',
-    patientId: '-',
-    studyDate: '-',
-    studyDescription: studyUID,
-    accessionNumber: '-',
-    modalitiesInStudy: '-',
-    seriesCount: 0,
-    imageCount: 0,
-    series: [],
-  };
-}
 
 const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   const viewportId = VIEWPORT_ID;
@@ -110,24 +82,14 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     setCurrentFrameBatched,
   } = useBatchedFrameState(1);
 
-  const [fps, setFps] = useState(DEFAULT_CINE_FPS);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const isPlayingRef = useRef(isPlaying);
+  const {
+    fps,
+    setFps,
+    isPlaying,
+    setIsPlaying,
+    handleViewportFrameIndexChange,
+  } = useCinePlayback(setCurrentFrameBatched);
 
-  useLayoutEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
-
-  const handleViewportFrameIndexChange = useCallback(
-    (frame: number) => {
-      // Overlay and stack scrollbar subscribe to STACK_NEW_IMAGE themselves.
-      // Avoid rendering the entire workspace/sidebar tree for every Cine tick.
-      if (!isPlayingRef.current) setCurrentFrameBatched(frame);
-    },
-    [setCurrentFrameBatched]
-  );
-
-  const [allMeasurements, setAllMeasurements] = useState<AnnotationMeasurement[]>([]);
   const { hiddenMeasurements, toggleVisibility, forgetMeasurement } =
     useHiddenMeasurements(studyUID, isAnnotationRemovalTombstoned);
 
@@ -141,24 +103,7 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     null
   );
 
-  const [studyMeta, setStudyMeta] = useState<Study>(() => createFallbackStudyMeta(studyUID));
-
-  useEffect(() => {
-    let cancelled = false;
-    setStudyMeta(createFallbackStudyMeta(studyUID));
-
-    fetchStudyMeta(studyUID)
-      .then((meta) => {
-        if (!cancelled && meta) {
-          setStudyMeta(meta);
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, [studyUID]);
+  const studyMeta = useStudyMeta(studyUID);
 
   const {
     seriesMap,
@@ -222,51 +167,12 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
     getInitialImageIndex: getPendingNavigationIndex,
   });
 
-  useEffect(() => {
-    if (isPlaying || !viewportInstance) return;
-    try {
-      const imageIndex = viewportInstance.getCurrentImageIdIndex?.();
-      if (Number.isInteger(imageIndex) && Number(imageIndex) >= 0) {
-        setCurrentFrame(Number(imageIndex) + 1);
-      }
-    } catch {}
-  }, [isPlaying, setCurrentFrame, viewportInstance]);
-
-  const handleViewportFrameChange = useCallback(
-    async (frameOneBased: number) => {
-      if (!viewportEl || !viewportInstance) return false;
-
-      const imageIds = viewportInstance.getImageIds?.() ?? [];
-      if (!Array.isArray(imageIds) || imageIds.length <= 1) return false;
-
-      const targetIndex = Math.min(
-        imageIds.length - 1,
-        Math.max(0, Math.round(Number(frameOneBased) || 1) - 1)
-      );
-
-      setCurrentFrame(targetIndex + 1);
-
-      try {
-        await csCoreUtilities.jumpToSlice(viewportEl, {
-          imageIndex: targetIndex,
-          debounceLoading: true,
-        });
-        return true;
-      } catch {
-        try {
-          await viewportInstance.setImageIdIndex(targetIndex);
-          return true;
-        } catch {
-          const currentIndex = viewportInstance.getCurrentImageIdIndex?.();
-          if (typeof currentIndex === 'number' && currentIndex >= 0) {
-            setCurrentFrame(currentIndex + 1);
-          }
-          return false;
-        }
-      }
-    },
-    [setCurrentFrame, viewportEl, viewportInstance]
-  );
+  const handleViewportFrameChange = useViewportFrameNavigation({
+    viewportEl,
+    viewportInstance,
+    isPlaying,
+    setCurrentFrame,
+  });
 
   // The engine publishes the viewport once it shows its first stack;
   // useSelectedSeriesLoading settles the series from there.
@@ -345,34 +251,8 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   );
   // -------------------------------------------------
 
-  const handleMeasurementsChange = useCallback(
-    (current: AnnotationMeasurement[]) => {
-      setAllMeasurements((prev) => {
-        const getAnnotation = (csAnnotation.state as any)?.getAnnotation;
-        const next = mergeMeasurementSnapshot(prev, current, {
-          seriesMap: mergedSeriesMapRef.current || {},
-          isRemoved: isAnnotationRemovalTombstoned,
-          getAnnotation:
-            typeof getAnnotation === 'function'
-              ? (annotationUID) =>
-                  getAnnotation.call(csAnnotation.state, annotationUID)
-              : undefined,
-        });
-
-        // useMeasurementSelection clears a selection that left the list.
-        const identical =
-          createMeasurementListFingerprint(prev) ===
-          createMeasurementListFingerprint(next);
-
-        if (identical) {
-          // return previous array reference to avoid rerender churn
-          return prev;
-        }
-        return next;
-      });
-    },
-    []
-  );
+  const { allMeasurements, setAllMeasurements, handleMeasurementsChange } =
+    useMeasurementList({ studyUID, seriesMapRef: mergedSeriesMapRef });
 
   // Helper: safe engine/viewport checks + safe render/resize wrappers
   // Helper robust: kiểm tra engine/viewport + safe wrappers
@@ -433,17 +313,11 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   useStackScrollWheel(viewportEl, selectedSeries);
 
   // ---------------- SR / measurement lists --------------
-  const [loadedSrList, setLoadedSrList] = useState<
-    LocalStructuredReport[]
-  >([]);
-
-  const [activeSrId, setActiveSrId] = useState<string | null>(null);
+  const { loadedSrList, setLoadedSrList, activeSrId, setActiveSrId } =
+    useStructuredReports(studyUID);
 
   useEffect(() => {
     pendingSeriesNavigationRef.current = null;
-    setLoadedSrList([]);
-    setActiveSrId(null);
-    setAllMeasurements([]);
   }, [studyUID]);
 
   const {
@@ -508,28 +382,15 @@ const BasicViewerImplementation = ({ studyUID }: { studyUID: string }) => {
   });
 
 
-  const measurementsForPanel = useMemo(() => {
-    if (activeSrId) {
-      return allMeasurements.filter(
-        (measurement) =>
-          measurement.metadata?.reportSeriesUID === activeSrId
-      );
-    }
-    if (!trackedSeriesUID) return [];
-    const currentFiles = new Set(
-      (mergedSeriesMap[trackedSeriesUID]?.files ?? []).map(normalizeId)
-    );
-
-    return allMeasurements.filter(
-      (measurement) =>
-        !measurement.metadata?.reportSeriesUID &&
-        isMeasurementInSeries(
-          measurement,
-          trackedSeriesUID,
-          currentFiles
-        )
-    );
-  }, [activeSrId, allMeasurements, trackedSeriesUID, mergedSeriesMap]);
+  const measurementsForPanel = useMemo(
+    () =>
+      listPanelMeasurements(allMeasurements, {
+        activeSrId,
+        trackedSeriesUID,
+        seriesImageIds: mergedSeriesMap[trackedSeriesUID]?.files ?? [],
+      }),
+    [activeSrId, allMeasurements, trackedSeriesUID, mergedSeriesMap]
+  );
 
 
   const handleAutoSelectMeasurement = useCallback(

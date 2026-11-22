@@ -1,4 +1,4 @@
-// Which measurement selection the basic-viewer keeps; framework-free.
+// Which measurements the basic-viewer lists and keeps selected; framework-free.
 
 import type { AnnotationMeasurement } from '@/platform/core';
 import { normalizeImageId } from '@/lib/cornerstone/helpers';
@@ -32,5 +32,37 @@ export function isMeasurementSelectionShown(
     measurement,
     selectedSeries,
     new Set(seriesImageIds.map(normalizeImageId))
+  );
+}
+
+/**
+ * The measurements the measurement panel lists: those of the open SR, or,
+ * while none is open, the measurements of no SR in the series of the active
+ * pane (`trackedSeriesUID`, whose images are `seriesImageIds`).
+ */
+export function listPanelMeasurements(
+  measurements: readonly AnnotationMeasurement[],
+  {
+    activeSrId,
+    trackedSeriesUID,
+    seriesImageIds,
+  }: {
+    activeSrId: string | null;
+    trackedSeriesUID: string;
+    seriesImageIds: readonly string[];
+  }
+): AnnotationMeasurement[] {
+  if (activeSrId) {
+    return measurements.filter(
+      (measurement) => measurement.metadata?.reportSeriesUID === activeSrId
+    );
+  }
+  if (!trackedSeriesUID) return [];
+
+  const normalizedImageIds = new Set(seriesImageIds.map(normalizeImageId));
+  return measurements.filter(
+    (measurement) =>
+      !measurement.metadata?.reportSeriesUID &&
+      isMeasurementInSeries(measurement, trackedSeriesUID, normalizedImageIds)
   );
 }
