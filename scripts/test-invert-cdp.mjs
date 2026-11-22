@@ -215,8 +215,19 @@ async function waitFor(expression, label, timeoutMs = 30000) {
             currentIndex: viewport.getCurrentImageIdIndex?.(),
             imageCount: viewport.getImageIds?.()?.length,
             viewportStatus: String(viewport.viewportStatus ?? ''),
+            // The Invert item waits for the viewer's image readiness, which
+            // compares the displayed image (not the current one) with the
+            // selected series' images.
+            currentImageId: viewport.getCurrentImageId?.() ?? null,
+            displayedImageId: viewport.getCornerstoneImage?.()?.imageId ?? null,
           }
         : null,
+      invertItem: (() => {
+        const item = document.querySelector(
+          '[data-testid="other-tools-menu"] [data-other-item="invert"]'
+        );
+        return item ? { ariaDisabled: item.getAttribute('aria-disabled') } : null;
+      })(),
       otherTrigger: (() => {
         const trigger = document.querySelector('[data-testid="other-tools-trigger"]');
         return trigger
