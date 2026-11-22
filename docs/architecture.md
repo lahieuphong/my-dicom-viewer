@@ -271,16 +271,28 @@ và khóa tool chỉnh sửa khi đang mở SR), `useMeasurementSelection` (meas
 `isMeasurementSelectionShown`), `useMeasurementSelectionStyles` (đồng bộ style
 và selection gốc của Cornerstone; phải gọi sau `useMeasurementBridge`, vì
 selection gốc chỉ theo annotation đang hiện) và `useMeasurementRemoval` (luồng
-xóa, logic nằm trong hàm thuần `removeMeasurement`). Hàng đợi chọn measurement
+xóa, logic nằm trong hàm thuần `removeMeasurement`). Thêm vào đó là
+`useStudyMeta` (metadata của study), `useMeasurementList` (danh sách measurement
+giữ từ snapshot của `useMeasurements`, giữ nguyên mảng cũ khi không có gì đổi),
+`useStructuredReports` (các SR tạo trong phiên và SR đang mở),
+`useCinePlayback` và `useViewportFrameNavigation` (cine, frame theo viewport và
+handler đổi frame). Danh sách của panel là hàm thuần `listPanelMeasurements`
+(có unit test). Hàng đợi chọn measurement
 và việc gộp các lần xóa trùng dùng helper thuần `lib/utils/asyncQueues`. Chờ annotation xuất hiện trong state của
 Cornerstone (`ensureAnnotationAvailable`) dùng event `ANNOTATION_ADDED` thay vì
 poll; đường chờ này có unit test, vì với dữ liệu mẫu annotation luôn có sẵn khi
-điều hướng. `useMeasurementSelector` thử lần lượt năm đường điều hướng có tên
-(pane đã vẽ measurement, series chưa có file, stack đang hiện, ảnh đã hiện, stack
-khác), dùng chung một helper gắn annotation vào element; ảnh của measurement
-tính bằng hàm thuần `resolveMeasurementImageIndex` (`lib/viewer`, có unit test).
-Regression `sr-cross-series` phủ đường stack khác: mở SR của series A khi pane
-đang ở series B phải chỉ gọi một `setStack`, bắt đầu ngay ở ảnh đã đo.
+điều hướng. `useMeasurementSelector` thử lần lượt ba đường điều hướng có tên
+(pane đã vẽ measurement, stack đang hiện, stack khác), dùng chung một helper gắn
+annotation vào element; ảnh của measurement tính bằng hàm thuần
+`resolveMeasurementImageIndex` (`lib/viewer`, có unit test). Measurement của
+series không có ảnh thì không điều hướng: panel chỉ liệt kê measurement của
+series đang hiện hoặc của SR tạo trên series đó. Hai đường cũ "series chưa có
+file" và "ảnh đã hiện" đã bị xóa: gắn probe vào mọi đường, 14 regression không
+lần nào đi hết hai đường này, và đọc code cũng thấy không click nào tới được
+chúng. Mỗi đường còn lại có regression: `measurement-navigation` phủ pane đã vẽ
+và stack đang hiện (chỉ đổi ảnh, không `setStack`, không hiện ảnh trung gian,
+kể cả khi ảnh đã hiện sẵn); `sr-cross-series` phủ stack khác (mở SR của series A
+khi pane đang ở series B phải chỉ gọi một `setStack`, bắt đầu ngay ở ảnh đã đo).
 
 Còn lại:
 
@@ -288,10 +300,14 @@ Còn lại:
   là hai owner riêng (pane phụ tự `setStack` và có hàng đợi render riêng). Cần
   gom chúng sau một service.
 - Phase 1: `createBasicViewerRuntime` đã có, nhưng `BasicViewer` chưa dùng.
-- Phase 3–4: `BasicViewerImplementation.tsx` (718 dòng) vẫn giữ trạng thái SR
-  đang mở và danh sách SR, việc merge snapshot measurement vào danh sách, frame
-  và cine của pane chính. `useMeasurementSelector` (467 dòng) vẫn là một hook;
-  hai đường "series chưa có file" và "ảnh đã hiện" chưa có regression.
+- Phase 3–4: `BasicViewerImplementation.tsx` (579 dòng) vẫn giữ series đang
+  active và các series đang hiện của workspace, hàng đợi chọn measurement,
+  `safeRenderViewport` (cùng cờ abort khi unmount) và phần nối các hook.
+  `useMeasurementSelector` (377 dòng) vẫn là một hook. Có một lỗi giả định mà
+  regression chưa bắt được: nếu đường stack đang hiện bỏ qua ảnh đã hiện, đường
+  stack khác vẫn chọn được measurement nhưng không xóa điều hướng đang chờ. Lỗi
+  này chỉ lộ ra khi mở lại series đó từ sidebar, mà study của
+  `measurement-navigation` chỉ có một series.
 
 ## Các phase tiếp theo
 
