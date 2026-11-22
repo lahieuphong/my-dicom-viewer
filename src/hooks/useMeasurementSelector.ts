@@ -7,10 +7,8 @@ import {
   annotation as csAnnotation,
   utilities as csToolsUtilities,
 } from '@cornerstonejs/tools';
-import {
-  areImageStacksEqual,
-  findMatchingImageIdIndex,
-} from '@/lib/cornerstone/helpers';
+import { areImageStacksEqual } from '@/lib/cornerstone/helpers';
+import { resolveMeasurementImageIndex } from '@/lib/viewer/measurementImageIndex';
 import { ensureAnnotationAvailable } from '@/lib/cornerstone/annotations';
 import { cancelActiveAnnotationInteraction } from '@/lib/cornerstone/annotationInteraction';
 import { VIEWPORT_ID } from '@/constants/viewport';
@@ -20,42 +18,6 @@ import {
 } from '@/lib/viewer/annotationHelpers';
 import { selectMeasurementAnnotation } from '@/lib/cornerstone/measurementStyles';
 import type { AnnotationMeasurement } from '@/hooks/useMeasurements';
-
-function resolveMeasurementImageIndex(
-  measurement: AnnotationMeasurement,
-  imageIds: string[],
-  annotationInstance?: any
-): number {
-  const referenceCandidates = [
-    annotationInstance?.metadata?.referencedImageId,
-    annotationInstance?.metadata?.imageId,
-    measurement?.metadata?.referencedImageId,
-    measurement?.metadata?.imageId,
-    measurement?.data?.referencedImageId,
-    measurement?.data?.imageId,
-  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
-
-  const storedIndex = Number(measurement?.metadata?.frameIndex);
-  const validStoredIndex =
-    Number.isInteger(storedIndex) && storedIndex >= 0
-      ? storedIndex
-      : undefined;
-
-  for (const reference of referenceCandidates) {
-    const matchedIndex = findMatchingImageIdIndex(
-      imageIds,
-      reference,
-      validStoredIndex
-    );
-    if (matchedIndex >= 0) return matchedIndex;
-  }
-
-  if (typeof validStoredIndex === 'number') {
-    return Math.min(storedIndex, Math.max(0, imageIds.length - 1));
-  }
-
-  return 0;
-}
 
 function selectCornerstoneAnnotation(annotationUID: string): void {
   selectMeasurementAnnotation(annotationUID);
@@ -158,6 +120,22 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     }
   }, [viewportInstance]);
 
+  /**
+   * Navigates to a measurement and selects it. The paths below are tried in
+   * order; each either finishes the request or falls through to the next:
+   *
+   * 1. The pane the measurement was drawn in, if it is not the primary pane
+   *    and shows the measurement's series (split layouts open one series in
+   *    several panes, so the image alone cannot tell which pane it was).
+   * 2. A series without files yet: open it at the recorded frame.
+   * 3. The stack the primary pane shows: change its image.
+   * 4. The primary pane already shows the image (when 3 failed).
+   * 5. Another stack: select its series; useRenderingEngine opens it at the
+   *    pending navigation's image. This hook never sets a stack.
+   *
+   * Only the latest request continues after an await, and nothing is
+   * selected for a measurement that is being removed.
+   */
   const handleSelectMeasurement = useCallback(async (m: any) => {
     const annotationUID = String(m?.annotationUID ?? '');
     if (!annotationUID || isAnnotationRemovalTombstoned(annotationUID)) return;
@@ -171,166 +149,248 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     selectingRef.current = true;
     lastSelectingUIDRef.current = m?.annotationUID ?? null;
 
-    let selectionConfirmed = false;
     try {
       const requestId = ++selectFlowCounterRef.current;
       const isCurrentRequest = () =>
         requestId === selectFlowCounterRef.current;
+      const isStale = () =>
+        !isCurrentRequest() || isAnnotationRemovalTombstoned(annotationUID);
 
       const targetSeriesUID = String(m.metadata?.seriesUID ?? '');
-      const reportSeriesUID = String(
-        m.metadata?.reportSeriesUID ?? ''
-      );
-      if (!targetSeriesUID) {
-        return;
-      }
+      const reportSeriesUID = String(m.metadata?.reportSeriesUID ?? '');
+      if (!targetSeriesUID) return;
 
-      const imageIds = mergedSeriesMapRef.current?.[targetSeriesUID]?.files ?? [];
+      const imageIds: string[] =
+        mergedSeriesMapRef.current?.[targetSeriesUID]?.files ?? [];
       const liveAnnotation =
-        (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
+        (csAnnotation.state as any)?.getAnnotation?.(annotationUID) ?? null;
 
-      const preferredViewportId = String(
-        m.metadata?.viewportId ?? viewportId
-      );
-      if (
-        preferredViewportId !== viewportId &&
-        Array.isArray(imageIds) &&
-        imageIds.length > 0
-      ) {
+      // Registers the annotation on `element`: `known`, else the one in
+      // Cornerstone's state, else the one that appears within waitMs.
+      // Resolves with whether it is registered, or null once a newer
+      // request took over.
+      const attachAnnotation = async (
+        element: HTMLDivElement | null | undefined,
+        waitMs: number,
+        known: any = null
+      ): Promise<boolean | null> => {
+        const instance =
+          known ??
+          (await ensureAnnotationAvailable(annotationUID, waitMs).catch(
+            () => null
+          ));
+        if (!isCurrentRequest()) return null;
+        if (!instance || !element) return false;
+        let attached = false;
         try {
-          const preferredViewport =
-            renderingEngineRef?.current?.getViewport?.(preferredViewportId);
-          const preferredImageIds = preferredViewport?.getImageIds?.() ?? [];
-          if (
-            preferredViewport &&
-            Array.isArray(preferredImageIds) &&
-            areImageStacksEqual(preferredImageIds, imageIds)
-          ) {
-            const desiredIndex = resolveMeasurementImageIndex(
-              m,
-              imageIds,
-              liveAnnotation
-            );
-            const preferredElement = preferredViewport.element as
-              | HTMLDivElement
-              | undefined;
-            cancelActiveAnnotationInteraction(preferredElement ?? null);
-
-            if (
-              preferredViewport.getCurrentImageIdIndex?.() !== desiredIndex &&
-              typeof preferredViewport.setImageIdIndex === 'function'
-            ) {
-              await preferredViewport.setImageIdIndex(desiredIndex);
-              if (!isCurrentRequest()) return;
-            }
-
-            const annotationInstance =
-              liveAnnotation ??
-              (await ensureAnnotationAvailable(m.annotationUID, 800).catch(
-                () => null
-              ));
-            if (!isCurrentRequest()) return;
-
-            if (
-              annotationInstance &&
-              preferredElement &&
-              (await safeAddAnnotation(annotationInstance, preferredElement))
-            ) {
-              if (
-                !isCurrentRequest() ||
-                isAnnotationRemovalTombstoned(annotationUID)
-              ) {
-                return;
-              }
-              selectCornerstoneAnnotation(m.annotationUID);
-              setActiveSrId?.(reportSeriesUID || null);
-              setSelectedMeasurementUIDIfChanged(
-                setSelectedMeasurementUID,
-                selectedMeasurementUIDRef,
-                m.annotationUID
-              );
-              try {
-                csToolsUtilities.triggerAnnotationRender(preferredElement);
-              } catch {}
-              safeRenderViewport(preferredViewportId);
-              return;
-            }
-          }
-        } catch {
-          // The original primary-viewport navigation below remains the safe
-          // recovery path if the recorded pane no longer shows this series.
+          attached = await safeAddAnnotation(instance, element);
+        } catch {}
+        return isCurrentRequest() ? attached : null;
+      };
+      const showTargetSeriesAndReport = () => {
+        if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
+        try {
+          setActiveSrId?.(reportSeriesUID || null);
+        } catch {}
+      };
+      const commitSelection = () =>
+        setSelectedMeasurementUIDIfChanged(
+          setSelectedMeasurementUID,
+          selectedMeasurementUIDRef,
+          annotationUID
+        );
+      const clearPendingNavigation = (imageIndex: number) => {
+        const pending = pendingSeriesNavigationRef.current;
+        if (
+          pending?.seriesUID === targetSeriesUID &&
+          pending.imageIndex === imageIndex
+        ) {
+          pendingSeriesNavigationRef.current = null;
         }
-      }
+      };
 
-      if (!Array.isArray(imageIds) || imageIds.length === 0) {
+      // 1. The pane the measurement was drawn in.
+      const selectInRecordedPane = async (): Promise<boolean> => {
+        const recordedViewportId = String(m.metadata?.viewportId ?? viewportId);
+        if (recordedViewportId === viewportId || imageIds.length === 0) {
+          return false;
+        }
+        try {
+          const recordedViewport =
+            renderingEngineRef?.current?.getViewport?.(recordedViewportId);
+          const recordedImageIds = recordedViewport?.getImageIds?.() ?? [];
+          if (
+            !recordedViewport ||
+            !Array.isArray(recordedImageIds) ||
+            !areImageStacksEqual(recordedImageIds, imageIds)
+          ) {
+            return false;
+          }
+          const desiredIndex = resolveMeasurementImageIndex(
+            m,
+            imageIds,
+            liveAnnotation
+          );
+          const element = recordedViewport.element as HTMLDivElement | undefined;
+          cancelActiveAnnotationInteraction(element ?? null);
+
+          if (
+            recordedViewport.getCurrentImageIdIndex?.() !== desiredIndex &&
+            typeof recordedViewport.setImageIdIndex === 'function'
+          ) {
+            await recordedViewport.setImageIdIndex(desiredIndex);
+            if (!isCurrentRequest()) return true;
+          }
+
+          const attached = await attachAnnotation(element, 800, liveAnnotation);
+          if (attached === null) return true;
+          if (!attached || !element) return false;
+          if (isStale()) return true;
+          selectCornerstoneAnnotation(annotationUID);
+          setActiveSrId?.(reportSeriesUID || null);
+          commitSelection();
+          try {
+            csToolsUtilities.triggerAnnotationRender(element);
+          } catch {}
+          safeRenderViewport(recordedViewportId);
+          return true;
+        } catch {
+          // The primary-pane paths below recover if the recorded pane no
+          // longer shows this series.
+          return false;
+        }
+      };
+
+      // 2. A series without files yet.
+      const openSeriesWithoutFiles = async () => {
+        const recordedFrame = Number(m.metadata?.frameIndex);
         const desiredIndex = Math.max(
           0,
-          Number.isInteger(Number(m.metadata?.frameIndex))
-            ? Number(m.metadata.frameIndex)
-            : 0
+          Number.isInteger(recordedFrame) ? recordedFrame : 0
         );
         pendingSeriesNavigationRef.current = {
           seriesUID: targetSeriesUID,
           imageIndex: desiredIndex,
         };
-        if (selectedSeries !== targetSeriesUID) {
-          setSelectedSeries(targetSeriesUID);
-        }
-        try {
-          setActiveSrId?.(reportSeriesUID || null);
-        } catch {}
+        showTargetSeriesAndReport();
 
+        let selectionConfirmed = false;
         try {
           if (viewportEl) {
-            const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
-            if (inst) {
-              const attached = await safeAddAnnotation(inst, viewportEl);
-              if (!isCurrentRequest()) return;
-              if (attached) {
-                selectCornerstoneAnnotation(m.annotationUID);
-                selectionConfirmed = true;
-              }
-            } else {
-              const maybe = await ensureAnnotationAvailable(m.annotationUID, 1500).catch(() => null);
-              if (!isCurrentRequest()) return;
-              if (maybe) {
-                const attached = await safeAddAnnotation(maybe, viewportEl);
-                if (!isCurrentRequest()) return;
-                if (attached) {
-                  selectCornerstoneAnnotation(m.annotationUID);
-                  selectionConfirmed = true;
-                }
-              } else {
-              }
+            const attached = await attachAnnotation(viewportEl, 1500);
+            if (attached === null) return;
+            if (attached) {
+              selectCornerstoneAnnotation(annotationUID);
+              selectionConfirmed = true;
             }
           }
-        } catch (error) {
-        }
+        } catch {}
 
-        if (
-          !isCurrentRequest() ||
-          isAnnotationRemovalTombstoned(annotationUID)
-        ) {
-          return;
-        }
+        if (isStale()) return;
         if (selectionConfirmed) {
-          setSelectedMeasurementUIDIfChanged(
-            setSelectedMeasurementUID,
-            selectedMeasurementUIDRef,
-            m.annotationUID,
-          );
-          if (
-            !isCurrentRequest() ||
-            isAnnotationRemovalTombstoned(annotationUID)
-          ) {
-            return;
-          }
-          setCurrentFrame(desiredIndex + 1);
-        } else {
-          setCurrentFrame(desiredIndex + 1);
+          commitSelection();
+          if (isStale()) return;
         }
-
+        setCurrentFrame(desiredIndex + 1);
         safeRenderViewport(viewportId);
+      };
+
+      // 3. The stack the primary pane shows. setImageIdIndex is Cornerstone's
+      // awaitable API and keeps the camera, VOI, rotation and flip.
+      const selectInCurrentStack = async (desiredIndex: number): Promise<boolean> => {
+        try {
+          const activeViewport =
+            renderingEngineRef?.current?.getViewport?.(viewportId) ?? viewportInstance;
+          const activeImageIds = activeViewport?.getImageIds?.() ?? [];
+          const isCurrentStack =
+            Array.isArray(activeImageIds) &&
+            activeImageIds.length > 0 &&
+            areImageStacksEqual(activeImageIds, imageIds);
+          if (!isCurrentStack || typeof activeViewport?.setImageIdIndex !== 'function') {
+            return false;
+          }
+
+          if (activeViewport.getCurrentImageIdIndex?.() !== desiredIndex) {
+            await activeViewport.setImageIdIndex(desiredIndex);
+            if (!isCurrentRequest()) return true;
+          }
+          // setImageIdIndex sets the current index before it loads the
+          // image, so it already holds unless another navigation took over;
+          // waiting (formerly up to 8 x 25 ms) cannot bring it back.
+          const confirmedIndex = activeViewport.getCurrentImageIdIndex?.();
+          if (isStale()) return true;
+          if (confirmedIndex !== desiredIndex) return false;
+
+          const attached = await attachAnnotation(
+            (activeViewport.element as HTMLDivElement | undefined) ?? viewportEl,
+            800,
+            liveAnnotation
+          );
+          if (attached === null) return true;
+          if (attached) selectCornerstoneAnnotation(annotationUID);
+          if (isStale()) return true;
+          showTargetSeriesAndReport();
+          commitSelection();
+          if (isStale()) return true;
+          clearPendingNavigation(desiredIndex);
+          setCurrentFrame(desiredIndex + 1);
+          safeRenderViewport(viewportId);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+
+      // 4. The primary pane already shows the image.
+      const selectOnShownImage = async (desiredIndex: number): Promise<boolean> => {
+        try {
+          if (!isViewportShowingDesiredImage(imageIds, desiredIndex)) return false;
+          if (!isCurrentRequest()) return true;
+          showTargetSeriesAndReport();
+
+          const attached = await attachAnnotation(viewportEl, 600);
+          if (attached === null) return true;
+          if (attached) selectCornerstoneAnnotation(annotationUID);
+          if (isStale()) return true;
+          if (attached) {
+            commitSelection();
+            if (!isCurrentRequest()) return true;
+          }
+          if (isAnnotationRemovalTombstoned(annotationUID)) return true;
+          clearPendingNavigation(desiredIndex);
+          setCurrentFrame(desiredIndex + 1);
+          safeRenderViewport(viewportId);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+
+      // 5. Another stack.
+      const selectAcrossStacks = async (desiredIndex: number) => {
+        if (isStale()) return;
+        showTargetSeriesAndReport();
+
+        let attached: boolean | null = false;
+        try {
+          attached = await attachAnnotation(viewportEl, 1500);
+          if (attached === null) return;
+          if (attached) selectCornerstoneAnnotation(annotationUID);
+        } catch {}
+
+        if (isStale()) return;
+        if (attached) {
+          commitSelection();
+          if (!isCurrentRequest()) return;
+        }
+        if (isAnnotationRemovalTombstoned(annotationUID)) return;
+        setCurrentFrame(desiredIndex + 1);
+        safeRenderViewport(viewportId);
+      };
+
+      if (await selectInRecordedPane()) return;
+      if (imageIds.length === 0) {
+        await openSeriesWithoutFiles();
         return;
       }
 
@@ -339,217 +399,9 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         seriesUID: targetSeriesUID,
         imageIndex: desiredIndex,
       };
-
-      // A measurement click within the current stack is an index navigation,
-      // not a stack re-attachment. setImageIdIndex is Cornerstone's public,
-      // awaitable API and preserves the current camera, VOI, rotation and flip.
-      try {
-        const activeViewport =
-          renderingEngineRef?.current?.getViewport?.(viewportId) ?? viewportInstance;
-        const activeImageIds = activeViewport?.getImageIds?.() ?? [];
-        const isCurrentStack =
-          Array.isArray(activeImageIds) &&
-          activeImageIds.length > 0 &&
-          areImageStacksEqual(activeImageIds, imageIds);
-
-        if (isCurrentStack && typeof activeViewport?.setImageIdIndex === 'function') {
-          const currentIndex = activeViewport.getCurrentImageIdIndex?.();
-          if (currentIndex !== desiredIndex) {
-            await activeViewport.setImageIdIndex(desiredIndex);
-            if (!isCurrentRequest()) return;
-          }
-
-          // setImageIdIndex sets the current index before it loads the
-          // image, so it already holds unless another navigation took over;
-          // waiting (formerly up to 8 x 25 ms) cannot bring it back.
-          const confirmedIndex = activeViewport.getCurrentImageIdIndex?.();
-
-          if (
-            !isCurrentRequest() ||
-            isAnnotationRemovalTombstoned(annotationUID)
-          ) {
-            return;
-          }
-          if (confirmedIndex === desiredIndex) {
-            const annotation =
-              liveAnnotation ??
-              (await ensureAnnotationAvailable(m.annotationUID, 800).catch(
-                () => null
-              ));
-            if (!isCurrentRequest()) return;
-            const targetElement =
-              (activeViewport.element as HTMLDivElement | undefined) ?? viewportEl;
-
-            if (annotation && targetElement) {
-              try {
-                selectionConfirmed = await safeAddAnnotation(
-                  annotation,
-                  targetElement
-                );
-                if (!isCurrentRequest()) return;
-              } catch {
-                selectionConfirmed = false;
-              }
-            }
-
-            if (selectionConfirmed) {
-              selectCornerstoneAnnotation(m.annotationUID);
-            }
-            if (
-              !isCurrentRequest() ||
-              isAnnotationRemovalTombstoned(annotationUID)
-            ) {
-              return;
-            }
-            if (selectedSeries !== targetSeriesUID) {
-              setSelectedSeries(targetSeriesUID);
-            }
-            try {
-              setActiveSrId?.(reportSeriesUID || null);
-            } catch {}
-
-            setSelectedMeasurementUIDIfChanged(
-              setSelectedMeasurementUID,
-              selectedMeasurementUIDRef,
-              m.annotationUID,
-            );
-            if (
-              !isCurrentRequest() ||
-              isAnnotationRemovalTombstoned(annotationUID)
-            ) {
-              return;
-            }
-            const pendingNavigation = pendingSeriesNavigationRef.current;
-            if (
-              pendingNavigation?.seriesUID === targetSeriesUID &&
-              pendingNavigation.imageIndex === desiredIndex
-            ) {
-              pendingSeriesNavigationRef.current = null;
-            }
-            setCurrentFrame(desiredIndex + 1);
-            safeRenderViewport(viewportId);
-            return;
-          }
-        }
-      } catch {
-        // Fall through to the cross-stack recovery path below.
-      }
-
-      try {
-        if (isViewportShowingDesiredImage(imageIds, desiredIndex)) {
-          if (!isCurrentRequest()) return;
-          if (selectedSeries !== targetSeriesUID) setSelectedSeries(targetSeriesUID);
-          try {
-            setActiveSrId?.(reportSeriesUID || null);
-          } catch {}
-
-          const inst = (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ?? null;
-          if (inst) {
-            try {
-              selectionConfirmed = await safeAddAnnotation(inst, viewportEl);
-              if (!isCurrentRequest()) return;
-            } catch {}
-            if (selectionConfirmed) {
-              selectCornerstoneAnnotation(m.annotationUID);
-            }
-          } else {
-            const maybe = await ensureAnnotationAvailable(m.annotationUID, 600).catch(() => null);
-            if (!isCurrentRequest()) return;
-            if (maybe) {
-              try {
-                selectionConfirmed = await safeAddAnnotation(maybe, viewportEl);
-                if (!isCurrentRequest()) return;
-              } catch {}
-              if (selectionConfirmed) {
-                selectCornerstoneAnnotation(m.annotationUID);
-              }
-            } else {
-              selectionConfirmed = false;
-            }
-          }
-
-          if (
-            !isCurrentRequest() ||
-            isAnnotationRemovalTombstoned(annotationUID)
-          ) {
-            return;
-          }
-          if (selectionConfirmed) {
-            setSelectedMeasurementUIDIfChanged(
-              setSelectedMeasurementUID,
-              selectedMeasurementUIDRef,
-              m.annotationUID
-            );
-            if (!isCurrentRequest()) return;
-          }
-          if (isAnnotationRemovalTombstoned(annotationUID)) return;
-          const pendingNavigation = pendingSeriesNavigationRef.current;
-          if (
-            pendingNavigation?.seriesUID === targetSeriesUID &&
-            pendingNavigation.imageIndex === desiredIndex
-          ) {
-            pendingSeriesNavigationRef.current = null;
-          }
-          setCurrentFrame((desiredIndex ?? 0) + 1);
-
-          safeRenderViewport(viewportId);
-          return;
-        } else {
-        }
-      } catch (error) {
-      }
-
-      if (
-        !isCurrentRequest() ||
-        isAnnotationRemovalTombstoned(annotationUID)
-      ) {
-        return;
-      }
-
-      // Cross-stack navigation is owned by the selected-series attach effect.
-      // Register/select the annotation here, but never mutate the stack from
-      // this hook; pendingSeriesNavigationRef carries the requested frame.
-      if (selectedSeries !== targetSeriesUID) {
-        setSelectedSeries(targetSeriesUID);
-      }
-      try { setActiveSrId?.(reportSeriesUID || null); } catch {}
-
-      try {
-        const inst =
-          (csAnnotation.state as any)?.getAnnotation?.(m.annotationUID) ??
-          (await ensureAnnotationAvailable(m.annotationUID, 1500).catch(
-            () => null
-          ));
-        if (!isCurrentRequest()) return;
-        if (inst) {
-          selectionConfirmed = await safeAddAnnotation(inst, viewportEl);
-          if (!isCurrentRequest()) return;
-        }
-        if (selectionConfirmed) {
-          selectCornerstoneAnnotation(m.annotationUID);
-        }
-      } catch {}
-
-      if (
-        !isCurrentRequest() ||
-        isAnnotationRemovalTombstoned(annotationUID)
-      ) {
-        return;
-      }
-
-      if (selectionConfirmed) {
-        setSelectedMeasurementUIDIfChanged(
-          setSelectedMeasurementUID,
-          selectedMeasurementUIDRef,
-          m.annotationUID
-        );
-        if (!isCurrentRequest()) return;
-      }
-
-      if (isAnnotationRemovalTombstoned(annotationUID)) return;
-      setCurrentFrame((desiredIndex ?? 0) + 1);
-
-      safeRenderViewport(viewportId);
+      if (await selectInCurrentStack(desiredIndex)) return;
+      if (await selectOnShownImage(desiredIndex)) return;
+      await selectAcrossStacks(desiredIndex);
     } finally {
       selectingRef.current = false;
       lastSelectingUIDRef.current = null;
