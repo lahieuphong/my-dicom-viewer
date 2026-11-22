@@ -210,6 +210,9 @@ Mỗi bước migration kiến trúc phải tuân thủ:
 - Harness coi một pane là sẵn sàng khi ảnh hiện tại đã thực sự hiển thị
   (`getCornerstoneImage()`), không chỉ khi `viewportStatus` là `rendered`:
   status đó cũng có sau một lần vẽ khi ảnh đầu tiên của stack còn đang nạp.
+- Harness chặn download trong browser context của nó (tạo SR sẽ tải file
+  xuống), nên regression không ghi file vào thư mục download của người dùng.
+  Card measurement có `aria-pressed` khi đang được chọn.
 
 ## Tiến độ
 
@@ -272,7 +275,12 @@ xóa, logic nằm trong hàm thuần `removeMeasurement`). Hàng đợi chọn m
 và việc gộp các lần xóa trùng dùng helper thuần `lib/utils/asyncQueues`. Chờ annotation xuất hiện trong state của
 Cornerstone (`ensureAnnotationAvailable`) dùng event `ANNOTATION_ADDED` thay vì
 poll; đường chờ này có unit test, vì với dữ liệu mẫu annotation luôn có sẵn khi
-điều hướng.
+điều hướng. `useMeasurementSelector` thử lần lượt năm đường điều hướng có tên
+(pane đã vẽ measurement, series chưa có file, stack đang hiện, ảnh đã hiện, stack
+khác), dùng chung một helper gắn annotation vào element; ảnh của measurement
+tính bằng hàm thuần `resolveMeasurementImageIndex` (`lib/viewer`, có unit test).
+Regression `sr-cross-series` phủ đường stack khác: mở SR của series A khi pane
+đang ở series B phải chỉ gọi một `setStack`, bắt đầu ngay ở ảnh đã đo.
 
 Còn lại:
 
@@ -282,8 +290,8 @@ Còn lại:
 - Phase 1: `createBasicViewerRuntime` đã có, nhưng `BasicViewer` chưa dùng.
 - Phase 3–4: `BasicViewerImplementation.tsx` (718 dòng) vẫn giữ trạng thái SR
   đang mở và danh sách SR, việc merge snapshot measurement vào danh sách, frame
-  và cine của pane chính. `useMeasurementSelector` (615 dòng) gộp mọi luồng
-  điều hướng tới measurement và SR trong một hook.
+  và cine của pane chính. `useMeasurementSelector` (467 dòng) vẫn là một hook;
+  hai đường "series chưa có file" và "ảnh đã hiện" chưa có regression.
 
 ## Các phase tiếp theo
 
