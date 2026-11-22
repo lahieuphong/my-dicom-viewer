@@ -94,32 +94,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
   const selectingRef = useRef(false);
   const lastSelectingUIDRef = useRef<string | null>(null);
 
-  const isViewportShowingDesiredImage = useCallback((imageIds: string[], desiredIndex: number) => {
-    try {
-      if (!viewportInstance || !Array.isArray(imageIds) || imageIds.length === 0) return false;
-
-      if (!viewportInstance.getImageIds) return false;
-      const vpIds: string[] = viewportInstance.getImageIds() ?? [];
-      if (
-        !Array.isArray(vpIds) ||
-        vpIds.length === 0 ||
-        !areImageStacksEqual(vpIds, imageIds)
-      ) {
-        return false;
-      }
-
-      const indexGetter =
-        (viewportInstance as any).getCurrentImageIdIndex ??
-        (viewportInstance as any).getImageIdIndex;
-      if (typeof indexGetter !== 'function') return false;
-
-      const currentIndex = indexGetter.call(viewportInstance);
-      return currentIndex === desiredIndex;
-    } catch (error) {
-      return false;
-    }
-  }, [viewportInstance]);
-
   /**
    * Navigates to a measurement and selects it. The paths below are tried in
    * order; each either finishes the request or falls through to the next:
@@ -127,12 +101,14 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
    * 1. The pane the measurement was drawn in, if it is not the primary pane
    *    and shows the measurement's series (split layouts open one series in
    *    several panes, so the image alone cannot tell which pane it was).
-   * 2. A series without files yet: open it at the recorded frame.
-   * 3. The stack the primary pane shows: change its image.
-   * 4. The primary pane already shows the image (when 3 failed).
-   * 5. Another stack: select its series; useRenderingEngine opens it at the
+   * 2. The stack the primary pane shows: change its image (or keep it, when
+   *    it is already shown).
+   * 3. Another stack: select its series; useRenderingEngine opens it at the
    *    pending navigation's image. This hook never sets a stack.
    *
+   * A measurement whose series has no images is left alone, as there is no
+   * image to show it on. (The panel lists only measurements of a shown series
+   * or of an SR made over one, so it offers no such card.)
    * Only the latest request continues after an await, and nothing is
    * selected for a measurement that is being removed.
    */
@@ -162,6 +138,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
 
       const imageIds: string[] =
         mergedSeriesMapRef.current?.[targetSeriesUID]?.files ?? [];
+      if (imageIds.length === 0) return;
       const liveAnnotation =
         (csAnnotation.state as any)?.getAnnotation?.(annotationUID) ?? null;
 
@@ -212,9 +189,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       // 1. The pane the measurement was drawn in.
       const selectInRecordedPane = async (): Promise<boolean> => {
         const recordedViewportId = String(m.metadata?.viewportId ?? viewportId);
-        if (recordedViewportId === viewportId || imageIds.length === 0) {
-          return false;
-        }
+        if (recordedViewportId === viewportId) return false;
         try {
           const recordedViewport =
             renderingEngineRef?.current?.getViewport?.(recordedViewportId);
@@ -261,41 +236,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         }
       };
 
-      // 2. A series without files yet.
-      const openSeriesWithoutFiles = async () => {
-        const recordedFrame = Number(m.metadata?.frameIndex);
-        const desiredIndex = Math.max(
-          0,
-          Number.isInteger(recordedFrame) ? recordedFrame : 0
-        );
-        pendingSeriesNavigationRef.current = {
-          seriesUID: targetSeriesUID,
-          imageIndex: desiredIndex,
-        };
-        showTargetSeriesAndReport();
-
-        let selectionConfirmed = false;
-        try {
-          if (viewportEl) {
-            const attached = await attachAnnotation(viewportEl, 1500);
-            if (attached === null) return;
-            if (attached) {
-              selectCornerstoneAnnotation(annotationUID);
-              selectionConfirmed = true;
-            }
-          }
-        } catch {}
-
-        if (isStale()) return;
-        if (selectionConfirmed) {
-          commitSelection();
-          if (isStale()) return;
-        }
-        setCurrentFrame(desiredIndex + 1);
-        safeRenderViewport(viewportId);
-      };
-
-      // 3. The stack the primary pane shows. setImageIdIndex is Cornerstone's
+      // 2. The stack the primary pane shows. setImageIdIndex is Cornerstone's
       // awaitable API and keeps the camera, VOI, rotation and flip.
       const selectInCurrentStack = async (desiredIndex: number): Promise<boolean> => {
         try {
@@ -341,32 +282,7 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         }
       };
 
-      // 4. The primary pane already shows the image.
-      const selectOnShownImage = async (desiredIndex: number): Promise<boolean> => {
-        try {
-          if (!isViewportShowingDesiredImage(imageIds, desiredIndex)) return false;
-          if (!isCurrentRequest()) return true;
-          showTargetSeriesAndReport();
-
-          const attached = await attachAnnotation(viewportEl, 600);
-          if (attached === null) return true;
-          if (attached) selectCornerstoneAnnotation(annotationUID);
-          if (isStale()) return true;
-          if (attached) {
-            commitSelection();
-            if (!isCurrentRequest()) return true;
-          }
-          if (isAnnotationRemovalTombstoned(annotationUID)) return true;
-          clearPendingNavigation(desiredIndex);
-          setCurrentFrame(desiredIndex + 1);
-          safeRenderViewport(viewportId);
-          return true;
-        } catch {
-          return false;
-        }
-      };
-
-      // 5. Another stack.
+      // 3. Another stack.
       const selectAcrossStacks = async (desiredIndex: number) => {
         if (isStale()) return;
         showTargetSeriesAndReport();
@@ -389,10 +305,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
       };
 
       if (await selectInRecordedPane()) return;
-      if (imageIds.length === 0) {
-        await openSeriesWithoutFiles();
-        return;
-      }
 
       const desiredIndex = resolveMeasurementImageIndex(m, imageIds, liveAnnotation);
       pendingSeriesNavigationRef.current = {
@@ -400,7 +312,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
         imageIndex: desiredIndex,
       };
       if (await selectInCurrentStack(desiredIndex)) return;
-      if (await selectOnShownImage(desiredIndex)) return;
       await selectAcrossStacks(desiredIndex);
     } finally {
       selectingRef.current = false;
@@ -419,7 +330,6 @@ export default function useMeasurementSelector(opts: UseMeasurementSelectorOpts)
     setActiveSrId,
     safeRenderViewport,
     viewportId,
-    isViewportShowingDesiredImage,
     selectedMeasurementUIDRef,
   ]);
 
