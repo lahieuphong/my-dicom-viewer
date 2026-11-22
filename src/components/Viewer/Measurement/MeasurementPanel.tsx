@@ -410,6 +410,7 @@ export default function MeasurementPanel({
                               role="button"
                               tabIndex={0}
                               data-annotation-uid={item.annotationUID}
+                              aria-pressed={isSelected}
                               className={cn(
                                 'w-full cursor-pointer rounded-md overflow-hidden transition-shadow duration-150',
                                 isSelected ? 'bg-muted border-l-4 border-primary shadow-lg' : 'bg-card hover:bg-muted'

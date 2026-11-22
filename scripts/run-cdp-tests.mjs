@@ -46,6 +46,7 @@ const REGRESSIONS = [
   { name: 'pane-tools', script: 'test-viewport-pane-tools-cdp.mjs' },
   { name: 'sr-workflow', script: 'debug-viewer-cdp.mjs' },
   { name: 'sr-tools', script: 'test-all-sr-tools-cdp.mjs' },
+  { name: 'sr-cross-series', script: 'test-sr-cross-series-cdp.mjs' },
   // Single-contour runs also cover hide/show, SR hydration and deletion.
   {
     name: 'sr-contour-freehand',

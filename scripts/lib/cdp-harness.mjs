@@ -184,6 +184,9 @@ export async function openViewerPage({
     send('Page.enable', {}, sessionId),
     send('Runtime.enable', {}, sessionId),
     send('Log.enable', {}, sessionId),
+    // Creating an SR downloads it; keep those files out of the user's
+    // download folder.
+    send('Browser.setDownloadBehavior', { behavior: 'deny', browserContextId }),
   ]);
   await send(
     'Emulation.setDeviceMetricsOverride',
