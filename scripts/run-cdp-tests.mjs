@@ -347,8 +347,11 @@ async function reportTimings(setup, results, { jobs, regressionsSeconds }) {
 
   if (process.env.GITHUB_ACTIONS !== 'true') return;
   const regressions = results.map(({ name, seconds }) => [name, seconds]);
+  // Workflow-command properties end at a comma or colon.
+  const property = (value) =>
+    value.replace(/%/g, '%25').replace(/,/g, '%2C').replace(/:/g, '%3A');
   console.log(
-    `::notice title=CDP timings (${title})::` +
+    `::notice title=${property(`CDP timings (${title})`)}::` +
       `${setup.map(format).join(', ')}; ${regressions.map(format).join(', ')}`
   );
   if (process.env.GITHUB_STEP_SUMMARY) {
